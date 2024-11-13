@@ -1,0 +1,25 @@
+[project]
+name = "llm-venice"
+version = "0.0.0"
+description = "LLM plugin to access Venice.AI-hosted models"
+readme = "README.md"
+authors = [{name = "Arjan Mossel"}]
+license = {text = "Apache-2.0"}
+classifiers = [
+    "License :: OSI Approved :: Apache Software License"
+]
+dependencies = [
+    "llm",
+]
+
+[project.urls]
+Homepage = "https://github.com/ar-jan/llm-venice"
+Changelog = "https://github.com/ar-jan/llm-venice/releases"
+Issues = "https://github.com/ar-jan/llm-venice/issues"
+CI = "https://github.com/ar-jan/llm-venice/actions"
+
+[project.entry-points.llm]
+venice = "llm_venice"
+
+[project.optional-dependencies]
+test = ["pytest"]
