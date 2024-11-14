@@ -1,18 +1,19 @@
 # llm-venice
 
-[LLM](https://llm.datasette.io/) plugin to access [Venice AI](https://venice.ai/) models.
+[LLM](https://llm.datasette.io/) plugin to access models available via the [Venice AI](https://venice.ai/) API.
+Venice API access is currently in private beta.
 
 
 ## Installation
 
-Install the [LLM command-line utility](https://llm.datasette.io/en/stable/setup.html), and install this plugin in the same environment as `llm`.
+Install the [LLM command-line utility](https://llm.datasette.io/en/stable/setup.html), and install this plugin in the same environment as `llm`:
 
 `llm install llm-venice`
 
 
 ## Configuration
 
-Set an environment variable `LLM_VENICE_KEY`, or save a Venice API key to `llm`'s keys:
+Set an environment variable `LLM_VENICE_KEY`, or save a [Venice API](https://docs.venice.ai/) key to the key store managed by `llm`:
 
 `llm keys set venice`
 
@@ -27,7 +28,7 @@ Start an interactive chat session:
 
 `llm chat --model venice/llama-3.1-405b`
 
-Read the [docs](https://llm.datasette.io/en/stable/usage.html) for more `llm` usage options.
+Read the `llm` [docs](https://llm.datasette.io/en/stable/usage.html) for more usage options.
 
 
 ## Development

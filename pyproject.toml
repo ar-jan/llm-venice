@@ -1,7 +1,7 @@
 [project]
 name = "llm-venice"
 version = "0.0.0"
-description = "LLM plugin to access Venice.AI-hosted models"
+description = "LLM plugin to access models available via the Venice API"
 readme = "README.md"
 authors = [{name = "Arjan Mossel"}]
 license = {text = "Apache-2.0"}
