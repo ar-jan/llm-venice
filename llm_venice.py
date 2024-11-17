@@ -7,6 +7,7 @@ MODELS = (
     "llama-3.1-405b",
     "llama-3.2-3b",
     "nous-theta-8b",
+    "qwen32b",
 )
 
 
