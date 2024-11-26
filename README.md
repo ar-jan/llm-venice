@@ -33,6 +33,10 @@ Start an interactive chat session:
 
 `llm chat --model venice/llama-3.1-405b`
 
+Update the list of available models from the Venice API:
+
+`llm venice refresh`
+
 Read the `llm` [docs](https://llm.datasette.io/en/stable/usage.html) for more usage options.
 
 
