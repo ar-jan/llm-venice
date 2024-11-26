@@ -41,12 +41,7 @@ def register_commands(cli):
         )
         response.raise_for_status()
         models = response.json()["data"]
-        text_models = [
-            model["id"]
-            for model in models
-            if model.get("type", {})
-            == "text"
-        ]
+        text_models = [model["id"] for model in models if model.get("type") == "text"]
         if not text_models:
             raise click.ClickException("No text generation models found")
         path = llm.user_dir() / "llm-venice.json"
