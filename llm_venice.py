@@ -10,6 +10,8 @@ MODELS = (
     "dolphin-2.9.2-qwen2-72b",
     "llama-3.1-405b",
     "llama-3.2-3b",
+    "llama-3.3-70b",
+    "nous-hermes3a",
     "nous-theta-8b",
     "qwen32b",
 )
