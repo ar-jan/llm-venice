@@ -27,7 +27,7 @@ Set an environment variable `LLM_VENICE_KEY`, or save a [Venice API](https://doc
 
 Run a prompt:
 
-`llm --model venice/nous-theta-8b "Why is the earth round?"`
+`llm --model venice/llama-3.3-70b "Why is the earth round?"`
 
 Start an interactive chat session:
 
