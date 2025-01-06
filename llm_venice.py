@@ -68,6 +68,6 @@ def register_models(register):
                 model_id=f"venice/{model_id}",
                 model_name=model_id,
                 api_base="https://api.venice.ai/api/v1",
-                can_stream=False
+                can_stream=True
             )
         )
