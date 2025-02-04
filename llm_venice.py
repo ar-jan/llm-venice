@@ -7,6 +7,7 @@ from llm.default_plugins.openai_models import Chat
 
 
 MODELS = (
+    "deepseek-r1-671b",
     "deepseek-r1-llama-70b",
     "dolphin-2.9.2-qwen2-72b",
     "llama-3.1-405b",
