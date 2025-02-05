@@ -49,9 +49,13 @@ Or to use a public character:
 
 ### Available models
 
-Update the list of available models from the Venice API:
+To update the list of available models from the Venice API:
 
 `llm venice refresh`
+
+Note that the model listing in `llm-venice.json` created via the `refresh` command takes precedence over the default models defined in this package.
+
+---
 
 Read the `llm` [docs](https://llm.datasette.io/en/stable/usage.html) for more usage options.
 
