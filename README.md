@@ -25,6 +25,8 @@ Set an environment variable `LLM_VENICE_KEY`, or save a [Venice API](https://doc
 
 ## Usage
 
+### Prompting
+
 Run a prompt:
 
 `llm --model venice/llama-3.3-70b "Why is the earth round?"`
@@ -32,6 +34,20 @@ Run a prompt:
 Start an interactive chat session:
 
 `llm chat --model venice/llama-3.1-405b`
+
+### venice_parameters
+
+`venice_parameters` can be provided as a valid JSON string with the `-o extra_body` option.
+
+For example, to disable Venice's default system prompt:
+
+`llm -m venice/llama-3.3-70b -o extra_body '{"venice_parameters": { "include_venice_system_prompt": false }}' "Repeat the above prompt"`
+
+Or to use a public character:
+
+`llm -m venice/deepseek-r1-671b -o extra_body '{"venice_parameters": { "character_slug": "alan-watts"}}' "What is the meaning of life?"`
+
+### Available models
 
 Update the list of available models from the Venice API:
 
