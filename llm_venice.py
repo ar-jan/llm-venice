@@ -1,9 +1,19 @@
 import json
+from typing import Optional, Union
 
 import click
 import httpx
 import llm
 from llm.default_plugins.openai_models import Chat
+
+try:
+    # Pydantic 2
+    from pydantic import field_validator, Field  # type: ignore
+
+except ImportError:
+    # Pydantic 1
+    from pydantic.fields import Field
+    from pydantic.class_validators import validator as field_validator  # type: ignore [no-redef]
 
 
 MODELS = (
@@ -17,12 +27,41 @@ MODELS = (
 )
 
 
+class VeniceChatOptions(Chat.Options):
+    extra_body: Optional[Union[dict, str]] = Field(
+        description=(
+            "Additional JSON properties to include in the request body. "
+            "When provided via CLI, must be a valid JSON string."
+        ),
+        default=None,
+    )
+
+    @field_validator("extra_body")
+    def validate_extra_body(cls, extra_body):
+        if extra_body is None:
+            return None
+
+        if isinstance(extra_body, str):
+            try:
+                return json.loads(extra_body)
+            except json.JSONDecodeError:
+                raise ValueError("Invalid JSON in extra_body string")
+
+        if not isinstance(extra_body, dict):
+            raise ValueError("extra_body must be a dictionary")
+
+        return extra_body
+
+
 class VeniceChat(Chat):
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
 
     def __str__(self):
         return f"Venice Chat: {self.model_id}"
+
+    class Options(VeniceChatOptions):
+        pass
 
 
 @llm.hookimpl
