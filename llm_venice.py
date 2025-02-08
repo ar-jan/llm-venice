@@ -90,6 +90,51 @@ def register_commands(cli):
         click.echo(f"{len(text_models)} models saved to {path}", err=True)
         click.echo(json.dumps(text_models, indent=4))
 
+    # Remove and store the original prompt and chat commands
+    original_prompt = cli.commands.pop('prompt')
+    original_chat = cli.commands.pop('chat')
+
+    def process_venice_options(kwargs):
+        """Helper to process venice-specific options"""
+        no_venice_sysprompt = kwargs.pop('no_venice_sysprompt', False)
+        options = list(kwargs.get('options', []))
+
+        if no_venice_sysprompt:
+            model = kwargs.get('model_id')
+            if model and model.startswith('venice/'):
+                options.append(
+                    ('extra_body', '{"venice_parameters": {"include_venice_system_prompt": false}}')
+                )
+                kwargs['options'] = options
+        return kwargs
+
+    # Create new prompt command
+    @cli.command(name='prompt')
+    @click.option('--no-venice-sysprompt', is_flag=True, help="Disable Venice AI's default system prompt")
+    @click.pass_context
+    def new_prompt(ctx, no_venice_sysprompt, **kwargs):
+        """Execute a prompt"""
+        kwargs = process_venice_options({**kwargs, 'no_venice_sysprompt': no_venice_sysprompt})
+        return ctx.invoke(original_prompt, **kwargs)
+
+    # Create new chat command
+    @cli.command(name='chat')
+    @click.option('--no-venice-sysprompt', is_flag=True, help="Disable Venice AI's default system prompt")
+    @click.pass_context
+    def new_chat(ctx, no_venice_sysprompt, **kwargs):
+        """Hold an ongoing chat with a model"""
+        kwargs = process_venice_options({**kwargs, 'no_venice_sysprompt': no_venice_sysprompt})
+        return ctx.invoke(original_chat, **kwargs)
+
+    # Copy over all params from original commands
+    for param in original_prompt.params:
+        if param.name != 'no_venice_sysprompt':
+            new_prompt.params.append(param)
+
+    for param in original_chat.params:
+        if param.name != 'no_venice_sysprompt':
+            new_chat.params.append(param)
+
 
 @llm.hookimpl
 def register_models(register):
