@@ -1,12 +1,22 @@
-.venv
+# Python
 __pycache__/
+.pytest_cache
+.eggs
+*.egg-info
 *.py[cod]
 *$py.class
-venv
-.eggs
-.pytest_cache
-*.egg-info
-.DS_Store
-.vscode
-dist
+
+# Build and distribution
 build
+dist
+
+# Virtual environments
+.venv
+venv
+
+# IDEs
+.vscode
+.DS_Store
+
+# Aider
+.aider*
