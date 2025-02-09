@@ -100,12 +100,10 @@ def register_commands(cli):
         if no_venice_sysprompt:
             model = kwargs.get("model_id")
             if model and model.startswith("venice/"):
-                options.append(
-                    (
-                        "extra_body",
-                        '{"venice_parameters": {"include_venice_system_prompt": false}}',
-                    )
-                )
+                venice_params = {
+                    "venice_parameters": {"include_venice_system_prompt": False}
+                }
+                options.append(("extra_body", venice_params))
                 kwargs["options"] = options
         return kwargs
 
