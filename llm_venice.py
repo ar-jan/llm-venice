@@ -77,9 +77,7 @@ def register_commands(cli):
         if not key:
             raise click.ClickException("No key found for Venice")
         headers = {"Authorization": f"Bearer {key}"}
-        response = httpx.get(
-            "https://api.venice.ai/api/v1/models", headers=headers
-        )
+        response = httpx.get("https://api.venice.ai/api/v1/models", headers=headers)
         response.raise_for_status()
         models = response.json()["data"]
         text_models = [model["id"] for model in models if model.get("type") == "text"]
@@ -89,6 +87,90 @@ def register_commands(cli):
         path.write_text(json.dumps(text_models, indent=4))
         click.echo(f"{len(text_models)} models saved to {path}", err=True)
         click.echo(json.dumps(text_models, indent=4))
+
+    # Remove and store the original prompt and chat commands
+    original_prompt = cli.commands.pop("prompt")
+    original_chat = cli.commands.pop("chat")
+
+    def process_venice_options(kwargs):
+        """Helper to process venice-specific options"""
+        no_venice_system_prompt = kwargs.pop("no_venice_system_prompt", False)
+        character = kwargs.pop("character", None)
+        options = list(kwargs.get("options", []))
+        model = kwargs.get("model_id")
+
+        if model and model.startswith("venice/"):
+            venice_params = {}
+
+            if no_venice_system_prompt:
+                venice_params["include_venice_system_prompt"] = False
+
+            if character:
+                venice_params["character_slug"] = character
+
+            if venice_params:
+                # If a Venice option is used, any `-o extra_body value` is overridden here.
+                # TODO: Would prefer to remove the extra_body CLI option, but
+                # the implementation is required for venice_parameters.
+                options.append(("extra_body", {"venice_parameters": venice_params}))
+                kwargs["options"] = options
+
+        return kwargs
+
+    # Create new prompt command
+    @cli.command(name="prompt")
+    @click.option(
+        "--no-venice-system-prompt",
+        is_flag=True,
+        help="Disable Venice AI's default system prompt",
+    )
+    @click.option(
+        "--character",
+        help="Use a Venice AI public character (e.g. 'alan-watts')",
+    )
+    @click.pass_context
+    def new_prompt(ctx, no_venice_system_prompt, character, **kwargs):
+        """Execute a prompt"""
+        kwargs = process_venice_options(
+            {
+                **kwargs,
+                "no_venice_system_prompt": no_venice_system_prompt,
+                "character": character,
+            }
+        )
+        return ctx.invoke(original_prompt, **kwargs)
+
+    # Create new chat command
+    @cli.command(name="chat")
+    @click.option(
+        "--no-venice-system-prompt",
+        is_flag=True,
+        help="Disable Venice AI's default system prompt",
+    )
+    @click.option(
+        "--character",
+        help="Use a Venice AI character (e.g. 'alan-watts')",
+    )
+    @click.pass_context
+    def new_chat(ctx, no_venice_system_prompt, character, **kwargs):
+        """Hold an ongoing chat with a model"""
+        kwargs = process_venice_options(
+            {
+                **kwargs,
+                "no_venice_system_prompt": no_venice_system_prompt,
+                "character": character,
+            }
+        )
+        return ctx.invoke(original_chat, **kwargs)
+
+    # Copy over all params from original commands
+    for param in original_prompt.params:
+        if param.name not in ("no_venice_system_prompt", "character"):
+            new_prompt.params.append(param)
+
+    for param in original_chat.params:
+        if param.name not in ("no_venice_system_prompt", "character"):
+            new_chat.params.append(param)
 
 
 @llm.hookimpl
@@ -109,6 +191,6 @@ def register_models(register):
                 model_id=f"venice/{model_id}",
                 model_name=model_id,
                 api_base="https://api.venice.ai/api/v1",
-                can_stream=True
+                can_stream=True,
             )
         )
