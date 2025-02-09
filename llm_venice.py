@@ -109,6 +109,9 @@ def register_commands(cli):
                 venice_params["character_slug"] = character
 
             if venice_params:
+                # If a Venice option is used, any `-o extra_body value` is overridden here.
+                # TODO: Would prefer to remove the extra_body CLI option, but
+                # the implementation is required for venice_parameters.
                 options.append(("extra_body", {"venice_parameters": venice_params}))
                 kwargs["options"] = options
 
