@@ -88,6 +88,19 @@ def register_commands(cli):
         click.echo(f"{len(text_models)} models saved to {path}", err=True)
         click.echo(json.dumps(text_models, indent=4))
 
+    @venice.command(name="rate-limits")
+    def rate_limits():
+        "Show current rate limits for your API key"
+        key = llm.get_key("", "venice", "LLM_VENICE_KEY")
+        if not key:
+            raise click.ClickException("No key found for Venice")
+        headers = {"Authorization": f"Bearer {key}"}
+        response = httpx.get(
+            "https://api.venice.ai/api/v1/api_keys/rate_limits", headers=headers
+        )
+        response.raise_for_status()
+        click.echo(json.dumps(response.json(), indent=2))
+
     # Remove and store the original prompt and chat commands
     original_prompt = cli.commands.pop("prompt")
     original_chat = cli.commands.pop("chat")
