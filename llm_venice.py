@@ -94,10 +94,10 @@ def register_commands(cli):
 
     def process_venice_options(kwargs):
         """Helper to process venice-specific options"""
-        no_venice_sysprompt = kwargs.pop("no_venice_sysprompt", False)
+        no_venice_system_prompt = kwargs.pop("no_venice_system_prompt", False)
         options = list(kwargs.get("options", []))
 
-        if no_venice_sysprompt:
+        if no_venice_system_prompt:
             model = kwargs.get("model_id")
             if model and model.startswith("venice/"):
                 venice_params = {
@@ -110,40 +110,40 @@ def register_commands(cli):
     # Create new prompt command
     @cli.command(name="prompt")
     @click.option(
-        "--no-venice-sysprompt",
+        "--no-venice-system-prompt",
         is_flag=True,
         help="Disable Venice AI's default system prompt",
     )
     @click.pass_context
-    def new_prompt(ctx, no_venice_sysprompt, **kwargs):
+    def new_prompt(ctx, no_venice_system_prompt, **kwargs):
         """Execute a prompt"""
         kwargs = process_venice_options(
-            {**kwargs, "no_venice_sysprompt": no_venice_sysprompt}
+            {**kwargs, "no_venice_system_prompt": no_venice_system_prompt}
         )
         return ctx.invoke(original_prompt, **kwargs)
 
     # Create new chat command
     @cli.command(name="chat")
     @click.option(
-        "--no-venice-sysprompt",
+        "--no-venice-system-prompt",
         is_flag=True,
         help="Disable Venice AI's default system prompt",
     )
     @click.pass_context
-    def new_chat(ctx, no_venice_sysprompt, **kwargs):
+    def new_chat(ctx, no_venice_system_prompt, **kwargs):
         """Hold an ongoing chat with a model"""
         kwargs = process_venice_options(
-            {**kwargs, "no_venice_sysprompt": no_venice_sysprompt}
+            {**kwargs, "no_venice_system_prompt": no_venice_system_prompt}
         )
         return ctx.invoke(original_chat, **kwargs)
 
     # Copy over all params from original commands
     for param in original_prompt.params:
-        if param.name != "no_venice_sysprompt":
+        if param.name != "no_venice_system_prompt":
             new_prompt.params.append(param)
 
     for param in original_chat.params:
-        if param.name != "no_venice_sysprompt":
+        if param.name != "no_venice_system_prompt":
             new_chat.params.append(param)
 
 
