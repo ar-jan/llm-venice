@@ -88,18 +88,43 @@ def register_commands(cli):
         click.echo(f"{len(text_models)} models saved to {path}", err=True)
         click.echo(json.dumps(text_models, indent=4))
 
-    @venice.command(name="rate-limits")
-    def rate_limits():
-        "Show current rate limits for your API key"
+    @click.group(name="api-keys", invoke_without_command=True)
+    @click.pass_context
+    def api_keys(ctx):
+        """Manage API keys - list, or rate-limits"""
+        # Retrieve the API key once and store it in context
         key = llm.get_key("", "venice", "LLM_VENICE_KEY")
         if not key:
             raise click.ClickException("No key found for Venice")
-        headers = {"Authorization": f"Bearer {key}"}
+
+        ctx.obj = {"headers": {"Authorization": f"Bearer {key}"}}
+
+        # Default to listing API keys if no subcommand is provided
+        if not ctx.invoked_subcommand:
+            ctx.invoke(list_keys)
+
+    @api_keys.command(name="list")
+    @click.pass_context
+    def list_keys(ctx):
+        """List all API keys."""
         response = httpx.get(
-            "https://api.venice.ai/api/v1/api_keys/rate_limits", headers=headers
+            "https://api.venice.ai/api/v1/api_keys", headers=ctx.obj["headers"]
         )
         response.raise_for_status()
         click.echo(json.dumps(response.json(), indent=2))
+
+    @api_keys.command(name="rate-limits")
+    @click.pass_context
+    def rate_limits(ctx):
+        "Show current rate limits for your API key"
+        response = httpx.get(
+            "https://api.venice.ai/api/v1/api_keys", headers=ctx.obj["headers"]
+        )
+        response.raise_for_status()
+        click.echo(json.dumps(response.json(), indent=2))
+
+    # Register api-keys command group under "venice"
+    venice.add_command(api_keys)
 
     # Remove and store the original prompt and chat commands
     original_prompt = cli.commands.pop("prompt")
