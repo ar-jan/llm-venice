@@ -95,16 +95,23 @@ def register_commands(cli):
     def process_venice_options(kwargs):
         """Helper to process venice-specific options"""
         no_venice_system_prompt = kwargs.pop("no_venice_system_prompt", False)
+        character = kwargs.pop("character", None)
         options = list(kwargs.get("options", []))
+        model = kwargs.get("model_id")
 
-        if no_venice_system_prompt:
-            model = kwargs.get("model_id")
-            if model and model.startswith("venice/"):
-                venice_params = {
-                    "venice_parameters": {"include_venice_system_prompt": False}
-                }
-                options.append(("extra_body", venice_params))
+        if model and model.startswith("venice/"):
+            venice_params = {}
+
+            if no_venice_system_prompt:
+                venice_params["include_venice_system_prompt"] = False
+
+            if character:
+                venice_params["character_slug"] = character
+
+            if venice_params:
+                options.append(("extra_body", {"venice_parameters": venice_params}))
                 kwargs["options"] = options
+
         return kwargs
 
     # Create new prompt command
@@ -114,11 +121,19 @@ def register_commands(cli):
         is_flag=True,
         help="Disable Venice AI's default system prompt",
     )
+    @click.option(
+        "--character",
+        help="Use a Venice AI public character (e.g. 'alan-watts')",
+    )
     @click.pass_context
-    def new_prompt(ctx, no_venice_system_prompt, **kwargs):
+    def new_prompt(ctx, no_venice_system_prompt, character, **kwargs):
         """Execute a prompt"""
         kwargs = process_venice_options(
-            {**kwargs, "no_venice_system_prompt": no_venice_system_prompt}
+            {
+                **kwargs,
+                "no_venice_system_prompt": no_venice_system_prompt,
+                "character": character,
+            }
         )
         return ctx.invoke(original_prompt, **kwargs)
 
@@ -129,21 +144,29 @@ def register_commands(cli):
         is_flag=True,
         help="Disable Venice AI's default system prompt",
     )
+    @click.option(
+        "--character",
+        help="Use a Venice AI character (e.g. 'alan-watts')",
+    )
     @click.pass_context
-    def new_chat(ctx, no_venice_system_prompt, **kwargs):
+    def new_chat(ctx, no_venice_system_prompt, character, **kwargs):
         """Hold an ongoing chat with a model"""
         kwargs = process_venice_options(
-            {**kwargs, "no_venice_system_prompt": no_venice_system_prompt}
+            {
+                **kwargs,
+                "no_venice_system_prompt": no_venice_system_prompt,
+                "character": character,
+            }
         )
         return ctx.invoke(original_chat, **kwargs)
 
     # Copy over all params from original commands
     for param in original_prompt.params:
-        if param.name != "no_venice_system_prompt":
+        if param.name not in ("no_venice_system_prompt", "character"):
             new_prompt.params.append(param)
 
     for param in original_chat.params:
-        if param.name != "no_venice_system_prompt":
+        if param.name not in ("no_venice_system_prompt", "character"):
             new_chat.params.append(param)
 
 
