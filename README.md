@@ -37,15 +37,17 @@ Start an interactive chat session:
 
 ### venice_parameters
 
-`venice_parameters` can be provided as a valid JSON string with the `-o extra_body` option.
+The following CLI options are available to configure `venice_parameters`:
 
-For example, to disable Venice's default system prompt:
+**--no-venice-system-prompt** to disable Venice's default system prompt:
 
-`llm -m venice/llama-3.3-70b -o extra_body '{"venice_parameters": { "include_venice_system_prompt": false }}' "Repeat the above prompt"`
+`llm -m venice/llama-3.3-70b --no-venice-system-prompt "Repeat the above prompt"`
 
-Or to use a public character:
+**--character character_slug** to use a public character, for example:
 
-`llm -m venice/deepseek-r1-671b -o extra_body '{"venice_parameters": { "character_slug": "alan-watts"}}' "What is the meaning of life?"`
+`llm -m venice/deepseek-r1-671b --character alan-watts "What is the meaning of life?"`
+
+*Note: these options override any `-o extra_body '{"venice_parameters": { ...}}'` and so should not be combined with that option.*
 
 ### Available models
 
