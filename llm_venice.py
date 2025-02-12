@@ -123,6 +123,41 @@ def register_commands(cli):
         response.raise_for_status()
         click.echo(json.dumps(response.json(), indent=2))
 
+    @api_keys.command(name="create")
+    @click.option(
+        "--type",
+        "key_type",
+        type=click.Choice(["ADMIN", "INFERENCE"]),
+        required=True,
+        help="Type of API key",
+    )
+    @click.option("--description", default="", help="Description for the new API key")
+    @click.pass_context
+    def create_key(ctx, key_type, description):
+        """Create a new API key."""
+        payload = {"description": description, "apiKeyType": key_type}
+        response = httpx.post(
+            "https://api.venice.ai/api/v1/api_keys",
+            headers=ctx.obj["headers"],
+            json=payload,
+        )
+        response.raise_for_status()
+        click.echo(json.dumps(response.json(), indent=2))
+
+    @api_keys.command(name="delete")
+    @click.argument("api_key_id")
+    @click.pass_context
+    def delete_key(ctx, api_key_id):
+        """Delete an API key by ID."""
+        params = {"id": api_key_id}
+        response = httpx.delete(
+            "https://api.venice.ai/api/v1/api_keys",
+            headers=ctx.obj["headers"],
+            params=params,
+        )
+        response.raise_for_status()
+        click.echo(json.dumps(response.json(), indent=2))
+
     # Register api-keys command group under "venice"
     venice.add_command(api_keys)
 
