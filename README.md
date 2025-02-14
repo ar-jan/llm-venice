@@ -11,10 +11,13 @@ Venice API access is currently in beta.
 
 ## Installation
 
-Install the [LLM command-line utility](https://llm.datasette.io/en/stable/setup.html), and install this plugin in the same environment as `llm`:
+Either install this plugin alongside an existing [LLM install](https://llm.datasette.io/en/stable/setup.html):
 
 `llm install llm-venice`
 
+Or install both using your package manager of choice, e.g.:
+
+`pip install llm-venice`
 
 ## Configuration
 
