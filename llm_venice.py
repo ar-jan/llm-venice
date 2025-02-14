@@ -23,6 +23,7 @@ MODELS = (
     "llama-3.1-405b",
     "llama-3.2-3b",
     "llama-3.3-70b",
+    "qwen-2.5-vl",
     "qwen32b",
 )
 
