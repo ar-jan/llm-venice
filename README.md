@@ -38,6 +38,13 @@ Start an interactive chat session:
 
 `llm chat --model venice/llama-3.1-405b`
 
+### Vision models
+
+Vision models (currently `qwen-2.5-vl`) support the `--attachment` option:
+
+> `llm -m venice/qwen-2.5-vl -a https://upload.wikimedia.org/wikipedia/commons/a/a9/Corvus_corone_-near_Canford_Cliffs%2C_Poole%2C_England-8.jpg "Identify"` \
+> The bird in the image is a raven. Ravens are known for their all-black plumage, thick neck feathers, and strong, slightly curved beaks. They are also notable for their intelligence and are often seen foraging on the ground as depicted in the image.
+
 ### venice_parameters
 
 The following CLI options are available to configure `venice_parameters`:
