@@ -78,16 +78,31 @@ def register_commands(cli):
         if not key:
             raise click.ClickException("No key found for Venice")
         headers = {"Authorization": f"Bearer {key}"}
-        response = httpx.get("https://api.venice.ai/api/v1/models", headers=headers)
-        response.raise_for_status()
-        models = response.json()["data"]
-        text_models = [model["id"] for model in models if model.get("type") == "text"]
-        if not text_models:
-            raise click.ClickException("No text generation models found")
-        path = llm.user_dir() / "llm-venice.json"
-        path.write_text(json.dumps(text_models, indent=4))
-        click.echo(f"{len(text_models)} models saved to {path}", err=True)
-        click.echo(json.dumps(text_models, indent=4))
+
+        # Text and image models need to be fetched separately
+        text_models = httpx.get(
+            "https://api.venice.ai/api/v1/models",
+            headers=headers,
+            params={"type": "text"},
+        )
+        text_models.raise_for_status()
+        text_models = text_models.json()["data"]
+
+        image_models = httpx.get(
+            "https://api.venice.ai/api/v1/models",
+            headers=headers,
+            params={"type": "image"},
+        )
+        image_models.raise_for_status()
+        image_models = image_models.json()["data"]
+
+        models = text_models + image_models
+        if not models:
+            raise click.ClickException("No models found")
+        path = llm.user_dir() / "venice_models.json"
+        path.write_text(json.dumps(models, indent=4))
+        click.echo(f"{len(models)} models saved to {path}", err=True)
+        click.echo(json.dumps(models, indent=4))
 
     @click.group(name="api-keys", invoke_without_command=True)
     @click.pass_context
@@ -253,7 +268,7 @@ def register_models(register):
     if not key:
         return
 
-    path = llm.user_dir() / "llm-venice.json"
+    path = llm.user_dir() / "venice_models.json"
     if path.exists():
         model_ids = json.loads(path.read_text())
     else:
