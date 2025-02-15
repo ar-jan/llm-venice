@@ -16,18 +16,6 @@ except ImportError:
     from pydantic.class_validators import validator as field_validator  # type: ignore [no-redef]
 
 
-MODELS = (
-    "deepseek-r1-671b",
-    "deepseek-r1-llama-70b",
-    "dolphin-2.9.2-qwen2-72b",
-    "llama-3.1-405b",
-    "llama-3.2-3b",
-    "llama-3.3-70b",
-    "qwen-2.5-vl",
-    "qwen32b",
-)
-
-
 class VeniceChatOptions(Chat.Options):
     extra_body: Optional[Union[dict, str]] = Field(
         description=(
@@ -65,6 +53,41 @@ class VeniceChat(Chat):
         pass
 
 
+def refresh_models():
+    "Refresh the list of models from the Venice API"
+    key = llm.get_key("", "venice", "LLM_VENICE_KEY")
+    if not key:
+        raise click.ClickException("No key found for Venice")
+    headers = {"Authorization": f"Bearer {key}"}
+
+    # Text and image models need to be fetched separately
+    text_models = httpx.get(
+        "https://api.venice.ai/api/v1/models",
+        headers=headers,
+        params={"type": "text"},
+    )
+    text_models.raise_for_status()
+    text_models = text_models.json()["data"]
+
+    image_models = httpx.get(
+        "https://api.venice.ai/api/v1/models",
+        headers=headers,
+        params={"type": "image"},
+    )
+    image_models.raise_for_status()
+    image_models = image_models.json()["data"]
+
+    models = text_models + image_models
+    if not models:
+        raise click.ClickException("No models found")
+    path = llm.user_dir() / "venice_models.json"
+    path.write_text(json.dumps(models, indent=4))
+    click.echo(f"{len(models)} models saved to {path}", err=True)
+    click.echo(json.dumps(models, indent=4))
+
+    return models
+
+
 @llm.hookimpl
 def register_commands(cli):
     @cli.group(name="venice")
@@ -73,36 +96,7 @@ def register_commands(cli):
 
     @venice.command(name="refresh")
     def refresh():
-        "Refresh the list of models from the Venice API"
-        key = llm.get_key("", "venice", "LLM_VENICE_KEY")
-        if not key:
-            raise click.ClickException("No key found for Venice")
-        headers = {"Authorization": f"Bearer {key}"}
-
-        # Text and image models need to be fetched separately
-        text_models = httpx.get(
-            "https://api.venice.ai/api/v1/models",
-            headers=headers,
-            params={"type": "text"},
-        )
-        text_models.raise_for_status()
-        text_models = text_models.json()["data"]
-
-        image_models = httpx.get(
-            "https://api.venice.ai/api/v1/models",
-            headers=headers,
-            params={"type": "image"},
-        )
-        image_models.raise_for_status()
-        image_models = image_models.json()["data"]
-
-        models = text_models + image_models
-        if not models:
-            raise click.ClickException("No models found")
-        path = llm.user_dir() / "venice_models.json"
-        path.write_text(json.dumps(models, indent=4))
-        click.echo(f"{len(models)} models saved to {path}", err=True)
-        click.echo(json.dumps(models, indent=4))
+        refresh_models()
 
     @click.group(name="api-keys", invoke_without_command=True)
     @click.pass_context
@@ -268,18 +262,20 @@ def register_models(register):
     if not key:
         return
 
-    path = llm.user_dir() / "venice_models.json"
-    if path.exists():
-        model_ids = json.loads(path.read_text())
+    venice_models = llm.user_dir() / "venice_models.json"
+    if venice_models.exists():
+        models = json.loads(venice_models.read_text())
     else:
-        model_ids = MODELS
+        models = refresh_models()
 
-    for model_id in model_ids:
-        register(
-            VeniceChat(
-                model_id=f"venice/{model_id}",
-                model_name=model_id,
-                api_base="https://api.venice.ai/api/v1",
-                can_stream=True,
+    for model in models:
+        model_id = model["id"]
+        if model.get("type") == "text":
+            register(
+                VeniceChat(
+                    model_id=f"venice/{model_id}",
+                    model_name=model_id,
+                    api_base="https://api.venice.ai/api/v1",
+                    can_stream=True,
+                )
             )
-        )
