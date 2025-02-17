@@ -172,6 +172,7 @@ def register_commands(cli):
     venice.add_command(api_keys)
 
     # Remove and store the original prompt and chat commands
+    # in order to add them back with custom cli options
     original_prompt = cli.commands.pop("prompt")
     original_chat = cli.commands.pop("chat")
 
