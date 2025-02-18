@@ -23,5 +23,7 @@ jobs:
       run: |
         pip install -e '.[test]'
     - name: Run tests
+      env:
+        LLM_VENICE_KEY: ${{ secrets.LLM_VENICE_KEY }}
       run: |
         pytest
