@@ -23,3 +23,8 @@ venice = "llm_venice"
 
 [project.optional-dependencies]
 test = ["pytest", "jsonschema"]
+
+[tool.pytest.ini_options]
+markers = [
+    "api: marks tests that call external APIs"
+]
