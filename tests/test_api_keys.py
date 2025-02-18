@@ -3,9 +3,7 @@ import pathlib
 
 from click.testing import CliRunner
 from jsonschema import Draft202012Validator
-import llm
 from llm.cli import cli
-from llm.plugins import load_plugins
 import pytest
 
 
@@ -17,7 +15,6 @@ with open(api_keys_rate_limits_path) as f:
 
 
 def test_rate_limits():
-    load_plugins()
     """Test that 'api-keys rate-limits' output matches expected schema"""
     runner = CliRunner()
     result = runner.invoke(cli, ["venice", "api-keys", "rate-limits"])
