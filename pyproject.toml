@@ -22,4 +22,4 @@ CI = "https://github.com/ar-jan/llm-venice/actions"
 venice = "llm_venice"
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pytest", "jsonschema"]
