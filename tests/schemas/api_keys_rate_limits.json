@@ -1,0 +1,81 @@
+{
+    "type": "object",
+    "properties": {
+        "data": {
+            "type": "object",
+            "properties": {
+                "apiTier": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string"
+                        },
+                        "isCharged": {
+                            "type": "boolean"
+                        }
+                    },
+                    "required": [
+                        "id",
+                        "isCharged"
+                    ]
+                },
+                "accessPermitted": {
+                    "type": "boolean"
+                },
+                "balances": {
+                    "type": "object",
+                    "properties": {
+                        "VCU": {
+                            "type": "number"
+                        }
+                    },
+                    "required": [
+                        "VCU"
+                    ]
+                },
+                "rateLimits": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "apiModelId": {
+                                "type": "string"
+                            },
+                            "rateLimits": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "amount": {
+                                            "type": "number"
+                                        },
+                                        "type": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "amount",
+                                        "type"
+                                    ]
+                                }
+                            }
+                        },
+                        "required": [
+                            "apiModelId",
+                            "rateLimits"
+                        ]
+                    }
+                }
+            },
+            "required": [
+                "apiTier",
+                "accessPermitted",
+                "balances",
+                "rateLimits"
+            ]
+        }
+    },
+    "required": [
+        "data"
+    ]
+}
