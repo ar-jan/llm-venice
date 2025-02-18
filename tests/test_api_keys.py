@@ -2,7 +2,7 @@ import json
 import pathlib
 
 from click.testing import CliRunner
-from jsonschema import validate, ValidationError
+from jsonschema import Draft202012Validator
 import llm
 from llm.cli import cli
 from llm.plugins import load_plugins
@@ -23,9 +23,16 @@ def test_rate_limits():
     result = runner.invoke(cli, ["venice", "api-keys", "rate-limits"])
 
     assert result.exit_code == 0
-    data = json.loads(result.output)
 
     try:
-        validate(instance=data, schema=api_keys_rate_limits_schema)
-    except ValidationError as e:
-        pytest.fail(f"Response did not match schema: {str(e)}")
+        data = json.loads(result.output)
+        # jsonschema validate shows full response data on error
+        validator = Draft202012Validator(api_keys_rate_limits_schema)
+        errors = list(validator.iter_errors(data))
+        if errors:
+            error = errors[0]
+            error_path = " -> ".join(str(p) for p in error.path)
+            error_message = f"Schema validation failed at path: {error_path}"
+            pytest.fail(error_message)
+    except json.JSONDecodeError:
+        pytest.fail("Response was not valid JSON")
