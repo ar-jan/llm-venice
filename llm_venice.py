@@ -128,7 +128,7 @@ def register_commands(cli):
     def rate_limits(ctx):
         "Show current rate limits for your API key"
         response = httpx.get(
-            "https://api.venice.ai/api/v1/api_keys", headers=ctx.obj["headers"]
+            "https://api.venice.ai/api/v1/api_keys/rate_limits", headers=ctx.obj["headers"]
         )
         response.raise_for_status()
         click.echo(json.dumps(response.json(), indent=2))
