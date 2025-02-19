@@ -142,10 +142,28 @@ def register_commands(cli):
         help="Type of API key",
     )
     @click.option("--description", default="", help="Description for the new API key")
+    @click.option(
+        "--expiration-date",
+        type=click.DateTime(
+            formats=[
+                "%Y-%m-%d",  # 2025-02-19
+                "%Y-%m-%dT%H:%M",  # 2025-02-19T00:00
+                "%Y-%m-%dT%H:%M:%S",  # 2025-02-19T00:00:00
+            ]
+        ),
+        default=None,
+        help="The API Key expiration date",
+    )
     @click.pass_context
-    def create_key(ctx, key_type, description):
+    def create_key(ctx, description, key_type, expiration_date):
         """Create a new API key."""
-        payload = {"description": description, "apiKeyType": key_type}
+        payload = {
+            "description": description,
+            "apiKeyType": key_type,
+            "expiresAt": expiration_date.strftime("%Y-%m-%dT%H:%M:%SZ")
+            if expiration_date
+            else None,
+        }
         response = httpx.post(
             "https://api.venice.ai/api/v1/api_keys",
             headers=ctx.obj["headers"],
