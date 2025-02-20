@@ -146,9 +146,9 @@ def register_commands(cli):
         "--expiration-date",
         type=click.DateTime(
             formats=[
-                "%Y-%m-%d",  # 2025-02-19
-                "%Y-%m-%dT%H:%M",  # 2025-02-19T00:00
-                "%Y-%m-%dT%H:%M:%S",  # 2025-02-19T00:00:00
+                "%Y-%m-%d",
+                "%Y-%m-%dT%H:%M",
+                "%Y-%m-%dT%H:%M:%S",
             ]
         ),
         default=None,
@@ -162,7 +162,7 @@ def register_commands(cli):
             "apiKeyType": key_type,
             "expiresAt": expiration_date.strftime("%Y-%m-%dT%H:%M:%SZ")
             if expiration_date
-            else None,
+            else "",
         }
         response = httpx.post(
             "https://api.venice.ai/api/v1/api_keys",
