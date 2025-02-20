@@ -101,7 +101,7 @@ def register_commands(cli):
     @click.group(name="api-keys", invoke_without_command=True)
     @click.pass_context
     def api_keys(ctx):
-        """Manage API keys - list, or rate-limits"""
+        """Manage API keys - list, create, delete, rate-limits"""
         # Retrieve the API key once and store it in context
         key = llm.get_key("", "venice", "LLM_VENICE_KEY")
         if not key:
