@@ -128,7 +128,8 @@ def register_commands(cli):
     def rate_limits(ctx):
         "Show current rate limits for your API key"
         response = httpx.get(
-            "https://api.venice.ai/api/v1/api_keys/rate_limits", headers=ctx.obj["headers"]
+            "https://api.venice.ai/api/v1/api_keys/rate_limits",
+            headers=ctx.obj["headers"],
         )
         response.raise_for_status()
         click.echo(json.dumps(response.json(), indent=2))
@@ -142,10 +143,28 @@ def register_commands(cli):
         help="Type of API key",
     )
     @click.option("--description", default="", help="Description for the new API key")
+    @click.option(
+        "--expiration-date",
+        type=click.DateTime(
+            formats=[
+                "%Y-%m-%d",
+                "%Y-%m-%dT%H:%M",
+                "%Y-%m-%dT%H:%M:%S",
+            ]
+        ),
+        default=None,
+        help="The API Key expiration date",
+    )
     @click.pass_context
-    def create_key(ctx, key_type, description):
+    def create_key(ctx, description, key_type, expiration_date):
         """Create a new API key."""
-        payload = {"description": description, "apiKeyType": key_type}
+        payload = {
+            "description": description,
+            "apiKeyType": key_type,
+            "expiresAt": expiration_date.strftime("%Y-%m-%dT%H:%M:%SZ")
+            if expiration_date
+            else "",
+        }
         response = httpx.post(
             "https://api.venice.ai/api/v1/api_keys",
             headers=ctx.obj["headers"],
