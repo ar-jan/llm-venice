@@ -1,4 +1,7 @@
+import base64
+import datetime
 import json
+from pathlib import Path
 from typing import Optional, Union
 
 import click
@@ -51,6 +54,97 @@ class VeniceChat(Chat):
 
     class Options(VeniceChatOptions):
         pass
+
+
+class VeniceImageOptions(llm.Options):
+    negative_prompt: Optional[str] = Field(
+        description="Negative prompt to guide image generation away from certain features",
+        default=None,
+    )
+    style_preset: Optional[str] = Field(
+        description="Style preset to use for generation", default=None
+    )
+    height: Optional[int] = Field(
+        description="Height of generated image", default=1024, ge=64, le=2048
+    )
+    width: Optional[int] = Field(
+        description="Width of generated image", default=1024, ge=64, le=2048
+    )
+    steps: Optional[int] = Field(
+        description="Number of inference steps", default=30, ge=1, le=100
+    )
+    cfg_scale: Optional[float] = Field(
+        description="CFG scale for generation", default=7.5, ge=1.0, le=20.0
+    )
+    seed: Optional[int] = Field(
+        description="Random seed for reproducible generation", default=None
+    )
+    lora_strength: Optional[int] = Field(
+        description="LoRA adapter strength percentage", default=50, ge=1, le=100
+    )
+    safe_mode: Optional[bool] = Field(description="Enable safety filters", default=True)
+    hide_watermark: Optional[bool] = Field(
+        description="Hide watermark in generated image", default=False
+    )
+    return_binary: Optional[bool] = Field(
+        description="Return raw binary instead of base64", default=False
+    )
+    output_filename: Optional[str] = Field(
+        description="Custom filename for saved image", default=None
+    )
+
+
+class VeniceImage(llm.Model):
+    can_stream = False
+    needs_key = "venice"
+    key_env_var = "LLM_VENICE_KEY"
+
+    def __init__(self, model_id, model_name=None):
+        self.model_id = f"venice/{model_id}"
+        self.model_name = model_id
+
+    class Options(VeniceImageOptions):
+        pass
+
+    def execute(self, prompt, stream, response, conversation=None):
+        key = self.get_key()
+
+        options_dict = prompt.options.dict()
+        output_filename = options_dict.pop("output_filename", None)
+        return_binary = options_dict.pop("return_binary", False)
+
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt.prompt,
+            **{k: v for k, v in options_dict.items() if v is not None},
+        }
+
+        url = "https://api.venice.ai/api/v1/image/generate"
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+
+        r = httpx.post(url, headers=headers, json=payload, timeout=120)
+
+        try:
+            r.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise ValueError(f"API request failed: {e.response.text}")
+
+        data = r.json()
+
+        image_data = data["images"][0]
+
+        if not return_binary:
+            image_data = base64.b64decode(image_data)
+
+        image_dir = llm.user_dir() / "images"
+        image_dir.mkdir(exist_ok=True)
+
+        if not output_filename:
+            datestring = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+            output_filename = f"{datestring}_venice_{self.model_name}.png"
+        output_filepath = image_dir / output_filename
+        output_filepath.write_bytes(image_data)
+        yield f"Image saved to {output_filepath}"
 
 
 def refresh_models():
@@ -305,3 +399,5 @@ def register_models(register):
                     **model_configs.get(model_id, {}),
                 )
             )
+        elif model.get("type") == "image":
+            register(VeniceImage(model_id=model_id, model_name=model_id))
