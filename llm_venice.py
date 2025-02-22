@@ -65,26 +65,31 @@ class VeniceImageOptions(llm.Options):
         description="Style preset to use for generation", default=None
     )
     height: Optional[int] = Field(
-        description="Height of generated image", default=1024, ge=64, le=2048
+        description="Height of generated image", default=1024, ge=64, le=1280
     )
     width: Optional[int] = Field(
-        description="Width of generated image", default=1024, ge=64, le=2048
+        description="Width of generated image", default=1024, ge=64, le=1280
     )
     steps: Optional[int] = Field(
-        description="Number of inference steps", default=30, ge=1, le=100
+        description="Number of inference steps", default=None, ge=7, le=50
     )
     cfg_scale: Optional[float] = Field(
-        description="CFG scale for generation", default=7.5, ge=1.0, le=20.0
+        description="CFG scale for generation", default=None, gt=0, le=20.0
     )
     seed: Optional[int] = Field(
-        description="Random seed for reproducible generation", default=None
+        description="Random seed for reproducible generation",
+        default=None,
+        ge=-999999999,
+        le=999999999,
     )
     lora_strength: Optional[int] = Field(
-        description="LoRA adapter strength percentage", default=50, ge=1, le=100
+        description="LoRA adapter strength percentage", default=None, ge=0, le=100
     )
-    safe_mode: Optional[bool] = Field(description="Enable safety filters", default=True)
+    safe_mode: Optional[bool] = Field(
+        description="Enable safety filters", default=False
+    )
     hide_watermark: Optional[bool] = Field(
-        description="Hide watermark in generated image", default=False
+        description="Hide watermark in generated image", default=True
     )
     return_binary: Optional[bool] = Field(
         description="Return raw binary instead of base64", default=False
