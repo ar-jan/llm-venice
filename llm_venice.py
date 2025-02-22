@@ -1,3 +1,5 @@
+import base64
+import datetime
 import json
 from typing import Optional, Union
 
@@ -51,6 +53,127 @@ class VeniceChat(Chat):
 
     class Options(VeniceChatOptions):
         pass
+
+
+class VeniceImageOptions(llm.Options):
+    negative_prompt: Optional[str] = Field(
+        description="Negative prompt to guide image generation away from certain features",
+        default=None,
+    )
+    style_preset: Optional[str] = Field(
+        description="Style preset to use for generation", default=None
+    )
+    height: Optional[int] = Field(
+        description="Height of generated image", default=1024, ge=64, le=1280
+    )
+    width: Optional[int] = Field(
+        description="Width of generated image", default=1024, ge=64, le=1280
+    )
+    steps: Optional[int] = Field(
+        description="Number of inference steps", default=None, ge=7, le=50
+    )
+    cfg_scale: Optional[float] = Field(
+        description="CFG scale for generation", default=None, gt=0, le=20.0
+    )
+    seed: Optional[int] = Field(
+        description="Random seed for reproducible generation",
+        default=None,
+        ge=-999999999,
+        le=999999999,
+    )
+    lora_strength: Optional[int] = Field(
+        description="LoRA adapter strength percentage", default=None, ge=0, le=100
+    )
+    safe_mode: Optional[bool] = Field(
+        description="Enable safety filters", default=False
+    )
+    hide_watermark: Optional[bool] = Field(
+        description="Hide watermark in generated image", default=True
+    )
+    return_binary: Optional[bool] = Field(
+        description="Return raw binary instead of base64", default=False
+    )
+    output_filename: Optional[str] = Field(
+        description="Custom filename for saved image", default=None
+    )
+    overwrite_files: Optional[bool] = Field(
+        description="Option to overwrite existing output files", default=False
+    )
+
+
+class VeniceImage(llm.Model):
+    can_stream = False
+    needs_key = "venice"
+    key_env_var = "LLM_VENICE_KEY"
+
+    def __init__(self, model_id, model_name=None):
+        self.model_id = f"venice/{model_id}"
+        self.model_name = model_id
+
+    class Options(VeniceImageOptions):
+        pass
+
+    def execute(self, prompt, stream, response, conversation=None):
+        key = self.get_key()
+
+        options_dict = prompt.options.dict()
+        output_filename = options_dict.pop("output_filename", None)
+        overwrite_files = options_dict.pop("overwrite_files", False)
+        return_binary = options_dict.get("return_binary", False)
+
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt.prompt,
+            **{k: v for k, v in options_dict.items() if v is not None},
+        }
+
+        url = "https://api.venice.ai/api/v1/image/generate"
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+
+        r = httpx.post(url, headers=headers, json=payload, timeout=120)
+
+        try:
+            r.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise ValueError(f"API request failed: {e.response.text}")
+
+        if return_binary:
+            image_bytes = r.content
+        else:
+            data = r.json()
+            # Store generation parameters including seed in response_json
+            response.response_json = {
+                "request": data["request"],
+                "timing": data["timing"],
+            }
+            image_data = data["images"][0]
+            try:
+                image_bytes = base64.b64decode(image_data)
+            except Exception as e:
+                raise ValueError(f"Failed to decode base64 image data: {e}")
+
+        image_dir = llm.user_dir() / "images"
+        image_dir.mkdir(exist_ok=True)
+
+        if not output_filename:
+            datestring = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+            output_filename = f"{datestring}_venice_{self.model_name}.png"
+
+        output_filepath = image_dir / output_filename
+
+        # Handle existing files
+        if output_filepath.exists() and not overwrite_files:
+            stem = output_filepath.stem
+            suffix = output_filepath.suffix
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            new_filename = f"{stem}_{timestamp}{suffix}"
+            output_filepath = image_dir / new_filename
+
+        try:
+            output_filepath.write_bytes(image_bytes)
+            yield f"Image saved to {output_filepath}"
+        except Exception as e:
+            raise ValueError(f"Failed to write image file: {e}")
 
 
 def refresh_models():
@@ -305,3 +428,5 @@ def register_models(register):
                     **model_configs.get(model_id, {}),
                 )
             )
+        elif model.get("type") == "image":
+            register(VeniceImage(model_id=model_id, model_name=model_id))
