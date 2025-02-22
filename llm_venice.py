@@ -97,6 +97,9 @@ class VeniceImageOptions(llm.Options):
     output_filename: Optional[str] = Field(
         description="Custom filename for saved image", default=None
     )
+    overwrite_files: Optional[bool] = Field(
+        description="Option to overwrite existing output files", default=False
+    )
 
 
 class VeniceImage(llm.Model):
@@ -116,6 +119,7 @@ class VeniceImage(llm.Model):
 
         options_dict = prompt.options.dict()
         output_filename = options_dict.pop("output_filename", None)
+        overwrite_files = options_dict.pop("overwrite_files", False)
         return_binary = options_dict.get("return_binary", False)
 
         payload = {
@@ -150,9 +154,22 @@ class VeniceImage(llm.Model):
         if not output_filename:
             datestring = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
             output_filename = f"{datestring}_venice_{self.model_name}.png"
+
         output_filepath = image_dir / output_filename
-        output_filepath.write_bytes(image_bytes)
-        yield f"Image saved to {output_filepath}"
+
+        # Handle existing files
+        if output_filepath.exists() and not overwrite_files:
+            stem = output_filepath.stem
+            suffix = output_filepath.suffix
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            new_filename = f"{stem}_{timestamp}{suffix}"
+            output_filepath = image_dir / new_filename
+
+        try:
+            output_filepath.write_bytes(image_bytes)
+            yield f"Image saved to {output_filepath}"
+        except Exception as e:
+            raise ValueError(f"Failed to write image file: {e}")
 
 
 def refresh_models():
