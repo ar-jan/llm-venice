@@ -141,6 +141,11 @@ class VeniceImage(llm.Model):
             image_bytes = r.content
         else:
             data = r.json()
+            # Store generation parameters including seed in response_json
+            response.response_json = {
+                "request": data["request"],
+                "timing": data["timing"],
+            }
             image_data = data["images"][0]
             try:
                 image_bytes = base64.b64decode(image_data)
