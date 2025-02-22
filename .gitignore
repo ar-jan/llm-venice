@@ -20,3 +20,6 @@ venv
 
 # Aider
 .aider*
+
+# Various
+.env
