@@ -116,7 +116,7 @@ class VeniceImage(llm.Model):
 
         options_dict = prompt.options.dict()
         output_filename = options_dict.pop("output_filename", None)
-        return_binary = options_dict.pop("return_binary", False)
+        return_binary = options_dict.get("return_binary", False)
 
         payload = {
             "model": self.model_name,
@@ -134,12 +134,15 @@ class VeniceImage(llm.Model):
         except httpx.HTTPStatusError as e:
             raise ValueError(f"API request failed: {e.response.text}")
 
-        data = r.json()
-
-        image_data = data["images"][0]
-
-        if not return_binary:
-            image_data = base64.b64decode(image_data)
+        if return_binary:
+            image_bytes = r.content
+        else:
+            data = r.json()
+            image_data = data["images"][0]
+            try:
+                image_bytes = base64.b64decode(image_data)
+            except Exception as e:
+                raise ValueError(f"Failed to decode base64 image data: {e}")
 
         image_dir = llm.user_dir() / "images"
         image_dir.mkdir(exist_ok=True)
@@ -148,7 +151,7 @@ class VeniceImage(llm.Model):
             datestring = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
             output_filename = f"{datestring}_venice_{self.model_name}.png"
         output_filepath = image_dir / output_filename
-        output_filepath.write_bytes(image_data)
+        output_filepath.write_bytes(image_bytes)
         yield f"Image saved to {output_filepath}"
 
 
