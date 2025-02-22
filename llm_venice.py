@@ -1,7 +1,6 @@
 import base64
 import datetime
 import json
-from pathlib import Path
 from typing import Optional, Union
 
 import click
