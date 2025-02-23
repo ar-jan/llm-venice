@@ -22,7 +22,11 @@ CI = "https://github.com/ar-jan/llm-venice/actions"
 venice = "llm_venice"
 
 [project.optional-dependencies]
-test = ["pytest", "jsonschema"]
+test = [
+    "jsonschema",
+    "pytest",
+    "sqlite_utils",
+]
 
 [tool.pytest.ini_options]
 markers = [
