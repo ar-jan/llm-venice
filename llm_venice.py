@@ -311,6 +311,7 @@ def register_commands(cli):
     def process_venice_options(kwargs):
         """Helper to process venice-specific options"""
         no_venice_system_prompt = kwargs.pop("no_venice_system_prompt", False)
+        enable_web_search = kwargs.pop("enable_web_search", False)
         character = kwargs.pop("character", None)
         options = list(kwargs.get("options", []))
         model = kwargs.get("model_id")
@@ -320,6 +321,9 @@ def register_commands(cli):
 
             if no_venice_system_prompt:
                 venice_params["include_venice_system_prompt"] = False
+
+            if enable_web_search:
+                venice_params["enable_web_search"] = enable_web_search
 
             if character:
                 venice_params["character_slug"] = character
@@ -341,16 +345,24 @@ def register_commands(cli):
         help="Disable Venice AI's default system prompt",
     )
     @click.option(
+        "--enable_web_search",
+        type=click.Choice(["auto", "on", "off"]),
+        help="Enable web search",
+    )
+    @click.option(
         "--character",
         help="Use a Venice AI public character (e.g. 'alan-watts')",
     )
     @click.pass_context
-    def new_prompt(ctx, no_venice_system_prompt, character, **kwargs):
+    def new_prompt(
+        ctx, no_venice_system_prompt, enable_web_search, character, **kwargs
+    ):
         """Execute a prompt"""
         kwargs = process_venice_options(
             {
                 **kwargs,
                 "no_venice_system_prompt": no_venice_system_prompt,
+                "enable_web_search": enable_web_search,
                 "character": character,
             }
         )
@@ -364,16 +376,22 @@ def register_commands(cli):
         help="Disable Venice AI's default system prompt",
     )
     @click.option(
+        "--enable_web_search",
+        type=click.Choice(["auto", "on", "off"]),
+        help="Enable web search",
+    )
+    @click.option(
         "--character",
         help="Use a Venice AI character (e.g. 'alan-watts')",
     )
     @click.pass_context
-    def new_chat(ctx, no_venice_system_prompt, character, **kwargs):
+    def new_chat(ctx, no_venice_system_prompt, enable_web_search, character, **kwargs):
         """Hold an ongoing chat with a model"""
         kwargs = process_venice_options(
             {
                 **kwargs,
                 "no_venice_system_prompt": no_venice_system_prompt,
+                "enable_web_search": enable_web_search,
                 "character": character,
             }
         )
@@ -381,11 +399,19 @@ def register_commands(cli):
 
     # Copy over all params from original commands
     for param in original_prompt.params:
-        if param.name not in ("no_venice_system_prompt", "character"):
+        if param.name not in (
+            "no_venice_system_prompt",
+            "enable_web_search",
+            "character",
+        ):
             new_prompt.params.append(param)
 
     for param in original_chat.params:
-        if param.name not in ("no_venice_system_prompt", "character"):
+        if param.name not in (
+            "no_venice_system_prompt",
+            "enable_web_search",
+            "character",
+        ):
             new_chat.params.append(param)
 
 
