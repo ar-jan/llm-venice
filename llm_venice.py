@@ -183,24 +183,14 @@ def refresh_models():
         raise click.ClickException("No key found for Venice")
     headers = {"Authorization": f"Bearer {key}"}
 
-    # Text and image models need to be fetched separately
-    text_models = httpx.get(
+    models = httpx.get(
         "https://api.venice.ai/api/v1/models",
         headers=headers,
-        params={"type": "text"},
+        params={"type": "all"},
     )
-    text_models.raise_for_status()
-    text_models = text_models.json()["data"]
+    models.raise_for_status()
+    models = models.json()["data"]
 
-    image_models = httpx.get(
-        "https://api.venice.ai/api/v1/models",
-        headers=headers,
-        params={"type": "image"},
-    )
-    image_models.raise_for_status()
-    image_models = image_models.json()["data"]
-
-    models = text_models + image_models
     if not models:
         raise click.ClickException("No models found")
     path = llm.user_dir() / "venice_models.json"
