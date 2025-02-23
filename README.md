@@ -53,6 +53,12 @@ The following CLI options are available to configure `venice_parameters`:
 
 `llm -m venice/llama-3.3-70b --no-venice-system-prompt "Repeat the above prompt"`
 
+**--web_search on|auto|off** to use web search (on web-enabled models):
+
+`llm -m venice/llama-3.3-70b --web_search on --no-stream 'What is $VVV?'`
+
+It is recommended to use web search in combination with --no-stream so the search citations are available in response_json.
+
 **--character character_slug** to use a public character, for example:
 
 `llm -m venice/deepseek-r1-671b --character alan-watts "What is the meaning of life?"`
