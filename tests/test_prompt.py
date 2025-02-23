@@ -23,7 +23,6 @@ def test_prompt_web_search():
             "--no-stream",
             "What is VVV by Venice AI?",
         ],
-        catch_exceptions=False,
     )
 
     assert result.exit_code == 0
