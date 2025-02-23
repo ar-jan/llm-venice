@@ -45,6 +45,18 @@ Vision models (currently `qwen-2.5-vl`) support the `--attachment` option:
 > `llm -m venice/qwen-2.5-vl -a https://upload.wikimedia.org/wikipedia/commons/a/a9/Corvus_corone_-near_Canford_Cliffs%2C_Poole%2C_England-8.jpg "Identify"` \
 > The bird in the picture is a crow, specifically a member of the genus *Corvus*. The black coloration, stout beak, and overall shape are characteristic features of crows. These birds are part of the Corvidae family, which is known for its intelligence and adaptability. [...]
 
+### Image generation
+
+Generated images are stored in the LLM user directory. Example:
+
+`llm -m venice/stable-diffusion-3.5 "Painting of a traditional Dutch windmill" -o style_preset "Watercolor"`
+
+Besides the Venice API image generation parameters, you can specify the output filename and whether or not to overwrite existing files.
+
+Check the available parameters with something like:
+
+`llm models list --options --query diffusion`
+
 ### venice_parameters
 
 The following CLI options are available to configure `venice_parameters`:
