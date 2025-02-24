@@ -18,7 +18,7 @@ def test_prompt_web_search():
             "prompt",
             "-m",
             "venice/llama-3.3-70b",
-            "--web_search",
+            "--web-search",
             "on",
             "--no-stream",
             "What is VVV by Venice AI?",

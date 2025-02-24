@@ -345,7 +345,7 @@ def register_commands(cli):
         help="Disable Venice AI's default system prompt",
     )
     @click.option(
-        "--web_search",
+        "--web-search",
         type=click.Choice(["auto", "on", "off"]),
         help="Enable web search",
     )
@@ -376,7 +376,7 @@ def register_commands(cli):
         help="Disable Venice AI's default system prompt",
     )
     @click.option(
-        "--web_search",
+        "--web-search",
         type=click.Choice(["auto", "on", "off"]),
         help="Enable web search",
     )

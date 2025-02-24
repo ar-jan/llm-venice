@@ -65,9 +65,9 @@ The following CLI options are available to configure `venice_parameters`:
 
 `llm -m venice/llama-3.3-70b --no-venice-system-prompt "Repeat the above prompt"`
 
-**--web_search on|auto|off** to use web search (on web-enabled models):
+**--web-search on|auto|off** to use web search (on web-enabled models):
 
-`llm -m venice/llama-3.3-70b --web_search on --no-stream 'What is $VVV?'`
+`llm -m venice/llama-3.3-70b --web-search on --no-stream 'What is $VVV?'`
 
 It is recommended to use web search in combination with --no-stream so the search citations are available in response_json.
 
