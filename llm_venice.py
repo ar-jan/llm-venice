@@ -110,6 +110,9 @@ class VeniceImage(llm.Model):
         self.model_id = f"venice/{model_id}"
         self.model_name = model_id
 
+    def __str__(self):
+        return f"Venice Image: {self.model_id}"
+
     class Options(VeniceImageOptions):
         pass
 
