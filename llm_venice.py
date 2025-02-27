@@ -131,7 +131,11 @@ class VeniceImage(llm.Model):
         }
 
         url = "https://api.venice.ai/api/v1/image/generate"
-        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Accept-Encoding": "gzip",
+            "Content-Type": "application/json",
+        }
 
         r = httpx.post(url, headers=headers, json=payload, timeout=120)
 
