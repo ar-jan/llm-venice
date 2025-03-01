@@ -310,6 +310,39 @@ def register_commands(cli):
     # Register api-keys command group under "venice"
     venice.add_command(api_keys)
 
+    @venice.command(name="characters")
+    @click.option(
+        "--web-enabled",
+        type=click.Choice(["true", "false"]),
+        help="Filter by web-enabled status",
+    )
+    @click.option(
+        "--adult", type=click.Choice(["true", "false"]), help="Filter by adult category"
+    )
+    def characters(web_enabled, adult):
+        """List public characters."""
+        key = llm.get_key("", "venice", "LLM_VENICE_KEY")
+        if not key:
+            raise click.ClickException("No key found for Venice")
+        headers = {"Authorization": f"Bearer {key}"}
+        params = {}
+        params = {
+            k: v
+            for k, v in {"isWebEnabled": web_enabled, "isAdult": adult}.items()
+            if v
+        }
+        response = httpx.get(
+            "https://api.venice.ai/api/v1/characters",
+            headers=headers,
+            params=params,
+        )
+        response.raise_for_status()
+        characters = response.json()
+        path = llm.user_dir() / "venice_characters.json"
+        path.write_text(json.dumps(characters, indent=4))
+        characters_count = len(characters.get("data", []))
+        click.echo(f"{characters_count} models saved to {path}", err=True)
+
     # Remove and store the original prompt and chat commands
     # in order to add them back with custom cli options
     original_prompt = cli.commands.pop("prompt")
