@@ -153,7 +153,11 @@ def register_commands(cli):
             params=params,
         )
         response.raise_for_status()
-        click.echo(json.dumps(response.json(), indent=2))
+        characters = response.json()
+        path = llm.user_dir() / "venice_characters.json"
+        path.write_text(json.dumps(characters, indent=4))
+        characters_count = len(characters.get("data", []))
+        click.echo(f"{characters_count} models saved to {path}", err=True)
 
     # Remove and store the original prompt and chat commands
     original_prompt = cli.commands.pop("prompt")
