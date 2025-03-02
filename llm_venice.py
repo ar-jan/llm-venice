@@ -7,15 +7,7 @@ import click
 import httpx
 import llm
 from llm.default_plugins.openai_models import Chat
-
-try:
-    # Pydantic 2
-    from pydantic import field_validator, Field  # type: ignore
-
-except ImportError:
-    # Pydantic 1
-    from pydantic.fields import Field
-    from pydantic.class_validators import validator as field_validator  # type: ignore [no-redef]
+from pydantic import field_validator, Field
 
 
 class VeniceChatOptions(Chat.Options):
