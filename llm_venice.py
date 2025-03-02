@@ -473,7 +473,7 @@ def register_models(register):
                     model_name=model_id,
                     api_base="https://api.venice.ai/api/v1",
                     can_stream=True,
-                    **model_configs.get(model_id, {}),
+                    vision=model_configs.get(model_id, {}).get("vision", False),
                 )
             )
         elif model.get("type") == "image":
