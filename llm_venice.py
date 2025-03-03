@@ -480,6 +480,7 @@ def register_models(register):
                 api_base="https://api.venice.ai/api/v1",
                 can_stream=True,
                 vision=model_configs.get(model_id, {}).get("vision", False),
+                supports_schema=capabilities.get("supportsResponseSchema", False)
             )
             model_instance.supports_web_search = capabilities.get("supportsWebSearch", False)
             register(model_instance)
