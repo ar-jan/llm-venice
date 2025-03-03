@@ -39,6 +39,7 @@ class VeniceChatOptions(Chat.Options):
 class VeniceChat(Chat):
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
+    supports_web_search = False
 
     def __str__(self):
         return f"Venice Chat: {self.model_id}"
@@ -346,15 +347,20 @@ def register_commands(cli):
         web_search = kwargs.pop("web_search", False)
         character = kwargs.pop("character", None)
         options = list(kwargs.get("options", []))
-        model = kwargs.get("model_id")
+        model_id = kwargs.get("model_id")
 
-        if model and model.startswith("venice/"):
+        if model_id and model_id.startswith("venice/"):
+            model = llm.get_model(model_id)
             venice_params = {}
 
             if no_venice_system_prompt:
                 venice_params["include_venice_system_prompt"] = False
 
             if web_search:
+                if not getattr(model, "supports_web_search", False):
+                    raise click.ClickException(
+                        f"Model {model_id} does not support web search"
+                    )
                 venice_params["enable_web_search"] = web_search
 
             if character:
@@ -466,15 +472,16 @@ def register_models(register):
 
     for model in models:
         model_id = model["id"]
+        capabilities = model.get("model_spec", {}).get("capabilities", {})
         if model.get("type") == "text":
-            register(
-                VeniceChat(
-                    model_id=f"venice/{model_id}",
-                    model_name=model_id,
-                    api_base="https://api.venice.ai/api/v1",
-                    can_stream=True,
-                    vision=model_configs.get(model_id, {}).get("vision", False),
-                )
+            model_instance = VeniceChat(
+                model_id=f"venice/{model_id}",
+                model_name=model_id,
+                api_base="https://api.venice.ai/api/v1",
+                can_stream=True,
+                vision=model_configs.get(model_id, {}).get("vision", False),
             )
+            model_instance.supports_web_search = capabilities.get("supportsWebSearch", False)
+            register(model_instance)
         elif model.get("type") == "image":
             register(VeniceImage(model_id=model_id, model_name=model_id))
