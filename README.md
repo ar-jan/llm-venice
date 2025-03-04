@@ -38,6 +38,15 @@ Start an interactive chat session:
 
 `llm chat --model venice/llama-3.1-405b`
 
+#### Structured Outputs
+
+Some models support structuring their output according to a JSON schema supplied via `response_format`.
+This works via llm's --schema option, for example:
+
+`llm -m venice/dolphin-2.9.2-qwen2-72b --schema "name, age int, one_sentence_bio" "Invent an evil supervillain"`
+
+Consult [llm's schemas](https://llm.datasette.io/en/stable/schemas.html) documentation for more options.
+
 ### Vision models
 
 Vision models (currently `qwen-2.5-vl`) support the `--attachment` option:
