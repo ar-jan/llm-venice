@@ -392,9 +392,7 @@ def register_commands(cli):
         help="Use a Venice AI public character (e.g. 'alan-watts')",
     )
     @click.pass_context
-    def new_prompt(
-        ctx, no_venice_system_prompt, web_search, character, **kwargs
-    ):
+    def new_prompt(ctx, no_venice_system_prompt, web_search, character, **kwargs):
         """Execute a prompt"""
         kwargs = process_venice_options(
             {
@@ -480,9 +478,11 @@ def register_models(register):
                 api_base="https://api.venice.ai/api/v1",
                 can_stream=True,
                 vision=model_configs.get(model_id, {}).get("vision", False),
-                supports_schema=capabilities.get("supportsResponseSchema", False)
+                supports_schema=capabilities.get("supportsResponseSchema", False),
             )
-            model_instance.supports_web_search = capabilities.get("supportsWebSearch", False)
+            model_instance.supports_web_search = capabilities.get(
+                "supportsWebSearch", False
+            )
             register(model_instance)
         elif model.get("type") == "image":
             register(VeniceImage(model_id=model_id, model_name=model_id))
