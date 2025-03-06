@@ -196,7 +196,6 @@ def refresh_models():
     path = llm.user_dir() / "venice_models.json"
     path.write_text(json.dumps(models, indent=4))
     click.echo(f"{len(models)} models saved to {path}", err=True)
-    click.echo(json.dumps(models, indent=4))
 
     return models
 
