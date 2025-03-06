@@ -25,6 +25,12 @@ Set an environment variable `LLM_VENICE_KEY`, or save a [Venice API](https://doc
 
 `llm keys set venice`
 
+Fetch a list of the models available over the Venice API:
+
+`llm venice refresh`
+
+You should re-run `refresh` whenever new models are made availabe or deprecated ones are removed.
+The models are stored in `venice_models.json` in the llm user directory.
 
 ## Usage
 
@@ -40,12 +46,13 @@ Start an interactive chat session:
 
 #### Structured Outputs
 
-Some models support structuring their output according to a JSON schema supplied via `response_format`.
-This works via llm's --schema option, for example:
+Some models support structuring their output according to a JSON schema (supplied via OpenAI API `response_format`).
+
+This works via llm's `--schema` options, for example:
 
 `llm -m venice/dolphin-2.9.2-qwen2-72b --schema "name, age int, one_sentence_bio" "Invent an evil supervillain"`
 
-Consult [llm's schemas](https://llm.datasette.io/en/stable/schemas.html) documentation for more options.
+Consult llm's [schemas tutorial](https://llm.datasette.io/en/stable/schemas.html) for more options.
 
 ### Vision models
 
@@ -53,18 +60,6 @@ Vision models (currently `qwen-2.5-vl`) support the `--attachment` option:
 
 > `llm -m venice/qwen-2.5-vl -a https://upload.wikimedia.org/wikipedia/commons/a/a9/Corvus_corone_-near_Canford_Cliffs%2C_Poole%2C_England-8.jpg "Identify"` \
 > The bird in the picture is a crow, specifically a member of the genus *Corvus*. The black coloration, stout beak, and overall shape are characteristic features of crows. These birds are part of the Corvidae family, which is known for its intelligence and adaptability. [...]
-
-### Image generation
-
-Generated images are stored in the LLM user directory. Example:
-
-`llm -m venice/stable-diffusion-3.5 "Painting of a traditional Dutch windmill" -o style_preset "Watercolor"`
-
-Besides the Venice API image generation parameters, you can specify the output filename and whether or not to overwrite existing files.
-
-Check the available parameters with something like:
-
-`llm models list --options --query diffusion`
 
 ### venice_parameters
 
@@ -78,7 +73,7 @@ The following CLI options are available to configure `venice_parameters`:
 
 `llm -m venice/llama-3.3-70b --web-search on --no-stream 'What is $VVV?'`
 
-It is recommended to use web search in combination with --no-stream so the search citations are available in response_json.
+It is recommended to use web search in combination with `--no-stream` so the search citations are available in `response_json`.
 
 **--character character_slug** to use a public character, for example:
 
@@ -86,11 +81,23 @@ It is recommended to use web search in combination with --no-stream so the searc
 
 *Note: these options override any `-o extra_body '{"venice_parameters": { ...}}'` and so should not be combined with that option.*
 
-### Available models
+### Image generation
 
-To update the list of available models from the Venice API:
+Generated images are stored in the LLM user directory. Example:
 
-`llm venice refresh`
+`llm -m venice/stable-diffusion-3.5 "Painting of a traditional Dutch windmill" -o style_preset "Watercolor"`
+
+Besides the Venice API image generation parameters, you can specify the output filename and whether or not to overwrite existing files.
+
+You can check the available parameters for a model by filtering the model list with `--query`, and show the `--options`:
+
+`llm models list --query diffusion --options`
+
+### Venice commands
+
+List the available Venice commands with:
+
+`llm venice --help`
 
 ---
 
