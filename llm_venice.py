@@ -246,6 +246,17 @@ def register_commands(cli):
         response.raise_for_status()
         click.echo(json.dumps(response.json(), indent=2))
 
+    @api_keys.command(name="rate-limits-log")
+    @click.pass_context
+    def rate_limits_log(ctx):
+        "Show the last 50 rate limit logs for the account"
+        response = httpx.get(
+            "https://api.venice.ai/api/v1/api_keys/rate_limits/log",
+            headers=ctx.obj["headers"],
+        )
+        response.raise_for_status()
+        click.echo(json.dumps(response.json(), indent=2))
+
     @api_keys.command(name="create")
     @click.option(
         "--type",
