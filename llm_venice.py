@@ -290,8 +290,8 @@ def register_commands(cli):
             if expiration_date
             else "",
             "consumptionLimit": {
-                "vcu": limits_vcu if limits_vcu else None,
-                "usd": limits_usd if limits_usd else None,
+                "vcu": limits_vcu,
+                "usd": limits_usd,
             },
         }
         response = httpx.post(
