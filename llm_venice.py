@@ -1,13 +1,13 @@
 import base64
 import datetime
 import json
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 
 import click
 import httpx
 import llm
 from llm.default_plugins.openai_models import Chat
-from pydantic import field_validator, Field
+from pydantic import ConfigDict, field_validator, Field
 
 
 class VeniceChatOptions(Chat.Options):
@@ -49,6 +49,7 @@ class VeniceChat(Chat):
 
 
 class VeniceImageOptions(llm.Options):
+    model_config = ConfigDict(populate_by_name=True)
     negative_prompt: Optional[str] = Field(
         description="Negative prompt to guide image generation away from certain features",
         default=None,
@@ -86,6 +87,11 @@ class VeniceImageOptions(llm.Options):
     return_binary: Optional[bool] = Field(
         description="Return raw binary instead of base64", default=False
     )
+    image_format: Optional[Literal["png", "webp"]] = Field(
+        description="The image format to return",
+        default="png",
+        alias="format",
+    )
     output_filename: Optional[str] = Field(
         description="Custom filename for saved image", default=None
     )
@@ -112,10 +118,11 @@ class VeniceImage(llm.Model):
     def execute(self, prompt, stream, response, conversation=None):
         key = self.get_key()
 
-        options_dict = prompt.options.dict()
+        options_dict = prompt.options.model_dump(by_alias=True)
         output_filename = options_dict.pop("output_filename", None)
         overwrite_files = options_dict.pop("overwrite_files", False)
         return_binary = options_dict.get("return_binary", False)
+        image_format = options_dict.get("format")
 
         payload = {
             "model": self.model_name,
@@ -157,7 +164,7 @@ class VeniceImage(llm.Model):
 
         if not output_filename:
             datestring = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-            output_filename = f"{datestring}_venice_{self.model_name}.png"
+            output_filename = f"{datestring}_venice_{self.model_name}.{image_format}"
 
         output_filepath = image_dir / output_filename
 
