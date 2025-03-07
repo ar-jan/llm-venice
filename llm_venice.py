@@ -92,6 +92,10 @@ class VeniceImageOptions(llm.Options):
         default="png",
         alias="format",
     )
+    embed_exif_metadata: Optional[bool] = Field(
+        description="Embed prompt text in the image's EXIF metadata",
+        default=False,
+    )
     output_filename: Optional[str] = Field(
         description="Custom filename for saved image", default=None
     )
