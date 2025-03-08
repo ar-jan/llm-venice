@@ -47,6 +47,18 @@ class VeniceChat(Chat):
     class Options(VeniceChatOptions):
         pass
 
+    def build_kwargs(self, prompt, stream):
+        kwargs = super().build_kwargs(prompt, stream)
+
+        if (
+            "response_format" in kwargs
+            and kwargs["response_format"].get("type") == "json_schema"
+        ):
+            kwargs["response_format"]["json_schema"]["strict"] = True
+            kwargs["response_format"]["json_schema"]["schema"]["additionalProperties"] = False
+
+        return kwargs
+
 
 class VeniceImageOptions(llm.Options):
     model_config = ConfigDict(populate_by_name=True)
