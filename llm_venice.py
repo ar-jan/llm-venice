@@ -93,7 +93,7 @@ class VeniceImageOptions(llm.Options):
         alias="format",
     )
     embed_exif_metadata: Optional[bool] = Field(
-        description="Embed prompt text in the image's EXIF metadata",
+        description="Embed prompt generation information in the image's EXIF metadata",
         default=False,
     )
     output_filename: Optional[str] = Field(
