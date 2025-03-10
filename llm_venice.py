@@ -512,11 +512,6 @@ def register_models(register):
     else:
         models = refresh_models()
 
-    model_configs = {
-        # TODO: get vision config from traits once available
-        "qwen-2.5-vl": {"vision": True},
-    }
-
     for model in models:
         model_id = model["id"]
         capabilities = model.get("model_spec", {}).get("capabilities", {})
@@ -526,7 +521,7 @@ def register_models(register):
                 model_name=model_id,
                 api_base="https://api.venice.ai/api/v1",
                 can_stream=True,
-                vision=model_configs.get(model_id, {}).get("vision", False),
+                vision=capabilities.get("supportsVision", False),
                 supports_schema=capabilities.get("supportsResponseSchema", False),
             )
             model_instance.supports_web_search = capabilities.get(
