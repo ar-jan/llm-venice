@@ -55,7 +55,9 @@ class VeniceChat(Chat):
             and kwargs["response_format"].get("type") == "json_schema"
         ):
             kwargs["response_format"]["json_schema"]["strict"] = True
-            kwargs["response_format"]["json_schema"]["schema"]["additionalProperties"] = False
+            kwargs["response_format"]["json_schema"]["schema"][
+                "additionalProperties"
+            ] = False
 
         return kwargs
 
