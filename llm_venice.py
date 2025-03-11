@@ -1,12 +1,14 @@
 import base64
 import datetime
 import json
+import os
 from typing import Literal, Optional, Union
 
 import click
 import httpx
 import llm
 from llm.default_plugins.openai_models import Chat
+from llm.utils import logging_client
 from pydantic import ConfigDict, field_validator, Field
 
 
@@ -155,7 +157,12 @@ class VeniceImage(llm.Model):
             "Content-Type": "application/json",
         }
 
-        r = httpx.post(url, headers=headers, json=payload, timeout=120)
+        # Logging client option like LLM_OPENAI_SHOW_RESPONSES
+        if os.environ.get("LLM_VENICE_SHOW_RESPONSES"):
+            client = logging_client()
+            r = client.post(url, headers=headers, json=payload, timeout=120)
+        else:
+            r = httpx.post(url, headers=headers, json=payload, timeout=120)
 
         try:
             r.raise_for_status()
