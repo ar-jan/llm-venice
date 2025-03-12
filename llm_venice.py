@@ -169,6 +169,10 @@ class VeniceImage(llm.Model):
         except httpx.HTTPStatusError as e:
             raise ValueError(f"API request failed: {e.response.text}")
 
+        if r.headers.get("x-venice-is-content-violation") == "true":
+            yield "Response marked as content violation; no image was returned."
+            return
+
         if return_binary:
             image_bytes = r.content
         else:
