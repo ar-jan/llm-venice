@@ -2,6 +2,7 @@ import base64
 import datetime
 import json
 import os
+import pathlib
 from typing import Literal, Optional, Union
 
 import click
@@ -210,6 +211,49 @@ class VeniceImage(llm.Model):
             yield f"Image saved to {output_filepath}"
         except Exception as e:
             raise ValueError(f"Failed to write image file: {e}")
+
+
+def upscale_image(image_path, scale):
+    """
+    Upscale an image using Venice AI.
+
+    Example usage:
+        llm venice upscale image.jpg --scale 4
+    """
+    key = llm.get_key("", "venice", "LLM_VENICE_KEY")
+    if not key:
+        raise click.ClickException("No key found for Venice")
+
+    with open(image_path, "rb") as img_file:
+        image_data = img_file.read()
+
+    url = "https://api.venice.ai/api/v1/image/upscale"
+    headers = {"Authorization": f"Bearer {key}", "Accept-Encoding": "gzip"}
+
+    # Create multipart form data
+    files = {
+        "image": (pathlib.Path(image_path).name, image_data),
+    }
+
+    data = {"scale": scale}
+
+    r = httpx.post(url, headers=headers, files=files, data=data, timeout=120)
+
+    try:
+        r.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        raise ValueError(f"API request failed: {e.response.text}")
+
+    image_bytes = r.content
+
+    input_path = pathlib.Path(image_path)
+    output_filename = f"{input_path.stem}_upscaled{input_path.suffix}"
+    output_path = input_path.parent / output_filename
+
+    with open(output_path, "wb") as f:
+        f.write(image_bytes)
+
+    click.echo(f"Upscaled image saved to {output_path}")
 
 
 def refresh_models():
@@ -511,6 +555,15 @@ def register_commands(cli):
             "character",
         ):
             new_chat.params.append(param)
+
+    @venice.command(name="upscale")
+    @click.argument(
+        "image_path", type=click.Path(exists=True, dir_okay=False, readable=True)
+    )
+    @click.option("--scale", type=int, default=2, help="Scale factor (2 or 4)")
+    def upscale(image_path, scale):
+        """Upscale an image using Venice API"""
+        upscale_image(image_path, scale)
 
 
 @llm.hookimpl
