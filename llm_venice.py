@@ -213,7 +213,7 @@ class VeniceImage(llm.Model):
             raise ValueError(f"Failed to write image file: {e}")
 
 
-def image_upscale(image_path, scale):
+def image_upscale(image_path, scale, output_path=None):
     """
     Upscale an image using Venice AI.
 
@@ -246,14 +246,32 @@ def image_upscale(image_path, scale):
 
     image_bytes = r.content
 
+    # Handle output path logic
     input_path = pathlib.Path(image_path)
-    output_filename = f"{input_path.stem}_upscaled{input_path.suffix}"
-    output_path = input_path.parent / output_filename
+    default_filename = f"{input_path.stem}_upscaled{input_path.suffix}"
 
-    with open(output_path, "wb") as f:
-        f.write(image_bytes)
+    if output_path is None:
+        # No output path specified, save next to input
+        output_path = input_path.parent / default_filename
+    else:
+        output_path = pathlib.Path(output_path)
+        if output_path.is_dir():
+            # If output_path is a directory, save there with default filename
+            output_path = output_path / default_filename
 
-    click.echo(f"Upscaled image saved to {output_path}")
+    # Handle existing files by adding timestamp
+    if output_path.exists():
+        stem = output_path.stem
+        suffix = output_path.suffix
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        new_filename = f"{stem}_{timestamp}{suffix}"
+        output_path = output_path.parent / new_filename
+
+    try:
+        output_path.write_bytes(image_bytes)
+        click.echo(f"Upscaled image saved to {output_path}")
+    except Exception as e:
+        raise ValueError(f"Failed to write image file: {e}")
 
 
 def refresh_models():
@@ -566,9 +584,15 @@ def register_commands(cli):
         default="2",
         help="Scale factor (2 or 4)",
     )
-    def upscale(image_path, scale):
+    @click.option(
+        "--output",
+        "-o",
+        type=click.Path(file_okay=True, dir_okay=True, writable=True),
+        help="Output path (file or directory)",
+    )
+    def upscale(image_path, scale, output):
         """Upscale an image using Venice API"""
-        image_upscale(image_path, scale)
+        image_upscale(image_path, scale, output)
 
 
 @llm.hookimpl
