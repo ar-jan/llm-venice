@@ -213,7 +213,7 @@ class VeniceImage(llm.Model):
             raise ValueError(f"Failed to write image file: {e}")
 
 
-def image_upscale(image_path, scale, output_path=None):
+def image_upscale(image_path, scale, output_path=None, overwrite_files=False):
     """
     Upscale an image using Venice AI.
 
@@ -260,7 +260,7 @@ def image_upscale(image_path, scale, output_path=None):
             output_path = output_path / default_filename
 
     # Handle existing files by adding timestamp
-    if output_path.exists():
+    if output_path.exists() and not overwrite_files:
         stem = output_path.stem
         suffix = output_path.suffix
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -590,9 +590,15 @@ def register_commands(cli):
         type=click.Path(file_okay=True, dir_okay=True, writable=True),
         help="Output path (file or directory)",
     )
-    def upscale(image_path, scale, output):
+    @click.option(
+        "--overwrite",
+        is_flag=True,
+        default=False,
+        help="Overwrite existing files",
+    )
+    def upscale(image_path, scale, output, overwrite):
         """Upscale an image using Venice API"""
-        image_upscale(image_path, scale, output)
+        image_upscale(image_path, scale, output, overwrite)
 
 
 @llm.hookimpl
