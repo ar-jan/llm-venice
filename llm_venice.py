@@ -560,7 +560,12 @@ def register_commands(cli):
     @click.argument(
         "image_path", type=click.Path(exists=True, dir_okay=False, readable=True)
     )
-    @click.option("--scale", type=int, default=2, help="Scale factor (2 or 4)")
+    @click.option(
+        "--scale",
+        type=click.Choice(["2", "4"]),
+        default="2",
+        help="Scale factor (2 or 4)",
+    )
     def upscale(image_path, scale):
         """Upscale an image using Venice API"""
         image_upscale(image_path, scale)
