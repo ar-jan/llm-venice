@@ -25,6 +25,7 @@ venice = "llm_venice"
 test = [
     "jsonschema",
     "pytest",
+    "pytest-httpx",
     "sqlite_utils",
 ]
 

@@ -2,6 +2,7 @@ import base64
 import datetime
 import json
 import os
+import pathlib
 from typing import Literal, Optional, Union
 
 import click
@@ -210,6 +211,68 @@ class VeniceImage(llm.Model):
             yield f"Image saved to {output_filepath}"
         except Exception as e:
             raise ValueError(f"Failed to write image file: {e}")
+
+
+def image_upscale(image_path, scale, output_path=None, overwrite_files=False):
+    """
+    Upscale an image using Venice AI.
+
+    Example usage:
+        llm venice upscale image.jpg --scale 4
+    """
+    key = llm.get_key("", "venice", "LLM_VENICE_KEY")
+    if not key:
+        raise click.ClickException("No key found for Venice")
+
+    with open(image_path, "rb") as img_file:
+        image_data = img_file.read()
+
+    url = "https://api.venice.ai/api/v1/image/upscale"
+    headers = {"Authorization": f"Bearer {key}", "Accept-Encoding": "gzip"}
+
+    # Create multipart form data
+    files = {
+        "image": (pathlib.Path(image_path).name, image_data),
+    }
+
+    data = {"scale": scale}
+
+    r = httpx.post(url, headers=headers, files=files, data=data, timeout=120)
+
+    try:
+        r.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        raise ValueError(f"API request failed: {e.response.text}")
+
+    image_bytes = r.content
+
+    # Handle output path logic
+    input_path = pathlib.Path(image_path)
+    # The upscaled image is always PNG
+    default_filename = f"{input_path.stem}_upscaled.png"
+
+    if output_path is None:
+        # No output path specified, save next to input
+        output_path = input_path.parent / default_filename
+    else:
+        output_path = pathlib.Path(output_path)
+        if output_path.is_dir():
+            # If output_path is a directory, save there with default filename
+            output_path = output_path / default_filename
+
+    # Handle existing files by adding timestamp
+    if output_path.exists() and not overwrite_files:
+        stem = output_path.stem
+        suffix = output_path.suffix
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        new_filename = f"{stem}_{timestamp}{suffix}"
+        output_path = output_path.parent / new_filename
+
+    try:
+        output_path.write_bytes(image_bytes)
+        click.echo(f"Upscaled image saved to {output_path}")
+    except Exception as e:
+        raise ValueError(f"Failed to write image file: {e}")
 
 
 def refresh_models():
@@ -511,6 +574,32 @@ def register_commands(cli):
             "character",
         ):
             new_chat.params.append(param)
+
+    @venice.command(name="upscale")
+    @click.argument(
+        "image_path", type=click.Path(exists=True, dir_okay=False, readable=True)
+    )
+    @click.option(
+        "--scale",
+        type=click.Choice(["2", "4"]),
+        default="2",
+        help="Scale factor (2 or 4)",
+    )
+    @click.option(
+        "--output",
+        "-o",
+        type=click.Path(file_okay=True, dir_okay=True, writable=True),
+        help="Output path (file or directory)",
+    )
+    @click.option(
+        "--overwrite",
+        is_flag=True,
+        default=False,
+        help="Overwrite existing files",
+    )
+    def upscale(image_path, scale, output, overwrite):
+        """Upscale an image using Venice API"""
+        image_upscale(image_path, scale, output, overwrite)
 
 
 @llm.hookimpl

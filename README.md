@@ -93,6 +93,17 @@ You can check the available parameters for a model by filtering the model list w
 
 `llm models list --query diffusion --options`
 
+### Image upscaling
+
+You can upscale existing images.
+The following saves the returned image as `image_upscaled.png` in the same directory as the original file:
+
+`llm venice upscale /path/to/image.jpg`.
+
+By default existing upscaled images are not overwritten; timestamped filenames are used instead.
+
+See `llm venice upscale --help` for the `--scale`, `--output` location, and `--overwrite` options.
+
 ### Venice commands
 
 List the available Venice commands with:
