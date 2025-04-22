@@ -213,7 +213,7 @@ class VeniceImage(llm.Model):
             raise ValueError(f"Failed to write image file: {e}")
 
 
-def upscale_image(image_path, scale):
+def image_upscale(image_path, scale):
     """
     Upscale an image using Venice AI.
 
@@ -563,7 +563,7 @@ def register_commands(cli):
     @click.option("--scale", type=int, default=2, help="Scale factor (2 or 4)")
     def upscale(image_path, scale):
         """Upscale an image using Venice API"""
-        upscale_image(image_path, scale)
+        image_upscale(image_path, scale)
 
 
 @llm.hookimpl

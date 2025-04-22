@@ -3,7 +3,7 @@ from unittest.mock import patch, mock_open
 import click
 from click.testing import CliRunner
 from llm.cli import cli
-from llm_venice import upscale_image
+from llm_venice import image_upscale
 import pytest
 
 
@@ -25,7 +25,7 @@ def mocked_responses(httpx_mock, mock_image_file):
 
 
 def test_upscale_function(mocked_responses, mock_image_file, tmp_path):
-    """Test the upscale_image function directly"""
+    """Test the image_upscale function directly"""
     # Create a mock image file
     test_img_path = tmp_path / "test.jpg"
     with open(test_img_path, "wb") as f:
@@ -33,7 +33,7 @@ def test_upscale_function(mocked_responses, mock_image_file, tmp_path):
 
     # Test the function
     with patch("llm.get_key", return_value="fake-key"):
-        upscale_image(str(test_img_path), 2)
+        image_upscale(str(test_img_path), 2)
 
     # Verify the API was called correctly
     requests = mocked_responses.get_requests()
@@ -99,7 +99,7 @@ def test_upscale_error_handling(httpx_mock):
     with patch("builtins.open", mock_open(read_data=b"fake image data")):
         with patch("llm.get_key", return_value="fake-key"):
             with pytest.raises(ValueError) as excinfo:
-                upscale_image("test.jpg", 2)
+                image_upscale("test.jpg", 2)
 
             # Verify the error message includes the API response
             assert "API request failed" in str(excinfo.value)
@@ -110,6 +110,6 @@ def test_upscale_missing_api_key():
     # Mock get_key to return None to simulate missing API key
     with patch("llm.get_key", return_value=None):
         with pytest.raises(click.ClickException) as excinfo:
-            upscale_image("test.jpg", 2)
+            image_upscale("test.jpg", 2)
 
         assert "No key found for Venice" in str(excinfo.value)
