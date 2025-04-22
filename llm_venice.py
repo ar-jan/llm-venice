@@ -248,7 +248,8 @@ def image_upscale(image_path, scale, output_path=None, overwrite_files=False):
 
     # Handle output path logic
     input_path = pathlib.Path(image_path)
-    default_filename = f"{input_path.stem}_upscaled{input_path.suffix}"
+    # The upscaled image is always PNG
+    default_filename = f"{input_path.stem}_upscaled.png"
 
     if output_path is None:
         # No output path specified, save next to input

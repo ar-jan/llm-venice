@@ -47,7 +47,7 @@ def test_upscale_function(mocked_responses, mock_image_file, tmp_path):
     assert "multipart/form-data" in request.headers["Content-Type"]
 
     # Check if the output file was created with the correct name
-    expected_output_path = tmp_path / "test_upscaled.jpg"
+    expected_output_path = tmp_path / "test_upscaled.png"
     assert expected_output_path.exists()
 
     # Verify the content was written
@@ -73,7 +73,7 @@ def test_upscale_command(mocked_responses, mock_image_file, tmp_path):
     assert result.exit_code == 0
 
     # Verify the output message
-    assert f"Upscaled image saved to {tmp_path}/test_upscaled.jpg" in result.output
+    assert f"Upscaled image saved to {tmp_path}/test_upscaled.png" in result.output
 
     # Check the request was made with the correct scale factor
     requests = mocked_responses.get_requests()
