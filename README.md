@@ -125,10 +125,10 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
-Install the dependencies and test dependencies:
+Install the plugin with dependencies and test dependencies:
 
 ```bash
-llm install -e '.[test]'
+pip install -e '.[test]'
 ```
 
 To run the tests:
