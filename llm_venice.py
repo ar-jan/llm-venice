@@ -227,7 +227,16 @@ class VeniceImage(llm.Model):
             raise ValueError(f"Failed to write image file: {e}")
 
 
-def image_upscale(image_path, scale, output_path=None, overwrite_files=False):
+def image_upscale(
+    image_path,
+    scale,
+    enhance=False,
+    enhance_creativity=None,
+    enhance_prompt=None,
+    replication=None,
+    output_path=None,
+    overwrite_files=False,
+):
     """
     Upscale an image using Venice AI.
 
@@ -249,7 +258,13 @@ def image_upscale(image_path, scale, output_path=None, overwrite_files=False):
         "image": (pathlib.Path(image_path).name, image_data),
     }
 
-    data = {"scale": scale}
+    data = {
+        "scale": scale,
+        "enhance": enhance,
+        "enhanceCreativity": enhance_creativity,
+        "enhancePrompt": enhance_prompt,
+        "replication": replication,
+    }
 
     r = httpx.post(url, headers=headers, files=files, data=data, timeout=120)
 
@@ -600,6 +615,33 @@ def register_commands(cli):
         help="Scale factor (2 or 4)",
     )
     @click.option(
+        "--enhance",
+        is_flag=True,
+        default=False,
+        help="Enhance the image using Venice's image engine",
+    )
+    @click.option(
+        "--enhance-creativity",
+        type=click.FloatRange(0.0, 1.0),
+        default=None,
+        show_default=True,
+        help=("Higher values let the enhancement AI change the image more."),
+    )
+    @click.option(
+        "--enhance-prompt",
+        type=str,
+        default=None,
+        show_default=True,
+        help="A short descriptive image style prompt to apply during enhancement",
+    )
+    @click.option(
+        "--replication",
+        type=click.FloatRange(0.0, 1.0),
+        default=None,
+        show_default=True,
+        help=("How strongly lines and noise in the base image are preserved."),
+    )
+    @click.option(
         "--output",
         "-o",
         type=click.Path(file_okay=True, dir_okay=True, writable=True),
@@ -611,9 +653,27 @@ def register_commands(cli):
         default=False,
         help="Overwrite existing files",
     )
-    def upscale(image_path, scale, output, overwrite):
+    def upscale(
+        image_path,
+        scale,
+        enhance,
+        enhance_creativity,
+        enhance_prompt,
+        replication,
+        output,
+        overwrite,
+    ):
         """Upscale an image using Venice API"""
-        image_upscale(image_path, scale, output, overwrite)
+        image_upscale(
+            image_path,
+            scale,
+            enhance,
+            enhance_creativity,
+            enhance_prompt,
+            replication,
+            output,
+            overwrite,
+        )
 
 
 @llm.hookimpl
