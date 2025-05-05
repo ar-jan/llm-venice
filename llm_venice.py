@@ -610,9 +610,9 @@ def register_commands(cli):
     )
     @click.option(
         "--scale",
-        type=click.Choice(["2", "4"]),
+        type=click.FloatRange(1, 4),
         default="2",
-        help="Scale factor (2 or 4)",
+        help="Scale factor (between 1 and 4)",
     )
     @click.option(
         "--enhance",
