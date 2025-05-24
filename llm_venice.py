@@ -235,7 +235,7 @@ def image_upscale(
     enhance_prompt=None,
     replication=None,
     output_path=None,
-    overwrite_files=False,
+    overwrite=False,
 ):
     """
     Upscale an image using Venice AI.
@@ -290,7 +290,7 @@ def image_upscale(
             output_path = output_path / default_filename
 
     # Handle existing files by adding timestamp
-    if output_path.exists() and not overwrite_files:
+    if output_path.exists() and not overwrite:
         stem = output_path.stem
         suffix = output_path.suffix
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -642,7 +642,7 @@ def register_commands(cli):
         help=("How strongly lines and noise in the base image are preserved."),
     )
     @click.option(
-        "--output",
+        "--output-path",
         "-o",
         type=click.Path(file_okay=True, dir_okay=True, writable=True),
         help="Output path (file or directory)",
@@ -653,27 +653,9 @@ def register_commands(cli):
         default=False,
         help="Overwrite existing files",
     )
-    def upscale(
-        image_path,
-        scale,
-        enhance,
-        enhance_creativity,
-        enhance_prompt,
-        replication,
-        output,
-        overwrite,
-    ):
+    def upscale(**kwargs):
         """Upscale an image using Venice API"""
-        image_upscale(
-            image_path,
-            scale,
-            enhance,
-            enhance_creativity,
-            enhance_prompt,
-            replication,
-            output,
-            overwrite,
-        )
+        image_upscale(**kwargs)
 
 
 @llm.hookimpl
