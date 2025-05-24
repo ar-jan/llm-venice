@@ -102,7 +102,7 @@ The following saves the returned image as `image_upscaled.png` in the same direc
 
 By default existing upscaled images are not overwritten; timestamped filenames are used instead.
 
-See `llm venice upscale --help` for the `--scale`, `--output` location, and `--overwrite` options.
+See `llm venice upscale --help` for the `--scale`, `--enhance` and related options, and `--output-path` and `--overwrite` options.
 
 ### Venice commands
 
