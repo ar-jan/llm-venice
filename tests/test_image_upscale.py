@@ -113,3 +113,228 @@ def test_upscale_missing_api_key():
             image_upscale("test.jpg", 2)
 
         assert "No key found for Venice" in str(excinfo.value)
+
+
+def test_upscale_with_enhancement_options(mocked_responses, mock_image_file, tmp_path):
+    """Test upscaling with enhancement options enabled"""
+    test_img_path = tmp_path / "test.jpg"
+    with open(test_img_path, "wb") as f:
+        f.write(mock_image_file)
+
+    with patch("llm.get_key", return_value="fake-key"):
+        image_upscale(
+            str(test_img_path),
+            scale=3,
+            enhance=True,
+            enhance_creativity=0.7,
+            enhance_prompt="spooky",
+            replication=0.5,
+        )
+
+    # Verify the API was called with enhancement parameters
+    requests = mocked_responses.get_requests()
+    assert len(requests) == 1
+    request_body = requests[0].read()
+
+    assert b'name="enhance"\r\n\r\ntrue' in request_body
+    assert b'name="enhanceCreativity"\r\n\r\n0.7' in request_body
+    assert b'name="enhancePrompt"\r\n\r\nspooky' in request_body
+    assert b'name="replication"\r\n\r\n0.5' in request_body
+
+
+def test_upscale_custom_output_path_file(mocked_responses, mock_image_file, tmp_path):
+    """Test upscaling with custom output file path"""
+    test_img_path = tmp_path / "input.jpg"
+    custom_output_path = tmp_path / "custom_output.png"
+
+    with open(test_img_path, "wb") as f:
+        f.write(mock_image_file)
+
+    with patch("llm.get_key", return_value="fake-key"):
+        image_upscale(str(test_img_path), scale=2, output_path=str(custom_output_path))
+
+    # Verify the custom output path was used
+    assert custom_output_path.exists()
+    with open(custom_output_path, "rb") as f:
+        assert f.read() == b"upscaled image data"
+
+
+def test_upscale_custom_output_path_directory(
+    mocked_responses, mock_image_file, tmp_path
+):
+    """Test upscaling with custom output directory"""
+    test_img_path = tmp_path / "input.jpg"
+    output_dir = tmp_path / "output_dir"
+    output_dir.mkdir()
+
+    with open(test_img_path, "wb") as f:
+        f.write(mock_image_file)
+
+    with patch("llm.get_key", return_value="fake-key"):
+        image_upscale(str(test_img_path), scale=2, output_path=str(output_dir))
+
+    # Should save to output_dir with default filename
+    expected_output = output_dir / "input_upscaled.png"
+    assert expected_output.exists()
+
+
+def test_upscale_avoid_overwrite_with_timestamp(
+    mocked_responses, mock_image_file, tmp_path
+):
+    """Test that existing files are not overwritten without --overwrite flag"""
+    test_img_path = tmp_path / "test.jpg"
+    existing_output = tmp_path / "test_upscaled.png"
+
+    with open(test_img_path, "wb") as f:
+        f.write(mock_image_file)
+
+    # Create existing output file
+    with open(existing_output, "w") as f:
+        f.write("existing content")
+
+    with patch("llm.get_key", return_value="fake-key"):
+        image_upscale(str(test_img_path), scale=2, overwrite=False)
+
+    # Original file should be unchanged
+    with open(existing_output, "r") as f:
+        assert f.read() == "existing content"
+
+    # A new file with timestamp should be created
+    timestamped_files = list(tmp_path.glob("test_upscaled_*.png"))
+    assert len(timestamped_files) == 1
+
+    # New file should have the upscaled content
+    with open(timestamped_files[0], "rb") as f:
+        assert f.read() == b"upscaled image data"
+
+
+def test_upscale_overwrite_existing_file(mocked_responses, mock_image_file, tmp_path):
+    """Test overwriting existing files when --overwrite is True"""
+    test_img_path = tmp_path / "test.jpg"
+    existing_output = tmp_path / "test_upscaled.png"
+
+    with open(test_img_path, "wb") as f:
+        f.write(mock_image_file)
+
+    # Create existing output file
+    with open(existing_output, "w") as f:
+        f.write("existing content")
+
+    with patch("llm.get_key", return_value="fake-key"):
+        image_upscale(str(test_img_path), scale=2, overwrite=True)
+
+    # File should be overwritten
+    with open(existing_output, "rb") as f:
+        assert f.read() == b"upscaled image data"
+
+    # No timestamped files should exist
+    timestamped_files = list(tmp_path.glob("test_upscaled_*.png"))
+    assert len(timestamped_files) == 0
+
+
+def test_upscale_cli_with_all_options(mocked_responses, mock_image_file, tmp_path):
+    """Test CLI command with all available options"""
+    test_img_path = tmp_path / "test.jpg"
+    output_path = tmp_path / "custom_output.png"
+
+    with open(test_img_path, "wb") as f:
+        f.write(mock_image_file)
+
+    runner = CliRunner()
+    with patch("llm.get_key", return_value="fake-key"):
+        result = runner.invoke(
+            cli,
+            [
+                "venice",
+                "upscale",
+                str(test_img_path),
+                "--scale",
+                "3.5",
+                "--enhance",
+                "--enhance-creativity",
+                "0.8",
+                "--enhance-prompt",
+                "spooky",
+                "--replication",
+                "0.3",
+                "--output-path",
+                str(output_path),
+                "--overwrite",
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert f"Upscaled image saved to {output_path}" in result.output
+
+    # Verify all parameters were sent
+    requests = mocked_responses.get_requests()
+    assert len(requests) == 1
+    request_body = requests[0].read()
+    assert b'name="enhance"\r\n\r\ntrue' in request_body
+    assert b'name="enhanceCreativity"\r\n\r\n0.8' in request_body
+    assert b'name="enhancePrompt"\r\n\r\nspooky' in request_body
+    assert b'name="replication"\r\n\r\n0.3' in request_body
+
+
+def test_upscale_file_not_found():
+    """Test error handling when input file doesn't exist"""
+    with patch("llm.get_key", return_value="fake-key"):
+        with pytest.raises(FileNotFoundError):
+            image_upscale("nonexistent.jpg", scale=2)
+
+
+def test_upscale_cli_file_not_found():
+    """Test CLI error handling when input file doesn't exist"""
+    runner = CliRunner()
+    with patch("llm.get_key", return_value="fake-key"):
+        result = runner.invoke(cli, ["venice", "upscale", "nonexistent.jpg"])
+
+    assert result.exit_code != 0
+    assert "does not exist" in result.output or "No such file" in result.output
+
+
+def test_upscale_network_timeout(httpx_mock, mock_image_file, tmp_path):
+    """Test handling of network timeouts"""
+    import httpx
+
+    # Mock a timeout response
+    httpx_mock.add_exception(
+        httpx.TimeoutException("Request timed out"),
+        method="POST",
+        url="https://api.venice.ai/api/v1/image/upscale",
+    )
+
+    test_img_path = tmp_path / "test.jpg"
+    with open(test_img_path, "wb") as f:
+        f.write(mock_image_file)
+
+    with patch("llm.get_key", return_value="fake-key"):
+        with pytest.raises(httpx.TimeoutException):
+            image_upscale(str(test_img_path), scale=2)
+
+
+def test_upscale_binary_response_handling(httpx_mock, mock_image_file, tmp_path):
+    """Test that binary image data is handled correctly"""
+    # Mock response with specific binary PNG data
+    png_header = b"\x89PNG\r\n\x1a\n"
+    mock_png_data = png_header + b"fake png data"
+
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.venice.ai/api/v1/image/upscale",
+        content=mock_png_data,
+        headers={"Content-Type": "image/png"},
+    )
+
+    test_img_path = tmp_path / "test.jpg"
+    with open(test_img_path, "wb") as f:
+        f.write(mock_image_file)
+
+    with patch("llm.get_key", return_value="fake-key"):
+        image_upscale(str(test_img_path), scale=2)
+
+    output_file = tmp_path / "test_upscaled.png"
+    with open(output_file, "rb") as f:
+        saved_data = f.read()
+        assert saved_data == mock_png_data
+        assert saved_data.startswith(png_header)
