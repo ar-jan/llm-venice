@@ -33,7 +33,7 @@ def test_upscale_function(mocked_responses, mock_image_file, tmp_path):
 
     # Test the function
     with patch("llm.get_key", return_value="fake-key"):
-        image_upscale(str(test_img_path), 2)
+        image_upscale(str(test_img_path), scale=2)
 
     # Verify the API was called correctly
     requests = mocked_responses.get_requests()
@@ -99,7 +99,7 @@ def test_upscale_error_handling(httpx_mock):
     with patch("builtins.open", mock_open(read_data=b"fake image data")):
         with patch("llm.get_key", return_value="fake-key"):
             with pytest.raises(ValueError) as excinfo:
-                image_upscale("test.jpg", 2)
+                image_upscale("test.jpg", scale=2)
 
             # Verify the error message includes the API response
             assert "API request failed" in str(excinfo.value)
@@ -110,7 +110,7 @@ def test_upscale_missing_api_key():
     # Mock get_key to return None to simulate missing API key
     with patch("llm.get_key", return_value=None):
         with pytest.raises(click.ClickException) as excinfo:
-            image_upscale("test.jpg", 2)
+            image_upscale("test.jpg", scale=2)
 
         assert "No key found for Venice" in str(excinfo.value)
 
