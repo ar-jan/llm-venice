@@ -227,7 +227,16 @@ class VeniceImage(llm.Model):
             raise ValueError(f"Failed to write image file: {e}")
 
 
-def image_upscale(image_path, scale, output_path=None, overwrite_files=False):
+def image_upscale(
+    image_path,
+    scale,
+    enhance=False,
+    enhance_creativity=None,
+    enhance_prompt=None,
+    replication=None,
+    output_path=None,
+    overwrite=False,
+):
     """
     Upscale an image using Venice AI.
 
@@ -249,7 +258,16 @@ def image_upscale(image_path, scale, output_path=None, overwrite_files=False):
         "image": (pathlib.Path(image_path).name, image_data),
     }
 
-    data = {"scale": scale}
+    data = {
+        "scale": scale,
+        "enhance": enhance,
+        "enhanceCreativity": enhance_creativity,
+        "enhancePrompt": enhance_prompt,
+        "replication": replication,
+    }
+
+    # Remove None values from data in order to use API defaults
+    data = {k: v for k, v in data.items() if v is not None}
 
     r = httpx.post(url, headers=headers, files=files, data=data, timeout=120)
 
@@ -275,7 +293,7 @@ def image_upscale(image_path, scale, output_path=None, overwrite_files=False):
             output_path = output_path / default_filename
 
     # Handle existing files by adding timestamp
-    if output_path.exists() and not overwrite_files:
+    if output_path.exists() and not overwrite:
         stem = output_path.stem
         suffix = output_path.suffix
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -595,12 +613,39 @@ def register_commands(cli):
     )
     @click.option(
         "--scale",
-        type=click.Choice(["2", "4"]),
+        type=click.FloatRange(1, 4),
         default="2",
-        help="Scale factor (2 or 4)",
+        help="Scale factor (between 1 and 4)",
     )
     @click.option(
-        "--output",
+        "--enhance",
+        is_flag=True,
+        default=False,
+        help="Enhance the image using Venice's image engine",
+    )
+    @click.option(
+        "--enhance-creativity",
+        type=click.FloatRange(0.0, 1.0),
+        default=None,
+        show_default=True,
+        help=("Higher values let the enhancement AI change the image more."),
+    )
+    @click.option(
+        "--enhance-prompt",
+        type=str,
+        default=None,
+        show_default=True,
+        help="A short descriptive image style prompt to apply during enhancement",
+    )
+    @click.option(
+        "--replication",
+        type=click.FloatRange(0.0, 1.0),
+        default=None,
+        show_default=True,
+        help=("How strongly lines and noise in the base image are preserved."),
+    )
+    @click.option(
+        "--output-path",
         "-o",
         type=click.Path(file_okay=True, dir_okay=True, writable=True),
         help="Output path (file or directory)",
@@ -611,9 +656,9 @@ def register_commands(cli):
         default=False,
         help="Overwrite existing files",
     )
-    def upscale(image_path, scale, output, overwrite):
+    def upscale(**kwargs):
         """Upscale an image using Venice API"""
-        image_upscale(image_path, scale, output, overwrite)
+        image_upscale(**kwargs)
 
 
 @llm.hookimpl
