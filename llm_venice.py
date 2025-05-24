@@ -266,6 +266,9 @@ def image_upscale(
         "replication": replication,
     }
 
+    # Remove None values from data in order to use API defaults
+    data = {k: v for k, v in data.items() if v is not None}
+
     r = httpx.post(url, headers=headers, files=files, data=data, timeout=120)
 
     try:
