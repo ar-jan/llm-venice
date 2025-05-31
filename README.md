@@ -10,13 +10,13 @@
 
 ## Installation
 
-Either install this plugin alongside an existing [LLM install](https://llm.datasette.io/en/stable/setup.html):
-
-`llm install llm-venice`
-
-Or install both using your package manager of choice, e.g.:
+Install `llm-venice` with its dependency `llm` using your package manager of choice, for example:
 
 `pip install llm-venice`
+
+Or install it alongside an existing [LLM install](https://llm.datasette.io/en/stable/setup.html):
+
+`llm install llm-venice`
 
 ## Configuration
 
@@ -24,14 +24,23 @@ Set an environment variable `LLM_VENICE_KEY`, or save a [Venice API](https://doc
 
 `llm keys set venice`
 
-Fetch a list of the models available over the Venice API:
+To fetch a list of the models available over the Venice API:
 
 `llm venice refresh`
 
-You should re-run `refresh` whenever new models are made availabe or deprecated ones are removed.
+You should re-run the `refresh` command upon changes to the Venice API, when:
+
+- New models have been made availabe
+- Deprecated models have been removed
+- New capabilities have been added
+
 The models are stored in `venice_models.json` in the llm user directory.
 
 ## Usage
+
+List available Venice models:
+
+`llm models --query venice`
 
 ### Prompting
 
@@ -82,11 +91,11 @@ It is recommended to use web search in combination with `--no-stream` so the sea
 
 ### Image generation
 
-Generated images are stored in the LLM user directory. Example:
+Generated images are stored in the LLM user directory by default. Example:
 
 `llm -m venice/stable-diffusion-3.5 "Painting of a traditional Dutch windmill" -o style_preset "Watercolor"`
 
-Besides the Venice API image generation parameters, you can specify the output filename and whether or not to overwrite existing files.
+Besides the Venice API image generation parameters, you can specify the output directory and filename, and whether or not to overwrite existing files.
 
 You can check the available parameters for a model by filtering the model list with `--query`, and show the `--options`:
 
@@ -95,7 +104,7 @@ You can check the available parameters for a model by filtering the model list w
 ### Image upscaling
 
 You can upscale existing images.
-The following saves the returned image as `image_upscaled.png` in the same directory as the original file:
+The following example saves the returned image as `image_upscaled.png` in the same directory as the original file:
 
 `llm venice upscale /path/to/image.jpg`.
 
