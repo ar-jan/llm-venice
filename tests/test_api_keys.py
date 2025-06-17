@@ -14,7 +14,7 @@ with open(api_keys_rate_limits_path) as f:
     api_keys_rate_limits_schema = json.load(f)
 
 
-@pytest.mark.api
+@pytest.mark.integration
 def test_rate_limits():
     """Test that 'api-keys rate-limits' output matches expected schema"""
     runner = CliRunner()

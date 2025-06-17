@@ -7,7 +7,7 @@ import pytest
 import sqlite_utils
 
 
-@pytest.mark.api
+@pytest.mark.integration
 def test_prompt_web_search():
     """Test that the 'web_search on' option includes web_search_citations"""
 

@@ -27,7 +27,7 @@ jobs:
           pip install -e '.[test]'
       - name: Run tests
         run: |
-          pytest -m "not api"
+          pytest
 
   test-api: # Run manually
     if: github.event_name == 'workflow_dispatch'
@@ -49,5 +49,6 @@ jobs:
       - name: Run API tests
         env:
           LLM_VENICE_KEY: ${{ secrets.LLM_VENICE_KEY }}
+        # Override addopts to run integration tests
         run: |
-          pytest -m "api"
+          pytest -m ""
