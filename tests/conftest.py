@@ -1,4 +1,22 @@
+"""Shared fixtures for llm-venice tests"""
+
 import pytest
+from unittest.mock import patch
+
+
+@pytest.fixture
+def mock_venice_api_key():
+    """Mock llm.get_key to return a fake Venice API key.
+
+    This fixture automatically patches llm.get_key for the duration of the test,
+    ensuring consistent API key mocking across all tests.
+
+    Returns:
+        str: The fake API key value being used
+    """
+    fake_key = "fake-venice-api-key"
+    with patch("llm.get_key", return_value=fake_key):
+        yield fake_key
 
 
 @pytest.fixture
