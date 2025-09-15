@@ -4,6 +4,9 @@
         "data": {
             "type": "object",
             "properties": {
+                "accessPermitted": {
+                    "type": "boolean"
+                },
                 "apiTier": {
                     "type": "object",
                     "properties": {
@@ -13,25 +16,40 @@
                         "isCharged": {
                             "type": "boolean"
                         }
-                    },
-                    "required": [
-                        "id",
-                        "isCharged"
-                    ]
-                },
-                "accessPermitted": {
-                    "type": "boolean"
+                    }
                 },
                 "balances": {
                     "type": "object",
                     "properties": {
+                        "USD": {
+                            "type": "number"
+                        },
                         "VCU": {
+                            "type": "number"
+                        },
+                        "DIEM": {
                             "type": "number"
                         }
                     },
                     "required": [
-                        "VCU"
+                        "USD",
+                        "VCU",
+                        "DIEM"
                     ]
+                },
+                "keyExpiration": {
+                    "oneOf": [
+                        {
+                            "type": "null"
+                        },
+                        {
+                            "type": "string"
+                        }
+                    ]
+                },
+                "nextEpochBegins": {
+                    "type": "string",
+                    "format": "date-time"
                 },
                 "rateLimits": {
                     "type": "array",
@@ -47,7 +65,7 @@
                                     "type": "object",
                                     "properties": {
                                         "amount": {
-                                            "type": "number"
+                                            "type": "integer"
                                         },
                                         "type": {
                                             "type": "string"
@@ -61,21 +79,17 @@
                             }
                         },
                         "required": [
-                            "apiModelId",
                             "rateLimits"
                         ]
                     }
                 }
             },
             "required": [
-                "apiTier",
                 "accessPermitted",
+                "apiTier",
                 "balances",
                 "rateLimits"
             ]
         }
-    },
-    "required": [
-        "data"
-    ]
+    }
 }
