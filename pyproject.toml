@@ -31,5 +31,6 @@ test = [
 
 [tool.pytest.ini_options]
 markers = [
-    "api: marks tests that call external APIs"
+    "integration: marks integration tests that call external APIs"
 ]
+addopts = "-m 'not integration'"

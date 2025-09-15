@@ -1,9 +1,9 @@
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, MagicMock, patch
 
 from llm_venice import VeniceImage
 
 
-def test_venice_image_format_in_payload():
+def test_venice_image_format_in_payload(mock_venice_api_key):
     """Test that image format is correctly included in the API payload."""
     # Create a VeniceImage model instance
     model = VeniceImage("test-model")
@@ -39,7 +39,7 @@ def test_venice_image_format_in_payload():
 
             # Mock file operations
             with patch("pathlib.Path.write_bytes"):
-                with patch.object(model, "get_key", return_value="fake-key"):
+                with patch.object(model, "get_key", return_value=mock_venice_api_key):
                     list(model.execute(prompt, False, MagicMock(), None))
 
                     mock_post.assert_called_once()

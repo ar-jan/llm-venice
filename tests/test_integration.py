@@ -1,18 +1,19 @@
 import json
 
-from click.testing import CliRunner
 import llm
 from llm.cli import cli
 import pytest
 import sqlite_utils
 
 
-@pytest.mark.api
-def test_prompt_web_search():
-    """Test that the 'web_search on' option includes web_search_citations"""
+@pytest.mark.integration
+def test_prompt_web_search(cli_runner, isolated_llm_dir):
+    """Test that the 'web_search on' option includes web_search_citations.
 
-    runner = CliRunner()
-    result = runner.invoke(
+    Uses isolated_llm_dir fixture to ensure test doesn't modify user's actual logs.db
+    """
+
+    result = cli_runner.invoke(
         cli,
         [
             "prompt",
@@ -27,8 +28,11 @@ def test_prompt_web_search():
 
     assert result.exit_code == 0
 
-    # Get the response from the logs database
+    # Get the response from the isolated test logs database
+    # The isolated_llm_dir fixture ensures llm.user_dir() returns the temp directory
     logs_db_path = llm.user_dir() / "logs.db"
+    assert logs_db_path.parent == isolated_llm_dir  # Verify we're using the temp dir
+
     db = sqlite_utils.Database(logs_db_path)
     last_response = list(db["responses"].rows)[-1]
 
