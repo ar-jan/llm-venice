@@ -2,6 +2,7 @@
 
 import pytest
 from click.testing import CliRunner
+from pathlib import Path
 from unittest.mock import patch
 
 
@@ -38,6 +39,27 @@ def cli_runner():
         CliRunner: A Click test runner configured for isolated testing
     """
     return CliRunner()
+
+
+@pytest.fixture
+def temp_image_file(tmp_path, mock_image_file):
+    """Create a temporary image file on disk for testing.
+
+    This fixture creates a real file on disk with image data that can be
+    used for testing file operations, uploads, etc.
+
+    The file is created as 'test.jpg' in the temporary directory.
+
+    Args:
+        tmp_path: pytest's tmp_path fixture for temporary directories
+        mock_image_file: The mock image data to write to the file
+
+    Returns:
+        Path: Path object pointing to the created temporary image file (test.jpg)
+    """
+    image_path = tmp_path / "test.jpg"
+    image_path.write_bytes(mock_image_file)
+    return image_path
 
 
 @pytest.fixture

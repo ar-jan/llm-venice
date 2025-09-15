@@ -6,15 +6,10 @@ from llm_venice import image_upscale
 import pytest
 
 
-def test_upscale_function(mocked_responses, mock_image_file, tmp_path, mock_venice_api_key):
+def test_upscale_function(mocked_responses, temp_image_file, tmp_path, mock_venice_api_key):
     """Test the image_upscale function directly"""
-    # Create a mock image file
-    test_img_path = tmp_path / "test.jpg"
-    with open(test_img_path, "wb") as f:
-        f.write(mock_image_file)
-
     # Test the function
-    image_upscale(str(test_img_path), scale=2)
+    image_upscale(str(temp_image_file), scale=2)
 
     # Verify the API was called correctly
     requests = mocked_responses.get_requests()
@@ -28,6 +23,7 @@ def test_upscale_function(mocked_responses, mock_image_file, tmp_path, mock_veni
     assert "multipart/form-data" in request.headers["Content-Type"]
 
     # Check if the output file was created with the correct name
+    # temp_image_file's test.jpg results in test_upscaled.png
     expected_output_path = tmp_path / "test_upscaled.png"
     assert expected_output_path.exists()
 
@@ -36,16 +32,11 @@ def test_upscale_function(mocked_responses, mock_image_file, tmp_path, mock_veni
         assert f.read() == b"upscaled image data"
 
 
-def test_upscale_command(mocked_responses, mock_image_file, tmp_path, mock_venice_api_key, cli_runner):
+def test_upscale_command(mocked_responses, temp_image_file, tmp_path, mock_venice_api_key, cli_runner):
     """Test the CLI command for upscaling"""
-    # Create a mock image file
-    test_img_path = tmp_path / "test.jpg"
-    with open(test_img_path, "wb") as f:
-        f.write(mock_image_file)
-
     # Run the CLI command
     result = cli_runner.invoke(
-        cli, ["venice", "upscale", str(test_img_path), "--scale", "4"]
+        cli, ["venice", "upscale", str(temp_image_file), "--scale", "4"]
     )
 
     # Verify the command completed successfully
@@ -64,7 +55,7 @@ def test_upscale_command(mocked_responses, mock_image_file, tmp_path, mock_venic
     assert b"4" in request_body
 
 
-def test_upscale_error_handling(httpx_mock, mock_venice_api_key, tmp_path):
+def test_upscale_error_handling(httpx_mock, mock_venice_api_key, temp_image_file):
     """Test error handling in the upscale function"""
     # Mock an error response from the API
     httpx_mock.add_response(
@@ -74,13 +65,8 @@ def test_upscale_error_handling(httpx_mock, mock_venice_api_key, tmp_path):
         json={"error": "Invalid request"},
     )
 
-    # Create a temporary test file
-    test_img_path = tmp_path / "test.jpg"
-    with open(test_img_path, "wb") as f:
-        f.write(b"fake image data")
-
     with pytest.raises(ValueError) as excinfo:
-        image_upscale(str(test_img_path), scale=2)
+        image_upscale(str(temp_image_file), scale=2)
 
     # Verify the error message includes the API response
     assert "API request failed" in str(excinfo.value)
@@ -96,14 +82,10 @@ def test_upscale_missing_api_key():
         assert "No key found for Venice" in str(excinfo.value)
 
 
-def test_upscale_with_enhancement_options(mocked_responses, mock_image_file, tmp_path, mock_venice_api_key):
+def test_upscale_with_enhancement_options(mocked_responses, temp_image_file, mock_venice_api_key):
     """Test upscaling with enhancement options enabled"""
-    test_img_path = tmp_path / "test.jpg"
-    with open(test_img_path, "wb") as f:
-        f.write(mock_image_file)
-
     image_upscale(
-            str(test_img_path),
+            str(temp_image_file),
             scale=3,
             enhance=True,
             enhance_creativity=0.7,
@@ -157,20 +139,17 @@ def test_upscale_custom_output_path_directory(
 
 
 def test_upscale_avoid_overwrite_with_timestamp(
-    mocked_responses, mock_image_file, tmp_path, mock_venice_api_key
+    mocked_responses, temp_image_file, tmp_path, mock_venice_api_key
 ):
     """Test that existing files are not overwritten without --overwrite flag"""
-    test_img_path = tmp_path / "test.jpg"
+    # Expected output path: test.jpg -> test_upscaled.png
     existing_output = tmp_path / "test_upscaled.png"
-
-    with open(test_img_path, "wb") as f:
-        f.write(mock_image_file)
 
     # Create existing output file
     with open(existing_output, "w") as f:
         f.write("existing content")
 
-    image_upscale(str(test_img_path), scale=2, overwrite=False)
+    image_upscale(str(temp_image_file), scale=2, overwrite=False)
 
     # Original file should be unchanged
     with open(existing_output, "r") as f:
@@ -185,19 +164,16 @@ def test_upscale_avoid_overwrite_with_timestamp(
         assert f.read() == b"upscaled image data"
 
 
-def test_upscale_overwrite_existing_file(mocked_responses, mock_image_file, tmp_path, mock_venice_api_key):
+def test_upscale_overwrite_existing_file(mocked_responses, temp_image_file, tmp_path, mock_venice_api_key):
     """Test overwriting existing files when --overwrite is True"""
-    test_img_path = tmp_path / "test.jpg"
+    # Expected output path: test.jpg -> test_upscaled.png
     existing_output = tmp_path / "test_upscaled.png"
-
-    with open(test_img_path, "wb") as f:
-        f.write(mock_image_file)
 
     # Create existing output file
     with open(existing_output, "w") as f:
         f.write("existing content")
 
-    image_upscale(str(test_img_path), scale=2, overwrite=True)
+    image_upscale(str(temp_image_file), scale=2, overwrite=True)
 
     # File should be overwritten
     with open(existing_output, "rb") as f:
@@ -208,20 +184,16 @@ def test_upscale_overwrite_existing_file(mocked_responses, mock_image_file, tmp_
     assert len(timestamped_files) == 0
 
 
-def test_upscale_cli_with_all_options(mocked_responses, mock_image_file, tmp_path, mock_venice_api_key, cli_runner):
+def test_upscale_cli_with_all_options(mocked_responses, temp_image_file, tmp_path, mock_venice_api_key, cli_runner):
     """Test CLI command with all available options"""
-    test_img_path = tmp_path / "test.jpg"
     output_path = tmp_path / "custom_output.png"
-
-    with open(test_img_path, "wb") as f:
-        f.write(mock_image_file)
 
     result = cli_runner.invoke(
             cli,
             [
                 "venice",
                 "upscale",
-                str(test_img_path),
+                str(temp_image_file),
                 "--scale",
                 "3.5",
                 "--enhance",
@@ -264,7 +236,7 @@ def test_upscale_cli_file_not_found(mock_venice_api_key, cli_runner):
     assert "does not exist" in result.output or "No such file" in result.output
 
 
-def test_upscale_network_timeout(httpx_mock, mock_image_file, tmp_path, mock_venice_api_key):
+def test_upscale_network_timeout(httpx_mock, temp_image_file, mock_venice_api_key):
     """Test handling of network timeouts"""
     import httpx
 
@@ -275,15 +247,11 @@ def test_upscale_network_timeout(httpx_mock, mock_image_file, tmp_path, mock_ven
         url="https://api.venice.ai/api/v1/image/upscale",
     )
 
-    test_img_path = tmp_path / "test.jpg"
-    with open(test_img_path, "wb") as f:
-        f.write(mock_image_file)
-
     with pytest.raises(httpx.TimeoutException):
-        image_upscale(str(test_img_path), scale=2)
+        image_upscale(str(temp_image_file), scale=2)
 
 
-def test_upscale_binary_response_handling(httpx_mock, mock_image_file, tmp_path, mock_venice_api_key):
+def test_upscale_binary_response_handling(httpx_mock, temp_image_file, tmp_path, mock_venice_api_key):
     """Test that binary image data is handled correctly"""
     # Mock response with specific binary PNG data
     png_header = b"\x89PNG\r\n\x1a\n"
@@ -296,12 +264,9 @@ def test_upscale_binary_response_handling(httpx_mock, mock_image_file, tmp_path,
         headers={"Content-Type": "image/png"},
     )
 
-    test_img_path = tmp_path / "test.jpg"
-    with open(test_img_path, "wb") as f:
-        f.write(mock_image_file)
+    image_upscale(str(temp_image_file), scale=2)
 
-    image_upscale(str(test_img_path), scale=2)
-
+    # Verify the output file was created with expected naming convention
     output_file = tmp_path / "test_upscaled.png"
     with open(output_file, "rb") as f:
         saved_data = f.read()
