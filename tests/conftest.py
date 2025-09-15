@@ -4,6 +4,8 @@ import pytest
 from click.testing import CliRunner
 from pathlib import Path
 from unittest.mock import patch
+import llm
+import shutil
 
 
 @pytest.fixture
@@ -72,3 +74,25 @@ def mocked_responses(httpx_mock, mock_image_file):
         headers={"Content-Type": "image/jpeg"},
     )
     return httpx_mock
+
+
+@pytest.fixture
+def isolated_llm_dir(tmp_path, monkeypatch):
+    """Create isolated dir with copies of real config files.
+
+    This allows to call the API with live user configuration
+    without adding test responses to the user's real logs.db.
+    """
+    test_llm_dir = tmp_path / "llm_test_dir"
+    test_llm_dir.mkdir()
+
+    # Copy real config files from actual user dir
+    real_user_dir = llm.user_dir()  # Get before we change it
+
+    for config_file in ["keys.json", "venice_models.json"]:
+        src = real_user_dir / config_file
+        if src.exists():
+            shutil.copy(src, test_llm_dir / config_file)
+
+    monkeypatch.setenv("LLM_USER_PATH", str(test_llm_dir))
+    return test_llm_dir

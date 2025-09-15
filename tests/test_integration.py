@@ -7,8 +7,11 @@ import sqlite_utils
 
 
 @pytest.mark.integration
-def test_prompt_web_search(cli_runner):
-    """Test that the 'web_search on' option includes web_search_citations"""
+def test_prompt_web_search(cli_runner, isolated_llm_dir):
+    """Test that the 'web_search on' option includes web_search_citations.
+
+    Uses isolated_llm_dir fixture to ensure test doesn't modify user's actual logs.db
+    """
 
     result = cli_runner.invoke(
         cli,
@@ -25,8 +28,11 @@ def test_prompt_web_search(cli_runner):
 
     assert result.exit_code == 0
 
-    # Get the response from the logs database
+    # Get the response from the isolated test logs database
+    # The isolated_llm_dir fixture ensures llm.user_dir() returns the temp directory
     logs_db_path = llm.user_dir() / "logs.db"
+    assert logs_db_path.parent == isolated_llm_dir  # Verify we're using the temp dir
+
     db = sqlite_utils.Database(logs_db_path)
     last_response = list(db["responses"].rows)[-1]
 
