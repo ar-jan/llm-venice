@@ -1,6 +1,7 @@
 """Shared fixtures for llm-venice tests"""
 
 import pytest
+from click.testing import CliRunner
 from unittest.mock import patch
 
 
@@ -27,6 +28,16 @@ def mock_image_file():
         bytes: Fake image data
     """
     return b"fake image data"
+
+
+@pytest.fixture
+def cli_runner():
+    """Provide a configured CliRunner instance for testing CLI commands.
+
+    Returns:
+        CliRunner: A Click test runner configured for isolated testing
+    """
+    return CliRunner()
 
 
 @pytest.fixture

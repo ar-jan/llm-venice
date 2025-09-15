@@ -1,7 +1,6 @@
 from unittest.mock import patch
 
 import click
-from click.testing import CliRunner
 from llm.cli import cli
 from llm_venice import image_upscale
 import pytest
@@ -37,7 +36,7 @@ def test_upscale_function(mocked_responses, mock_image_file, tmp_path, mock_veni
         assert f.read() == b"upscaled image data"
 
 
-def test_upscale_command(mocked_responses, mock_image_file, tmp_path, mock_venice_api_key):
+def test_upscale_command(mocked_responses, mock_image_file, tmp_path, mock_venice_api_key, cli_runner):
     """Test the CLI command for upscaling"""
     # Create a mock image file
     test_img_path = tmp_path / "test.jpg"
@@ -45,8 +44,7 @@ def test_upscale_command(mocked_responses, mock_image_file, tmp_path, mock_venic
         f.write(mock_image_file)
 
     # Run the CLI command
-    runner = CliRunner()
-    result = runner.invoke(
+    result = cli_runner.invoke(
         cli, ["venice", "upscale", str(test_img_path), "--scale", "4"]
     )
 
@@ -210,7 +208,7 @@ def test_upscale_overwrite_existing_file(mocked_responses, mock_image_file, tmp_
     assert len(timestamped_files) == 0
 
 
-def test_upscale_cli_with_all_options(mocked_responses, mock_image_file, tmp_path, mock_venice_api_key):
+def test_upscale_cli_with_all_options(mocked_responses, mock_image_file, tmp_path, mock_venice_api_key, cli_runner):
     """Test CLI command with all available options"""
     test_img_path = tmp_path / "test.jpg"
     output_path = tmp_path / "custom_output.png"
@@ -218,8 +216,7 @@ def test_upscale_cli_with_all_options(mocked_responses, mock_image_file, tmp_pat
     with open(test_img_path, "wb") as f:
         f.write(mock_image_file)
 
-    runner = CliRunner()
-    result = runner.invoke(
+    result = cli_runner.invoke(
             cli,
             [
                 "venice",
@@ -259,10 +256,9 @@ def test_upscale_file_not_found(mock_venice_api_key):
         image_upscale("nonexistent.jpg", scale=2)
 
 
-def test_upscale_cli_file_not_found(mock_venice_api_key):
+def test_upscale_cli_file_not_found(mock_venice_api_key, cli_runner):
     """Test CLI error handling when input file doesn't exist"""
-    runner = CliRunner()
-    result = runner.invoke(cli, ["venice", "upscale", "nonexistent.jpg"])
+    result = cli_runner.invoke(cli, ["venice", "upscale", "nonexistent.jpg"])
 
     assert result.exit_code != 0
     assert "does not exist" in result.output or "No such file" in result.output
