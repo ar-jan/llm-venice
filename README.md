@@ -62,6 +62,34 @@ This works via llm's `--schema` options, for example:
 
 Consult llm's [schemas tutorial](https://llm.datasette.io/en/stable/schemas.html) for more options.
 
+### Tools (function calling)
+
+⚠️ [Warning: tools can be dangerous!](https://llm.datasette.io/en/stable/tools.html#tools-warning)
+
+```sh
+# List models supporting function calling
+llm models list --query venice --tools
+```
+
+You can use tools provided via llm plugins. LLM provides two built-in tools:
+
+```bash
+# llm_version
+llm -m venice/mistral-31-24b --tool llm_version "What version of LLM is this?" --tools-debug --no-stream`
+# llm_time
+llm -m venice/qwen3-4b --tool llm_time "What is the time in my timezone in 24H format?" --tools-debug --no-stream
+```
+
+You can also provide your own custom or one-off functions provided inline or in a file. Following LLM's [example](https://llm.datasette.io/en/stable/usage.html#usage-tools):
+
+```bash
+llm -m venice/mistral-31-24b --functions '
+def multiply(x: int, y: int) -> int:
+    """Multiply two numbers."""
+    return x * y
+' "What is 1337 times 42?" --tools-debug --no-stream
+```
+
 ### Vision models
 
 Vision models (currently `qwen-2.5-vl`) support the `--attachment` option:
