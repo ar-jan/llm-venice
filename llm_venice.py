@@ -684,6 +684,7 @@ def register_models(register):
                 can_stream=True,
                 vision=capabilities.get("supportsVision", False),
                 supports_schema=capabilities.get("supportsResponseSchema", False),
+                supports_tools=capabilities.get("supportsFunctionCalling", False),
             )
             model_instance.supports_web_search = capabilities.get(
                 "supportsWebSearch", False
