@@ -503,6 +503,8 @@ def register_commands(cli):
         no_venice_system_prompt = kwargs.pop("no_venice_system_prompt", False)
         web_search = kwargs.pop("web_search", False)
         character = kwargs.pop("character", None)
+        strip_thinking_response = kwargs.pop("strip_thinking_response", False)
+        disable_thinking = kwargs.pop("disable_thinking", False)
         options = list(kwargs.get("options", []))
         model_id = kwargs.get("model_id")
 
@@ -522,6 +524,12 @@ def register_commands(cli):
 
             if character:
                 venice_params["character_slug"] = character
+
+            if strip_thinking_response:
+                venice_params["strip_thinking_response"] = True
+
+            if disable_thinking:
+                venice_params["disable_thinking"] = True
 
             if venice_params:
                 # If a Venice option is used, any `-o extra_body value` is overridden here.
@@ -548,8 +556,18 @@ def register_commands(cli):
         "--character",
         help="Use a Venice AI public character (e.g. 'alan-watts')",
     )
+    @click.option(
+        "--strip-thinking-response",
+        is_flag=True,
+        help="Strip <think></think> blocks from the response (for reasoning models)",
+    )
+    @click.option(
+        "--disable-thinking",
+        is_flag=True,
+        help="Disable thinking and strip <think></think> blocks (for reasoning models)",
+    )
     @click.pass_context
-    def new_prompt(ctx, no_venice_system_prompt, web_search, character, **kwargs):
+    def new_prompt(ctx, no_venice_system_prompt, web_search, character, strip_thinking_response, disable_thinking, **kwargs):
         """Execute a prompt"""
         kwargs = process_venice_options(
             {
@@ -557,6 +575,8 @@ def register_commands(cli):
                 "no_venice_system_prompt": no_venice_system_prompt,
                 "web_search": web_search,
                 "character": character,
+                "strip_thinking_response": strip_thinking_response,
+                "disable_thinking": disable_thinking,
             }
         )
         return ctx.invoke(original_prompt, **kwargs)
@@ -577,8 +597,18 @@ def register_commands(cli):
         "--character",
         help="Use a Venice AI character (e.g. 'alan-watts')",
     )
+    @click.option(
+        "--strip-thinking-response",
+        is_flag=True,
+        help="Strip <think></think> blocks from the response (for reasoning models)",
+    )
+    @click.option(
+        "--disable-thinking",
+        is_flag=True,
+        help="Disable thinking and strip <think></think> blocks (for reasoning models)",
+    )
     @click.pass_context
-    def new_chat(ctx, no_venice_system_prompt, web_search, character, **kwargs):
+    def new_chat(ctx, no_venice_system_prompt, web_search, character, strip_thinking_response, disable_thinking, **kwargs):
         """Hold an ongoing chat with a model"""
         kwargs = process_venice_options(
             {
@@ -586,6 +616,8 @@ def register_commands(cli):
                 "no_venice_system_prompt": no_venice_system_prompt,
                 "web_search": web_search,
                 "character": character,
+                "strip_thinking_response": strip_thinking_response,
+                "disable_thinking": disable_thinking,
             }
         )
         return ctx.invoke(original_chat, **kwargs)
@@ -596,6 +628,8 @@ def register_commands(cli):
             "no_venice_system_prompt",
             "web_search",
             "character",
+            "strip_thinking_response",
+            "disable_thinking",
         ):
             new_prompt.params.append(param)
 
@@ -604,6 +638,8 @@ def register_commands(cli):
             "no_venice_system_prompt",
             "web_search",
             "character",
+            "strip_thinking_response",
+            "disable_thinking",
         ):
             new_chat.params.append(param)
 
