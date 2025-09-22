@@ -50,7 +50,7 @@ Run a prompt:
 
 Start an interactive chat session:
 
-`llm chat --model venice/llama-3.1-405b`
+`llm chat --model venice/mistral-31-24b`
 
 #### Structured Outputs
 
@@ -58,7 +58,7 @@ Some models support structuring their output according to a JSON schema (supplie
 
 This works via llm's `--schema` options, for example:
 
-`llm -m venice/dolphin-2.9.2-qwen2-72b --schema "name, age int, one_sentence_bio" "Invent an evil supervillain"`
+`llm -m venice/llama-3.2-3b --schema "name, age int, one_sentence_bio" "Invent an evil supervillain"`
 
 Consult llm's [schemas tutorial](https://llm.datasette.io/en/stable/schemas.html) for more options.
 
@@ -75,7 +75,7 @@ You can use tools provided via llm plugins. LLM provides two built-in tools:
 
 ```bash
 # llm_version
-llm -m venice/mistral-31-24b --tool llm_version "What version of LLM is this?" --tools-debug --no-stream`
+llm -m venice/mistral-31-24b --tool llm_version "What version of LLM is this?" --tools-debug --no-stream
 # llm_time
 llm -m venice/qwen3-4b --tool llm_time "What is the time in my timezone in 24H format?" --tools-debug --no-stream
 ```
@@ -92,10 +92,10 @@ def multiply(x: int, y: int) -> int:
 
 ### Vision models
 
-Vision models (currently `qwen-2.5-vl`) support the `--attachment` option:
+Vision models (currently `mistral-31-24b`) support the `--attachment` option:
 
-> `llm -m venice/qwen-2.5-vl -a https://upload.wikimedia.org/wikipedia/commons/a/a9/Corvus_corone_-near_Canford_Cliffs%2C_Poole%2C_England-8.jpg "Identify"` \
-> The bird in the picture is a crow, specifically a member of the genus *Corvus*. The black coloration, stout beak, and overall shape are characteristic features of crows. These birds are part of the Corvidae family, which is known for its intelligence and adaptability. [...]
+> `llm -m venice/mistral-31-24b -a https://upload.wikimedia.org/wikipedia/commons/a/a9/Corvus_corone_-near_Canford_Cliffs%2C_Poole%2C_England-8.jpg "Identify"` \
+> The bird in the image is a carrion crow (Corvus corone). [...]
 
 ### venice_parameters
 
@@ -113,7 +113,7 @@ It is recommended to use web search in combination with `--no-stream` so the sea
 
 **--character character_slug** to use a public character, for example:
 
-`llm -m venice/deepseek-r1-671b --character alan-watts "What is the meaning of life?"`
+`llm -m venice/qwen3-235b --character alan-watts "What is the meaning of life?"`
 
 *Note: these options override any `-o extra_body '{"venice_parameters": { ...}}'` and so should not be combined with that option.*
 
@@ -121,13 +121,13 @@ It is recommended to use web search in combination with `--no-stream` so the sea
 
 Generated images are stored in the LLM user directory by default. Example:
 
-`llm -m venice/stable-diffusion-3.5 "Painting of a traditional Dutch windmill" -o style_preset "Watercolor"`
+`llm -m venice/qwen-image "Painting of a traditional Dutch windmill" -o style_preset "Watercolor"`
 
 Besides the Venice API image generation parameters, you can specify the output directory and filename, and whether or not to overwrite existing files.
 
 You can check the available parameters for a model by filtering the model list with `--query`, and show the `--options`:
 
-`llm models list --query diffusion --options`
+`llm models list --query qwen-image --options`
 
 ### Image upscaling
 
