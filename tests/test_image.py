@@ -42,6 +42,10 @@ def test_venice_image_format_in_payload(mock_venice_api_key):
                 with patch.object(model, "get_key", return_value=mock_venice_api_key):
                     list(model.execute(prompt, False, MagicMock(), None))
 
+                    # Verify model_dump was called with by_alias=True
+                    # This ensures the alias "format" is used instead of "image_format"
+                    options.model_dump.assert_called_once_with(by_alias=True)
+
                     mock_post.assert_called_once()
                     call_args = mock_post.call_args
 
