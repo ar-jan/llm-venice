@@ -48,3 +48,42 @@ def test_venice_image_format_in_payload(mock_venice_api_key):
                     # Extract and verify the payload
                     payload = call_args[1]["json"]
                     assert payload["format"] == format_value
+
+
+def test_venice_image_content_violation_handling(mock_venice_api_key):
+    """Test that content violation responses are detected and reported."""
+    # Create a VeniceImage model instance
+    model = VeniceImage("test-model")
+
+    # Create a prompt object
+    prompt = MagicMock()
+    prompt.prompt = "Test prompt with inappropriate content"
+
+    # Setup minimal options
+    options = Mock()
+    options.model_dump.return_value = {
+        "width": 1024,
+        "height": 1024,
+    }
+    prompt.options = options
+
+    # Mock the API call with content violation response
+    with patch("httpx.post") as mock_post:
+        # Configure the mock response with content violation header
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.headers = {"x-venice-is-content-violation": "true"}
+        mock_post.return_value = mock_response
+
+        # Mock the response object and get_key
+        response = MagicMock()
+        with patch.object(model, "get_key", return_value=mock_venice_api_key):
+            # Execute and collect results
+            results = list(model.execute(prompt, False, response, None))
+
+            # Verify the appropriate error message was yielded
+            assert len(results) == 1
+            assert results[0] == "Response marked as content violation; no image was returned."
+
+            # Verify the API was called
+            mock_post.assert_called_once()
