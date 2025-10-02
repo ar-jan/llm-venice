@@ -171,3 +171,46 @@ def test_venice_image_return_binary_vs_json_parsing(mock_venice_api_key):
                 # Verify response metadata was stored
                 assert response.response_json["request"]["seed"] == 12345
                 assert response.response_json["timing"]["inference"] == 2.5
+
+
+def test_venice_image_default_output_directory_creation(mock_venice_api_key):
+    """Test that default output directory is created from llm.user_dir() when not specified."""
+    model = VeniceImage("test-model")
+
+    # Create a prompt object
+    prompt = MagicMock()
+    prompt.prompt = "Test default directory"
+
+    # Setup options without specifying output_dir
+    options = Mock()
+    options.model_dump.return_value = {
+        "return_binary": True,
+        "format": "png",
+    }
+    prompt.options = options
+
+    # Mock API response with binary content
+    with patch("httpx.post") as mock_post:
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.headers = {}
+        mock_response.content = b"\x89PNG\r\n\x1a\n"
+        mock_post.return_value = mock_response
+
+        response = MagicMock()
+
+        # Mock llm.user_dir() to return a test path
+        mock_user_dir = MagicMock()
+        mock_images_dir = MagicMock()
+        mock_user_dir.__truediv__ = Mock(return_value=mock_images_dir)
+
+        with patch("llm_venice.llm.user_dir", return_value=mock_user_dir):
+            with patch.object(model, "get_key", return_value=mock_venice_api_key):
+                with patch("pathlib.Path.write_bytes"):
+                    list(model.execute(prompt, False, response, None))
+
+                    # Verify llm.user_dir() was called
+                    mock_user_dir.__truediv__.assert_called_once_with("images")
+
+                    # Verify mkdir was called with exist_ok=True
+                    mock_images_dir.mkdir.assert_called_once_with(exist_ok=True)
