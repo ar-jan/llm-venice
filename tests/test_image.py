@@ -354,6 +354,8 @@ def test_non_writable_directory_raises_valueerror(mock_venice_api_key, tmp_path)
             with pytest.raises(ValueError, match="is not a writable directory"):
                 list(model.execute(prompt, False, response, None))
 
+        mock_post.assert_not_called()
+
     # Clean up: restore permissions so pytest can clean up tmp_path
     non_writable_dir.chmod(0o755)
 
@@ -394,6 +396,8 @@ def test_nonexistent_directory_raises_valueerror(mock_venice_api_key, tmp_path):
             with pytest.raises(ValueError, match="is not a writable directory"):
                 list(model.execute(prompt, False, response, None))
 
+        mock_post.assert_not_called()
+
 
 def test_file_path_instead_of_directory_raises_valueerror(
     mock_venice_api_key, tmp_path
@@ -433,6 +437,8 @@ def test_file_path_instead_of_directory_raises_valueerror(
             # Should raise ValueError for file path instead of directory
             with pytest.raises(ValueError, match="is not a writable directory"):
                 list(model.execute(prompt, False, response, None))
+
+        mock_post.assert_not_called()
 
 
 def test_timestamp_format_in_appended_filename(mock_venice_api_key, tmp_path):
