@@ -1,6 +1,7 @@
 import base64
 from unittest.mock import Mock, MagicMock, patch
 import pytest
+import httpx
 
 from llm_venice import VeniceImage
 
@@ -592,3 +593,159 @@ def test_multiple_collisions_create_multiple_timestamped_files(
     # Two timestamped files should exist
     timestamped_files = [f for f in all_files if f != original_file]
     assert len(timestamped_files) == 2
+
+
+def test_http_error_raises_valueerror(mock_venice_api_key):
+    """Test that HTTP errors from the API are raised as ValueError."""
+    model = VeniceImage("test-model")
+
+    # Create a prompt object
+    prompt = MagicMock()
+    prompt.prompt = "Test prompt"
+
+    # Setup options
+    options = Mock()
+    options.model_dump.return_value = {
+        "return_binary": True,
+        "format": "png",
+    }
+    prompt.options = options
+
+    # Mock the API call with HTTP error
+    with patch("httpx.post") as mock_post:
+        # Configure the mock response to raise HTTPStatusError
+        mock_response = Mock()
+        mock_response.text = "API Error: Rate limit exceeded"
+        mock_response.status_code = 429
+
+        # Create an HTTPStatusError
+        http_error = httpx.HTTPStatusError(
+            "429 Client Error",
+            request=Mock(),
+            response=mock_response,
+        )
+        mock_response.raise_for_status.side_effect = http_error
+        mock_post.return_value = mock_response
+
+        response = MagicMock()
+        with patch.object(model, "get_key", return_value=mock_venice_api_key):
+            # Should raise ValueError with API error message
+            with pytest.raises(
+                ValueError, match="API request failed:.*Rate limit exceeded"
+            ):
+                list(model.execute(prompt, False, response, None))
+
+
+def test_invalid_base64_data_raises_valueerror(mock_venice_api_key):
+    """Test that invalid base64 data from JSON response raises ValueError."""
+    model = VeniceImage("test-model")
+
+    # Create a prompt object
+    prompt = MagicMock()
+    prompt.prompt = "Test prompt"
+
+    # Setup options with return_binary=False to trigger base64 decoding
+    options = Mock()
+    options.model_dump.return_value = {
+        "return_binary": False,
+        "format": "png",
+    }
+    prompt.options = options
+
+    # Mock the API call with invalid base64 data - using non-string type
+    # which will cause base64.b64decode to raise TypeError
+    with patch("httpx.post") as mock_post:
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.headers = {}
+        mock_response.json.return_value = {
+            "images": [
+                12345  # Invalid: integer instead of base64 string - will cause TypeError
+            ],
+            "request": {"model": "test-model"},
+            "timing": {},
+        }
+        mock_post.return_value = mock_response
+
+        response = MagicMock()
+        with patch.object(model, "get_key", return_value=mock_venice_api_key):
+            # Should raise ValueError about base64 decoding failure
+            with pytest.raises(
+                ValueError, match="Failed to decode base64 image data"
+            ):
+                list(model.execute(prompt, False, response, None))
+
+
+def test_file_write_failure_raises_valueerror(mock_venice_api_key, tmp_path):
+    """Test that file write failures are caught and raised as ValueError."""
+    model = VeniceImage("test-model")
+
+    # Create a prompt object
+    prompt = MagicMock()
+    prompt.prompt = "Test prompt"
+
+    # Setup options
+    options = Mock()
+    options.model_dump.return_value = {
+        "output_dir": str(tmp_path),
+        "output_filename": "test.png",
+        "return_binary": True,
+        "format": "png",
+    }
+    prompt.options = options
+
+    # Mock the API call with valid response
+    with patch("httpx.post") as mock_post:
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.headers = {}
+        mock_response.content = b"\x89PNG\r\n\x1a\n"
+        mock_post.return_value = mock_response
+
+        response = MagicMock()
+        with patch.object(model, "get_key", return_value=mock_venice_api_key):
+            # Mock write_bytes to raise an error
+            with patch("pathlib.Path.write_bytes") as mock_write:
+                mock_write.side_effect = PermissionError("Permission denied")
+
+                # Should raise ValueError about file write failure
+                with pytest.raises(ValueError, match="Failed to write image file"):
+                    list(model.execute(prompt, False, response, None))
+
+
+def test_http_500_error_with_json_body(mock_venice_api_key):
+    """Test handling of 500 Internal Server Error with JSON error details."""
+    model = VeniceImage("test-model")
+
+    # Create a prompt object
+    prompt = MagicMock()
+    prompt.prompt = "Test prompt"
+
+    # Setup options
+    options = Mock()
+    options.model_dump.return_value = {
+        "return_binary": True,
+        "format": "png",
+    }
+    prompt.options = options
+
+    # Mock the API call with 500 error
+    with patch("httpx.post") as mock_post:
+        mock_response = Mock()
+        mock_response.text = (
+            '{"error": "Internal server error", "code": "server_error"}'
+        )
+        mock_response.status_code = 500
+
+        http_error = httpx.HTTPStatusError(
+            "500 Server Error",
+            request=Mock(),
+            response=mock_response,
+        )
+        mock_response.raise_for_status.side_effect = http_error
+        mock_post.return_value = mock_response
+
+        response = MagicMock()
+        with patch.object(model, "get_key", return_value=mock_venice_api_key):
+            with pytest.raises(ValueError, match="API request failed:.*server_error"):
+                list(model.execute(prompt, False, response, None))
