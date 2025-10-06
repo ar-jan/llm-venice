@@ -112,13 +112,7 @@ def test_venice_image_return_binary_vs_json_parsing(mock_venice_api_key):
     base64_encoded = base64.b64encode(raw_binary_content).decode("utf-8")
 
     # Test Case 1: return_binary=True - should use raw content
-    options_binary = Mock()
-    options_binary.model_dump.return_value = {
-        "return_binary": True,
-        "width": 1024,
-        "height": 1024,
-    }
-    prompt.options = options_binary
+    prompt.options = VeniceImage.Options(return_binary=True)
 
     with patch("httpx.post") as mock_post:
         mock_response = Mock()
@@ -141,13 +135,7 @@ def test_venice_image_return_binary_vs_json_parsing(mock_venice_api_key):
                 mock_response.json.assert_not_called()
 
     # Test Case 2: return_binary=False - should parse JSON and decode base64
-    options_json = Mock()
-    options_json.model_dump.return_value = {
-        "return_binary": False,
-        "width": 1024,
-        "height": 1024,
-    }
-    prompt.options = options_json
+    prompt.options = VeniceImage.Options(return_binary=False)
 
     with patch("httpx.post") as mock_post:
         mock_response = Mock()
@@ -603,13 +591,8 @@ def test_http_error_raises_valueerror(mock_venice_api_key):
     prompt = MagicMock()
     prompt.prompt = "Test prompt"
 
-    # Setup options
-    options = Mock()
-    options.model_dump.return_value = {
-        "return_binary": True,
-        "format": "png",
-    }
-    prompt.options = options
+    # Setup options with actual Pydantic model so payload is serialized via model_dump
+    prompt.options = VeniceImage.Options(return_binary=True)
 
     # Mock the API call with HTTP error
     with patch("httpx.post") as mock_post:
