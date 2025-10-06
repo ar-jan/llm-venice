@@ -1,7 +1,9 @@
 import base64
 from unittest.mock import Mock, MagicMock, patch
 import pytest
+
 import httpx
+from pydantic import ValidationError
 
 from llm_venice import VeniceImage
 
@@ -732,3 +734,68 @@ def test_http_500_error_with_json_body(mock_venice_api_key):
         with patch.object(model, "get_key", return_value=mock_venice_api_key):
             with pytest.raises(ValueError, match="API request failed:.*server_error"):
                 list(model.execute(prompt, False, response, None))
+
+
+def test_venice_image_options_defaults_and_validation():
+    """Test that VeniceImage.Options has correct defaults and validation."""
+    from llm_venice import VeniceImage
+
+    # Test default values
+    options = VeniceImage.Options()
+    assert options.height == 1024
+    assert options.width == 1024
+    assert options.image_format == "png"
+    assert options.hide_watermark is True
+    assert options.return_binary is False
+    assert options.safe_mode is False
+    assert options.overwrite_files is False
+    assert options.embed_exif_metadata is False
+    assert options.negative_prompt is None
+    assert options.style_preset is None
+    assert options.steps is None
+    assert options.cfg_scale is None
+    assert options.seed is None
+    assert options.lora_strength is None
+    assert options.output_dir is None
+    assert options.output_filename is None
+
+    # Test field alias for image_format
+    dumped = options.model_dump(by_alias=True)
+    assert "format" in dumped
+    assert dumped["format"] == "png"
+
+    # Test validation - height bounds
+    with pytest.raises(ValidationError):
+        VeniceImage.Options(height=63)  # Below minimum
+    with pytest.raises(ValidationError):
+        VeniceImage.Options(height=1281)  # Above maximum
+
+    # Test validation - width bounds
+    with pytest.raises(ValidationError):
+        VeniceImage.Options(width=63)  # Below minimum
+    with pytest.raises(ValidationError):
+        VeniceImage.Options(width=1281)  # Above maximum
+
+    # Test validation - steps bounds
+    with pytest.raises(ValidationError):
+        VeniceImage.Options(steps=6)  # Below minimum
+    with pytest.raises(ValidationError):
+        VeniceImage.Options(steps=51)  # Above maximum
+
+    # Test validation - cfg_scale bounds
+    with pytest.raises(ValidationError):
+        VeniceImage.Options(cfg_scale=0)  # Must be > 0
+    with pytest.raises(ValidationError):
+        VeniceImage.Options(cfg_scale=20.1)  # Above maximum
+
+    # Test validation - seed bounds
+    with pytest.raises(ValidationError):
+        VeniceImage.Options(seed=-1000000000)  # Below minimum
+    with pytest.raises(ValidationError):
+        VeniceImage.Options(seed=1000000000)  # Above maximum
+
+    # Test validation - lora_strength bounds
+    with pytest.raises(ValidationError):
+        VeniceImage.Options(lora_strength=-1)  # Below minimum
+    with pytest.raises(ValidationError):
+        VeniceImage.Options(lora_strength=101)  # Above maximum
