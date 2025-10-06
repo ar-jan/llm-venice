@@ -2,11 +2,17 @@
 
 import json
 
+import click
 import llm
 
 from llm_venice.models.chat import VeniceChat
 from llm_venice.models.image import VeniceImage
-from llm_venice.constants import VENICE_API_BASE, MODELS_CACHE_FILE
+from llm_venice.constants import (
+    VENICE_API_BASE,
+    VENICE_KEY_ENV_VAR,
+    VENICE_KEY_NAME,
+    MODELS_CACHE_FILE,
+)
 from llm_venice.api.refresh import refresh_models
 
 
@@ -17,6 +23,14 @@ def register_venice_models(register):
     Args:
         register: The LLM registration function
     """
+    key = llm.get_key("", VENICE_KEY_NAME, VENICE_KEY_ENV_VAR)
+    if not key:
+        click.echo(
+            "Venice models skipped: configure LLM_VENICE_KEY to enable them.",
+            err=True,
+        )
+        return
+
     venice_models_path = llm.user_dir() / MODELS_CACHE_FILE
     if venice_models_path.exists():
         models = json.loads(venice_models_path.read_text())
