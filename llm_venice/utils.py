@@ -1,8 +1,9 @@
 """Utility functions for the LLM Venice plugin."""
 
 import datetime
+import os
 import pathlib
-from typing import Optional
+from typing import Optional, Union
 
 import click
 import llm
@@ -43,9 +44,7 @@ def generate_timestamp_filename(prefix: str, model_name: str, extension: str) ->
 
 
 def get_unique_filepath(
-    directory: pathlib.Path,
-    filename: str,
-    overwrite: bool = False
+    directory: pathlib.Path, filename: str, overwrite: bool = False
 ) -> pathlib.Path:
     """
     Get a unique filepath, adding timestamp if file exists and overwrite is False.
@@ -71,7 +70,9 @@ def get_unique_filepath(
     return directory / new_filename
 
 
-def validate_output_directory(output_dir: Optional[pathlib.Path]) -> Optional[pathlib.Path]:
+def validate_output_directory(
+    output_dir: Optional[Union[pathlib.Path, str]],
+) -> Optional[pathlib.Path]:
     """
     Validate that a directory exists and is writable.
 
@@ -87,7 +88,10 @@ def validate_output_directory(output_dir: Optional[pathlib.Path]) -> Optional[pa
     if output_dir is None:
         return None
 
-    import os
+    if isinstance(output_dir, str) and not output_dir.strip():
+        # Treat empty string the same as no directory provided
+        return None
+
     resolved_dir = pathlib.Path(output_dir)
     if (
         not resolved_dir.exists()
