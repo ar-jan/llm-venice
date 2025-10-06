@@ -150,6 +150,19 @@ class VeniceImage(llm.Model):
         return_binary = options_dict.get("return_binary", False)
         image_format = options_dict.get("format")
 
+        # Validate user-provided output directory before making an API call
+        resolved_output_dir = None
+        if output_dir:
+            resolved_output_dir = pathlib.Path(output_dir)
+            if (
+                not resolved_output_dir.exists()
+                or not resolved_output_dir.is_dir()
+                or not os.access(resolved_output_dir, os.W_OK)
+            ):
+                raise ValueError(
+                    f"output_dir {resolved_output_dir} is not a writable directory"
+                )
+
         payload = {
             "model": self.model_name,
             "prompt": prompt.prompt,
@@ -194,23 +207,15 @@ class VeniceImage(llm.Model):
             except Exception as e:
                 raise ValueError(f"Failed to decode base64 image data: {e}")
 
-        if output_dir:
-            output_dir = pathlib.Path(output_dir)
-            if (
-                not output_dir.exists()
-                or not output_dir.is_dir()
-                or not os.access(output_dir, os.W_OK)
-            ):
-                raise ValueError(f"output_dir {output_dir} is not a writable directory")
-        else:
-            output_dir = llm.user_dir() / "images"
-            output_dir.mkdir(exist_ok=True)
+        if resolved_output_dir is None:
+            resolved_output_dir = llm.user_dir() / "images"
+            resolved_output_dir.mkdir(exist_ok=True)
 
         if not output_filename:
             datestring = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
             output_filename = f"{datestring}_venice_{self.model_name}.{image_format}"
 
-        output_filepath = output_dir / output_filename
+        output_filepath = resolved_output_dir / output_filename
 
         # Handle existing files
         if output_filepath.exists() and not overwrite_files:
@@ -218,7 +223,7 @@ class VeniceImage(llm.Model):
             suffix = output_filepath.suffix
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             new_filename = f"{stem}_{timestamp}{suffix}"
-            output_filepath = output_dir / new_filename
+            output_filepath = resolved_output_dir / new_filename
 
         try:
             output_filepath.write_bytes(image_bytes)
