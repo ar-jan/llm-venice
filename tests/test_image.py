@@ -799,3 +799,53 @@ def test_venice_image_options_defaults_and_validation():
         VeniceImage.Options(lora_strength=-1)  # Below minimum
     with pytest.raises(ValidationError):
         VeniceImage.Options(lora_strength=101)  # Above maximum
+
+
+def test_venice_image_logging_client_usage(mock_venice_api_key, monkeypatch):
+    """Test that LLM_VENICE_SHOW_RESPONSES enables logging_client for debugging."""
+    model = VeniceImage("test-model")
+
+    # Create a prompt object
+    prompt = MagicMock()
+    prompt.prompt = "Test prompt"
+
+    # Setup options
+    prompt.options = VeniceImage.Options(return_binary=True)
+
+    # Set environment variable to enable logging
+    monkeypatch.setenv("LLM_VENICE_SHOW_RESPONSES", "1")
+
+    # Mock both httpx.post and logging_client
+    mock_logging_client = Mock()
+    mock_client_instance = Mock()
+    mock_logging_client.return_value = mock_client_instance
+
+    # Configure the mock response
+    mock_response = Mock()
+    mock_response.raise_for_status.return_value = None
+    mock_response.headers = {}
+    mock_response.content = b"\x89PNG\r\n\x1a\n"
+    mock_client_instance.post.return_value = mock_response
+
+    response = MagicMock()
+
+    with patch("llm_venice.logging_client", mock_logging_client):
+        with patch("llm_venice.httpx.post") as mock_httpx_post:
+            with patch.object(model, "get_key", return_value=mock_venice_api_key):
+                with patch("pathlib.Path.write_bytes"):
+                    list(model.execute(prompt, False, response, None))
+
+                    # Verify logging_client was called
+                    mock_logging_client.assert_called_once()
+
+                    # Verify the logging client's post method was called instead of httpx.post
+                    mock_client_instance.post.assert_called_once()
+                    call_args = mock_client_instance.post.call_args
+
+                    # httpx.post should not be used when logging client is enabled
+                    mock_httpx_post.assert_not_called()
+
+                # Verify the call had the correct parameters
+                assert call_args[0][0] == "https://api.venice.ai/api/v1/image/generate"
+                assert "Authorization" in call_args[1]["headers"]
+                assert call_args[1]["timeout"] == 120
