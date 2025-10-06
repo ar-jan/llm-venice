@@ -1,4 +1,5 @@
 import base64
+import datetime
 from unittest.mock import Mock, MagicMock, patch
 import pytest
 
@@ -209,6 +210,49 @@ def test_venice_image_default_output_directory_creation(mock_venice_api_key):
 
                     # Verify mkdir was called with exist_ok=True
                     mock_images_dir.mkdir.assert_called_once_with(exist_ok=True)
+
+
+def test_venice_image_default_filename_path(mock_venice_api_key, tmp_path):
+    """Test that default filename path is generated under llm.user_dir()/images."""
+    model = VeniceImage("test-model")
+
+    prompt = MagicMock()
+    prompt.prompt = "Test default filename"
+
+    options = Mock()
+    options.model_dump.return_value = {
+        "return_binary": True,
+        "format": "png",
+    }
+    prompt.options = options
+
+    with patch("httpx.post") as mock_post:
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.headers = {}
+        mock_response.content = b"\x89PNG\r\n\x1a\n"
+        mock_post.return_value = mock_response
+
+        fixed_now = datetime.datetime(2025, 10, 6, 18, 7, 5)
+
+        with patch("llm_venice.llm.user_dir", return_value=tmp_path):
+            with patch("llm_venice.datetime.datetime") as mock_datetime:
+                mock_datetime.now.return_value = fixed_now
+                with patch.object(model, "get_key", return_value=mock_venice_api_key):
+                    results = list(model.execute(prompt, False, MagicMock(), None))
+
+        mock_post.assert_called_once()
+
+    expected_dir = tmp_path / "images"
+    expected_filename = (
+        f"{fixed_now.strftime('%Y-%m-%dT%H-%M-%S')}_venice_{model.model_name}.png"
+    )
+    expected_path = expected_dir / expected_filename
+
+    assert expected_dir.exists()
+    assert expected_path.exists()
+    assert expected_path.read_bytes() == mock_response.content
+    assert results == [f"Image saved to {expected_path}"]
 
 
 def test_existing_file_no_overwrite_adds_timestamp(mock_venice_api_key, tmp_path):
