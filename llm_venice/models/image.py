@@ -25,6 +25,7 @@ from llm_venice.utils import (
     get_unique_filepath,
     validate_output_directory,
 )
+from llm_venice.api.client import get_auth_headers_with_content_type
 
 
 class VeniceImageOptions(llm.Options):
@@ -109,8 +110,6 @@ class VeniceImage(llm.Model):
 
     def execute(self, prompt, stream, response, conversation=None):
         """Execute image generation request."""
-        key = self.get_key()
-
         options_dict = prompt.options.model_dump(by_alias=True)
         output_dir = options_dict.pop("output_dir", None)
         output_filename = options_dict.pop("output_filename", None)
@@ -127,11 +126,7 @@ class VeniceImage(llm.Model):
             **{k: v for k, v in options_dict.items() if v is not None},
         }
 
-        headers = {
-            "Authorization": f"Bearer {key}",
-            "Accept-Encoding": "gzip",
-            "Content-Type": "application/json",
-        }
+        headers = get_auth_headers_with_content_type()
 
         # Logging client option like LLM_OPENAI_SHOW_RESPONSES
         if os.environ.get("LLM_VENICE_SHOW_RESPONSES"):
