@@ -51,6 +51,7 @@ def register_venice_models(register):
                 supports_schema=capabilities.get("supportsResponseSchema", False),
                 supports_tools=capabilities.get("supportsFunctionCalling", False),
             )
+            # Venice-specific capabilities added as instance attributes
             model_instance.supports_web_search = capabilities.get(
                 "supportsWebSearch", False
             )
