@@ -200,7 +200,7 @@ def test_venice_image_default_output_directory_creation(mock_venice_api_key):
         mock_images_dir = MagicMock()
         mock_user_dir.__truediv__ = Mock(return_value=mock_images_dir)
 
-        with patch("llm_venice.llm.user_dir", return_value=mock_user_dir):
+        with patch("llm_venice.models.image.llm.user_dir", return_value=mock_user_dir):
             with patch.object(model, "get_key", return_value=mock_venice_api_key):
                 with patch("pathlib.Path.write_bytes"):
                     list(model.execute(prompt, False, response, None))
@@ -235,8 +235,8 @@ def test_venice_image_default_filename_path(mock_venice_api_key, tmp_path):
 
         fixed_now = datetime.datetime(2025, 10, 6, 18, 7, 5)
 
-        with patch("llm_venice.llm.user_dir", return_value=tmp_path):
-            with patch("llm_venice.datetime.datetime") as mock_datetime:
+        with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
+            with patch("llm_venice.models.image.datetime.datetime") as mock_datetime:
                 mock_datetime.now.return_value = fixed_now
                 with patch.object(model, "get_key", return_value=mock_venice_api_key):
                     results = list(model.execute(prompt, False, MagicMock(), None))
@@ -295,7 +295,7 @@ def test_existing_file_no_overwrite_adds_timestamp(mock_venice_api_key, tmp_path
                 "20250101_120000_123456"
             )
 
-            with patch("llm_venice.datetime.datetime", mock_datetime):
+            with patch("llm_venice.models.image.datetime.datetime", mock_datetime):
                 results = list(model.execute(prompt, False, response, None))
 
         # Verify original file is unchanged
@@ -879,8 +879,8 @@ def test_venice_image_logging_client_usage(mock_venice_api_key, monkeypatch):
 
     response = MagicMock()
 
-    with patch("llm_venice.logging_client", mock_logging_client):
-        with patch("llm_venice.httpx.post") as mock_httpx_post:
+    with patch("llm_venice.models.image.logging_client", mock_logging_client):
+        with patch("llm_venice.models.image.httpx.post") as mock_httpx_post:
             with patch.object(model, "get_key", return_value=mock_venice_api_key):
                 with patch("pathlib.Path.write_bytes"):
                     list(model.execute(prompt, False, response, None))
