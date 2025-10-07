@@ -29,8 +29,8 @@ jobs:
         run: |
           pytest
 
-  test-api: # Run manually
-    if: github.event_name == 'workflow_dispatch'
+  test-integration: # Run on master branch and manual trigger
+    if: github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -46,9 +46,8 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -e '.[test]'
-      - name: Run API tests
+      - name: Run integration tests
         env:
           LLM_VENICE_KEY: ${{ secrets.LLM_VENICE_KEY }}
-        # Override addopts to run integration tests
         run: |
-          pytest -m ""
+          pytest -m integration
