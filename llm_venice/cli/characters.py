@@ -6,7 +6,7 @@ import click
 import httpx
 import llm
 
-from llm_venice.constants import ENDPOINT_CHARACTERS, CHARACTERS_CACHE_FILE
+from llm_venice.constants import ENDPOINT_CHARACTERS
 from llm_venice.utils import get_venice_key
 
 
@@ -45,7 +45,7 @@ def create_characters_command():
         response.raise_for_status()
         characters_data = response.json()
 
-        path = llm.user_dir() / CHARACTERS_CACHE_FILE
+        path = llm.user_dir() / "venice_characters.json"
         path.write_text(json.dumps(characters_data, indent=4))
         characters_count = len(characters_data.get("data", []))
         click.echo(f"{characters_count} characters saved to {path}", err=True)

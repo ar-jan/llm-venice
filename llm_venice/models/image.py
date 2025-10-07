@@ -12,8 +12,6 @@ from llm.utils import logging_client
 from pydantic import ConfigDict, Field
 
 from llm_venice.constants import (
-    VENICE_KEY_NAME,
-    VENICE_KEY_ENV_VAR,
     ENDPOINT_IMAGE_GENERATE,
     DEFAULT_IMAGE_FORMAT,
     DEFAULT_IMAGE_SIZE,
@@ -95,8 +93,8 @@ class VeniceImage(llm.Model):
     """Venice AI image generation model."""
 
     can_stream = False
-    needs_key = VENICE_KEY_NAME
-    key_env_var = VENICE_KEY_ENV_VAR
+    needs_key = "venice"
+    key_env_var = "LLM_VENICE_KEY"
 
     def __init__(self, model_id, model_name=None):
         self.model_id = f"venice/{model_id}"

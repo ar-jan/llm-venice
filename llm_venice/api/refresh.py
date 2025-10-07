@@ -6,7 +6,7 @@ import click
 import httpx
 import llm
 
-from llm_venice.constants import ENDPOINT_MODELS, MODELS_CACHE_FILE
+from llm_venice.constants import ENDPOINT_MODELS
 from llm_venice.api.client import get_auth_headers
 
 
@@ -35,7 +35,7 @@ def refresh_models():
     if not models:
         raise click.ClickException("No models found")
 
-    path = llm.user_dir() / MODELS_CACHE_FILE
+    path = llm.user_dir() / "venice_models.json"
     path.write_text(json.dumps(models, indent=4))
     click.echo(f"{len(models)} models saved to {path}", err=True)
 

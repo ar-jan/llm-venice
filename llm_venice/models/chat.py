@@ -6,8 +6,6 @@ from typing import Optional, Union
 from llm.default_plugins.openai_models import Chat
 from pydantic import Field, field_validator
 
-from llm_venice.constants import VENICE_KEY_NAME, VENICE_KEY_ENV_VAR
-
 
 class VeniceChatOptions(Chat.Options):
     """Options for Venice chat models."""
@@ -41,8 +39,8 @@ class VeniceChatOptions(Chat.Options):
 class VeniceChat(Chat):
     """Venice AI chat model."""
 
-    needs_key = VENICE_KEY_NAME
-    key_env_var = VENICE_KEY_ENV_VAR
+    needs_key = "venice"
+    key_env_var = "LLM_VENICE_KEY"
     supports_web_search = False
 
     def __str__(self):

@@ -8,8 +8,6 @@ from typing import Optional, Union
 import click
 import llm
 
-from llm_venice.constants import VENICE_KEY_NAME, VENICE_KEY_ENV_VAR
-
 
 def get_venice_key() -> str:
     """
@@ -21,7 +19,7 @@ def get_venice_key() -> str:
     Returns:
         The Venice API key.
     """
-    key = llm.get_key("", VENICE_KEY_NAME, VENICE_KEY_ENV_VAR)
+    key = llm.get_key("", "venice", "LLM_VENICE_KEY")
     if not key:
         raise click.ClickException("No key found for Venice")
     return key
