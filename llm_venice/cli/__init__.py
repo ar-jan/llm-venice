@@ -18,4 +18,4 @@ def register_venice_commands(cli):
 
     # Step 2: Install prompt/chat hooks (must happen last)
     # This captures and modifies the original commands
-    install_command_hooks(cli, venice_group)
+    install_command_hooks(cli)

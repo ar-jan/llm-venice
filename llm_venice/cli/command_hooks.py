@@ -6,14 +6,13 @@ from llm_venice.constants import VENICE_OPTION_NAMES
 from llm_venice.cli.options import process_venice_options
 
 
-def install_command_hooks(cli, venice_group):
+def install_command_hooks(cli):
     """
     Captures and extends prompt/chat commands with Venice options.
     Must be called after all other CLI setup.
 
     Args:
         cli: The LLM CLI application
-        venice_group: The Venice command group (unused but kept for consistency)
     """
     # Remove and store the original prompt and chat commands
     # in order to add them back with custom cli options
