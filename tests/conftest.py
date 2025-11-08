@@ -2,7 +2,6 @@
 
 import pytest
 from click.testing import CliRunner
-from pathlib import Path
 from unittest.mock import patch
 import llm
 import shutil
