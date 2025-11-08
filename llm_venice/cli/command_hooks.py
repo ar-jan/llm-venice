@@ -2,7 +2,7 @@
 
 import click
 
-from llm_venice.constants import VENICE_OPTION_NAMES
+from llm_venice.constants import VENICE_PARAMETERS_CLI
 from llm_venice.cli.options import process_venice_options
 
 
@@ -119,9 +119,9 @@ def install_command_hooks(cli):
 
     # Copy over all params from original commands
     for param in original_prompt.params:
-        if param.name not in VENICE_OPTION_NAMES:
+        if param.name not in VENICE_PARAMETERS_CLI:
             new_prompt.params.append(param)
 
     for param in original_chat.params:
-        if param.name not in VENICE_OPTION_NAMES:
+        if param.name not in VENICE_PARAMETERS_CLI:
             new_chat.params.append(param)
