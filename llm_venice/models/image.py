@@ -1,7 +1,7 @@
 """Venice image generation model implementation."""
 
 import base64
-import datetime
+import datetime  # noqa: F401  # Used for test monkeypatch
 import os
 import pathlib
 from typing import Literal, Optional, Union
