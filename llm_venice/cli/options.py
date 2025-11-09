@@ -6,7 +6,9 @@ import llm
 
 def process_venice_options(kwargs):
     """
-    Helper to process venice-specific options and convert them to extra_body.
+    Helper to process Venice-specific CLI flags and convert them to typed
+    VeniceChatOptions values. The Venice model class will package these into
+    extra_body/venice_parameters during request build.
 
     Args:
         kwargs: Command arguments dictionary
@@ -24,32 +26,26 @@ def process_venice_options(kwargs):
 
     if model_id and model_id.startswith("venice/"):
         model = llm.get_model(model_id)
-        venice_params = {}
 
+        # Validate capability for web search early for a better UX
+        if web_search and not getattr(model, "supports_web_search", False):
+            raise click.ClickException(
+                f"Model {model_id} does not support web search"
+            )
+
+        # Map CLI flags to typed VeniceChatOptions fields
         if no_venice_system_prompt:
-            venice_params["include_venice_system_prompt"] = False
-
+            options.append(("include_venice_system_prompt", False))
         if web_search:
-            if not getattr(model, "supports_web_search", False):
-                raise click.ClickException(
-                    f"Model {model_id} does not support web search"
-                )
-            venice_params["enable_web_search"] = web_search
-
+            options.append(("enable_web_search", web_search))
         if character:
-            venice_params["character_slug"] = character
-
+            options.append(("character_slug", character))
         if strip_thinking_response:
-            venice_params["strip_thinking_response"] = True
-
+            options.append(("strip_thinking_response", True))
         if disable_thinking:
-            venice_params["disable_thinking"] = True
+            options.append(("disable_thinking", True))
 
-        if venice_params:
-            # If a Venice option is used, any `-o extra_body value` is overridden here.
-            # TODO: Would prefer to remove the extra_body CLI option, but
-            # the implementation is required for venice_parameters.
-            options.append(("extra_body", {"venice_parameters": venice_params}))
+        if options:
             kwargs["options"] = options
 
     return kwargs

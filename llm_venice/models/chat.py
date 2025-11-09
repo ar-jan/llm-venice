@@ -3,20 +3,16 @@
 import json
 from typing import List, Optional, Union
 
+import llm
 from llm.default_plugins.openai_models import Chat
+from llm_venice.constants import VENICE_PARAMETERS, NON_OPENAI_COMPATIBLE_PARAMS
 from pydantic import Field, field_validator
 
 
 class VeniceChatOptions(Chat.Options):
     """Options for Venice chat models."""
 
-    extra_body: Optional[Union[dict, str]] = Field(
-        description=(
-            "Additional JSON properties to include in the request body. "
-            "When provided via CLI, must be a valid JSON string."
-        ),
-        default=None,
-    )
+    # Non-standard generation parameters (top-level in extra_body)
     min_p: Optional[float] = Field(
         description=(
             "Sets a minimum probability threshold for token selection. "
@@ -50,22 +46,45 @@ class VeniceChatOptions(Chat.Options):
         default=None,
     )
 
-    @field_validator("extra_body")
-    def validate_extra_body(cls, extra_body):
-        """Validate and parse extra_body parameter."""
-        if extra_body is None:
+    # Venice-specific parameters (extra_body.venice_parameters)
+    include_venice_system_prompt: Optional[bool] = Field(
+        description=(
+            "Whether to include Venice-supplied default system prompts alongside your own."
+        ),
+        default=None,
+    )
+    enable_web_search: Optional[str] = Field(
+        description=(
+            "Enable web search: one of 'on', 'off', or 'auto'."
+        ),
+        default=None,
+    )
+    character_slug: Optional[str] = Field(
+        description=(
+            "Public character slug to use (e.g. 'alan-watts')."
+        ),
+        default=None,
+    )
+    strip_thinking_response: Optional[bool] = Field(
+        description=(
+            "Strip <think></think> blocks from the response (reasoning models)."
+        ),
+        default=None,
+    )
+    disable_thinking: Optional[bool] = Field(
+        description=(
+            "Disable thinking and strip <think></think> blocks (reasoning models)."
+        ),
+        default=None,
+    )
+
+    @field_validator("enable_web_search")
+    def validate_enable_web_search(cls, value):
+        if value is None:
             return None
-
-        if isinstance(extra_body, str):
-            try:
-                return json.loads(extra_body)
-            except json.JSONDecodeError:
-                raise ValueError("Invalid JSON in extra_body string")
-
-        if not isinstance(extra_body, dict):
-            raise ValueError("extra_body must be a dictionary")
-
-        return extra_body
+        if value not in ("on", "off", "auto"):
+            raise ValueError("enable_web_search must be one of 'on', 'off', or 'auto'")
+        return value
 
     @field_validator("stop_token_ids")
     def validate_stop_token_ids(cls, stop_token_ids):
@@ -124,20 +143,34 @@ class VeniceChat(Chat):
                 "additionalProperties"
             ] = False
 
-        # Move Venice-specific parameters into extra_body
-        # The OpenAI client doesn't accept these as top-level parameters
-        venice_specific_params = ["min_p", "top_k", "repetition_penalty", "stop_token_ids"]
-        params_to_move = {}
+        # Move non-openai-compatible generation parameters into extra_body
+        non_openai_compatible_params = {}
 
-        for param in venice_specific_params:
+        for param in NON_OPENAI_COMPATIBLE_PARAMS:
             if param in kwargs:
-                params_to_move[param] = kwargs.pop(param)
+                non_openai_compatible_params[param] = kwargs.pop(param)
 
-        # If we have parameters to move, merge them into extra_body
-        if params_to_move:
-            if "extra_body" not in kwargs:
-                kwargs["extra_body"] = {}
-            # Merge with existing extra_body, preserving existing fields
-            kwargs["extra_body"].update(params_to_move)
+        venice_parameters = {}
+        for key in VENICE_PARAMETERS:
+            if key in kwargs and kwargs[key] is not None:
+                venice_parameters[key] = kwargs.pop(key)
+
+        # Capability guard for web search if requested by user
+        if venice_parameters.get("enable_web_search") and not getattr(
+            self, "supports_web_search", False
+        ):
+            raise llm.ModelError(
+                f"Model {self.model_id} does not support web search"
+            )
+
+        # Build extra_body
+        if non_openai_compatible_params or venice_parameters:
+            kwargs["extra_body"] = {}
+            # Non-standard parameters go top-level inside extra_body
+            if non_openai_compatible_params:
+                kwargs["extra_body"].update(non_openai_compatible_params)
+            # Venice-specific parameters go in extra_body.venice_parameters
+            if venice_parameters:
+                kwargs["extra_body"]["venice_parameters"] = venice_parameters
 
         return kwargs

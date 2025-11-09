@@ -6,29 +6,38 @@ from llm import Prompt
 from llm_venice import VeniceChat, VeniceChatOptions
 
 
-def test_venice_chat_options_extra_body_validation():
-    """Test that extra_body validation works correctly for both dict and JSON string inputs."""
-    # Valid dictionary
-    options = VeniceChatOptions(extra_body={"venice_parameters": {"test": "value"}})
-    assert options.extra_body == {"venice_parameters": {"test": "value"}}
+def test_venice_chat_options_fields():
+    """Test that Venice-specific option fields work correctly."""
+    # Test venice_parameters fields
+    options = VeniceChatOptions(
+        strip_thinking_response=True,
+        disable_thinking=False,
+        include_venice_system_prompt=True,
+        character_slug="alan-watts",
+    )
+    assert options.strip_thinking_response is True
+    assert options.disable_thinking is False
+    assert options.include_venice_system_prompt is True
+    assert options.character_slug == "alan-watts"
 
-    # Valid JSON string
-    options = VeniceChatOptions(extra_body='{"venice_parameters": {"test": "value"}}')
-    assert options.extra_body == {"venice_parameters": {"test": "value"}}
+    # Test top-level Venice parameters
+    options = VeniceChatOptions(
+        min_p=0.05,
+        top_k=40,
+        repetition_penalty=1.1,
+    )
+    assert options.min_p == 0.05
+    assert options.top_k == 40
+    assert options.repetition_penalty == 1.1
 
-    # Invalid JSON string - Pydantic wraps ValueError into ValidationError
+    # Test web search validation
+    options = VeniceChatOptions(enable_web_search="auto")
+    assert options.enable_web_search == "auto"
+
+    # Invalid web search value
     with pytest.raises(ValidationError) as exc_info:
-        VeniceChatOptions(extra_body='{"invalid json')
-    assert "Invalid JSON" in str(exc_info.value)
-
-    # Invalid type - Pydantic raises ValidationError for type mismatches
-    with pytest.raises(ValidationError) as exc_info:
-        VeniceChatOptions(extra_body=["not", "a", "dict"])
-
-    # Error should mention both dict and string type expectations
-    error_str = str(exc_info.value).lower()
-    assert "dict" in error_str
-    assert "string" in error_str
+        VeniceChatOptions(enable_web_search="invalid")
+    assert "enable_web_search must be one of" in str(exc_info.value)
 
 
 def test_venice_chat_build_kwargs_json_schema():
@@ -97,17 +106,20 @@ def test_cli_venice_parameters_registration(
 
 
 def test_venice_parameters_validation():
-    """Test validation of thinking parameter values."""
-    # Test JSON string handling
-    options = VeniceChatOptions(
-        extra_body='{"venice_parameters": {"disable_thinking": true}}'
-    )
-    assert options.extra_body["venice_parameters"]["disable_thinking"] is True
+    """Test validation of Venice parameter values."""
+    # Test thinking parameters
+    options = VeniceChatOptions(disable_thinking=True)
+    assert options.disable_thinking is True
 
-    # Test invalid JSON string - Pydantic wraps ValueError into ValidationError
-    with pytest.raises(ValidationError) as exc_info:
-        VeniceChatOptions(extra_body='{"venice_parameters": {"invalid": json}}')
-    assert "Invalid JSON" in str(exc_info.value)
+    options = VeniceChatOptions(strip_thinking_response=True)
+    assert options.strip_thinking_response is True
+
+    # Test min_p validation (must be between 0 and 1)
+    with pytest.raises(ValidationError):
+        VeniceChatOptions(min_p=1.5)
+
+    with pytest.raises(ValidationError):
+        VeniceChatOptions(min_p=-0.1)
 
 
 def test_cli_thinking_parameters(cli_runner, monkeypatch):
@@ -171,9 +183,7 @@ def test_thinking_parameters_build_kwargs():
     )
 
     # Test single parameter: strip_thinking_response
-    options = VeniceChatOptions(
-        extra_body={"venice_parameters": {"strip_thinking_response": True}}
-    )
+    options = VeniceChatOptions(strip_thinking_response=True)
     prompt = Prompt(prompt="Test", model=chat, options=options)
     kwargs = chat.build_kwargs(prompt, stream=False)
 
@@ -194,9 +204,7 @@ def test_thinking_parameters_build_kwargs():
     ), "strip_thinking_response should be preserved when streaming"
 
     # Test single parameter: disable_thinking
-    options = VeniceChatOptions(
-        extra_body={"venice_parameters": {"disable_thinking": True}}
-    )
+    options = VeniceChatOptions(disable_thinking=True)
     prompt = Prompt(prompt="Test", model=chat, options=options)
     kwargs = chat.build_kwargs(prompt, stream=False)
 
@@ -206,12 +214,8 @@ def test_thinking_parameters_build_kwargs():
 
     # Test both parameters together
     options = VeniceChatOptions(
-        extra_body={
-            "venice_parameters": {
-                "strip_thinking_response": True,
-                "disable_thinking": False,
-            }
-        }
+        strip_thinking_response=True,
+        disable_thinking=False,
     )
     prompt = Prompt(prompt="Test", model=chat, options=options)
     kwargs = chat.build_kwargs(prompt, stream=False)
@@ -224,37 +228,26 @@ def test_thinking_parameters_build_kwargs():
         "disable_thinking should be False when explicitly set"
     )
 
-    # Test preservation of other extra_body fields
+    # Test that Venice top-level params (min_p, top_k) go in extra_body
     options = VeniceChatOptions(
-        extra_body={
-            "custom_field": "preserved",
-            "venice_parameters": {"strip_thinking_response": True},
-        }
+        min_p=0.05,
+        top_k=40,
+        strip_thinking_response=True,
     )
     prompt = Prompt(prompt="Test", model=chat, options=options)
     kwargs = chat.build_kwargs(prompt, stream=False)
 
-    assert kwargs["extra_body"]["custom_field"] == "preserved", (
-        "Other extra_body fields should be preserved"
-    )
+    # Top-level Venice params should be in extra_body directly
+    assert kwargs["extra_body"]["min_p"] == 0.05, "min_p should be in extra_body"
+    assert kwargs["extra_body"]["top_k"] == 40, "top_k should be in extra_body"
+    # Venice parameters should be nested
     assert (
         kwargs["extra_body"]["venice_parameters"]["strip_thinking_response"] is True
-    ), "venice_parameters should coexist with other fields"
+    ), "venice_parameters should coexist with top-level params"
 
-    # Test empty venice_parameters
-    options = VeniceChatOptions(extra_body={"venice_parameters": {}})
+    # Test without any Venice parameters (shouldn't create extra_body)
+    options = VeniceChatOptions()
     prompt = Prompt(prompt="Test", model=chat, options=options)
-    kwargs = chat.build_kwargs(prompt, stream=False)
-
-    assert "venice_parameters" in kwargs["extra_body"], (
-        "Empty venice_parameters should still be included"
-    )
-    assert kwargs["extra_body"]["venice_parameters"] == {}, (
-        "Empty venice_parameters should remain empty"
-    )
-
-    # Test without extra_body
-    prompt = Prompt(prompt="Test", model=chat)
     kwargs = chat.build_kwargs(prompt, stream=False)
 
     # Should not raise an error and should return a dict (may be empty)
@@ -275,45 +268,36 @@ def test_venice_parameters_edge_cases():
         api_base="https://api.venice.ai/api/v1",
     )
 
-    # Test with None extra_body
-    options = VeniceChatOptions(extra_body=None)
+    # Test with no Venice parameters
+    options = VeniceChatOptions()
     prompt = Prompt(prompt="Test", model=chat, options=options)
     kwargs = chat.build_kwargs(prompt, stream=False)
     # Should not raise an error and should not have extra_body key
     assert "extra_body" not in kwargs, (
-        "extra_body key should not exist when set to None"
+        "extra_body key should not exist when no Venice params are set"
     )
 
-    # Test with nested structure preservation
+    # Test with multiple Venice parameters combined
     options = VeniceChatOptions(
-        extra_body={
-            "venice_parameters": {
-                "strip_thinking_response": True,
-            },
-            "other": {"structure": "preserved"},
-        }
+        strip_thinking_response=True,
+        character_slug="test-character",
+        min_p=0.1,
+        top_k=50,
     )
     prompt = Prompt(prompt="Test", model=chat, options=options)
     kwargs = chat.build_kwargs(prompt, stream=False)
 
-    assert kwargs["extra_body"]["other"]["structure"] == "preserved", (
-        "Other structures should be preserved"
-    )
+    # venice_parameters should be nested
+    assert kwargs["extra_body"]["venice_parameters"]["strip_thinking_response"] is True
+    assert kwargs["extra_body"]["venice_parameters"]["character_slug"] == "test-character"
+    # Top-level params should be at extra_body root
+    assert kwargs["extra_body"]["min_p"] == 0.1
+    assert kwargs["extra_body"]["top_k"] == 50
 
 
 def test_new_parameters_validation():
-    """Test validation of new parameters: min_p, top_k, repetition_penalty, stop_token_ids."""
-    # Test valid min_p values
-    options = VeniceChatOptions(min_p=0.05)
-    assert options.min_p == 0.05
-
-    options = VeniceChatOptions(min_p=0.0)
-    assert options.min_p == 0.0
-
-    options = VeniceChatOptions(min_p=1.0)
-    assert options.min_p == 1.0
-
-    # Test invalid min_p values
+    """Test validation for new parameters focusing on error cases and JSON parsing."""
+    # Invalid min_p values
     with pytest.raises(ValidationError) as exc_info:
         VeniceChatOptions(min_p=-0.1)
     assert "greater than or equal to 0" in str(exc_info.value).lower()
@@ -322,41 +306,17 @@ def test_new_parameters_validation():
         VeniceChatOptions(min_p=1.1)
     assert "less than or equal to 1" in str(exc_info.value).lower()
 
-    # Test valid top_k values
-    options = VeniceChatOptions(top_k=40)
-    assert options.top_k == 40
-
-    options = VeniceChatOptions(top_k=0)
-    assert options.top_k == 0
-
-    # Test invalid top_k values
+    # Invalid top_k values
     with pytest.raises(ValidationError) as exc_info:
         VeniceChatOptions(top_k=-1)
     assert "greater than or equal to 0" in str(exc_info.value).lower()
 
-    # Test valid repetition_penalty values
-    options = VeniceChatOptions(repetition_penalty=1.2)
-    assert options.repetition_penalty == 1.2
-
-    options = VeniceChatOptions(repetition_penalty=1.0)
-    assert options.repetition_penalty == 1.0
-
-    options = VeniceChatOptions(repetition_penalty=0.0)
-    assert options.repetition_penalty == 0.0
-
-    # Test invalid repetition_penalty values
+    # Invalid repetition_penalty values
     with pytest.raises(ValidationError) as exc_info:
         VeniceChatOptions(repetition_penalty=-0.1)
     assert "greater than or equal to 0" in str(exc_info.value).lower()
 
-    # Test valid stop_token_ids values (list)
-    options = VeniceChatOptions(stop_token_ids=[151643, 151645])
-    assert options.stop_token_ids == [151643, 151645]
-
-    options = VeniceChatOptions(stop_token_ids=[])
-    assert options.stop_token_ids == []
-
-    # Test valid stop_token_ids values (JSON string)
+    # Valid stop_token_ids values (JSON string) should parse
     options = VeniceChatOptions(stop_token_ids="[151643, 151645]")
     assert options.stop_token_ids == [151643, 151645]
 
@@ -492,64 +452,59 @@ def test_new_parameters_with_streaming():
     assert kwargs["stream_options"]["include_usage"] is True
 
 
-def test_new_parameters_defaults():
-    """Test that new parameters default to None when not specified."""
-    options = VeniceChatOptions()
-    assert options.min_p is None
-    assert options.top_k is None
-    assert options.repetition_penalty is None
-    assert options.stop_token_ids is None
+    # Enable web search validator (invalid value)
+    with pytest.raises(ValidationError) as exc_info:
+        VeniceChatOptions(enable_web_search="invalid")
+    assert "enable_web_search must be one of" in str(exc_info.value)
 
 
-def test_new_parameters_merge_with_extra_body():
-    """Test that new parameters merge correctly with existing extra_body."""
+def test_new_parameters_merge_with_venice_parameters():
+    """Test that new parameters merge correctly with venice_parameters."""
     chat = VeniceChat(
         model_id="venice/test-model",
         model_name="test-model",
         api_base="https://api.venice.ai/api/v1",
     )
 
-    # Test merging with venice_parameters
+    # Test merging top-level Venice params with venice_parameters
     options = VeniceChatOptions(
         min_p=0.05,
         top_k=40,
-        extra_body={"venice_parameters": {"strip_thinking_response": True}},
+        strip_thinking_response=True,
     )
     prompt = Prompt(prompt="Test", model=chat, options=options)
     kwargs = chat.build_kwargs(prompt, stream=False)
 
     assert "extra_body" in kwargs
-    # Venice parameters should be preserved
+    # Venice parameters should be nested
     assert kwargs["extra_body"]["venice_parameters"]["strip_thinking_response"] is True
-    # New parameters should be added
+    # Top-level parameters should be at extra_body root
     assert kwargs["extra_body"]["min_p"] == 0.05
     assert kwargs["extra_body"]["top_k"] == 40
 
-    # Test merging with other custom fields
-    options = VeniceChatOptions(
-        repetition_penalty=1.2,
-        extra_body={"custom_field": "value", "another_field": 123},
-    )
-    prompt = Prompt(prompt="Test", model=chat, options=options)
-    kwargs = chat.build_kwargs(prompt, stream=False)
-
-    assert kwargs["extra_body"]["custom_field"] == "value"
-    assert kwargs["extra_body"]["another_field"] == 123
-    assert kwargs["extra_body"]["repetition_penalty"] == 1.2
-
-    # Test that all new parameters work together with venice_parameters
+    # Test all top-level parameters together
     options = VeniceChatOptions(
         min_p=0.05,
         top_k=40,
         repetition_penalty=1.2,
         stop_token_ids=[151643, 151645],
-        extra_body={
-            "venice_parameters": {
-                "strip_thinking_response": True,
-                "disable_thinking": False,
-            },
-            "custom_field": "preserved",
-        },
+    )
+    prompt = Prompt(prompt="Test", model=chat, options=options)
+    kwargs = chat.build_kwargs(prompt, stream=False)
+
+    assert kwargs["extra_body"]["min_p"] == 0.05
+    assert kwargs["extra_body"]["top_k"] == 40
+    assert kwargs["extra_body"]["repetition_penalty"] == 1.2
+    assert kwargs["extra_body"]["stop_token_ids"] == [151643, 151645]
+
+    # Test that all parameters work together
+    options = VeniceChatOptions(
+        min_p=0.05,
+        top_k=40,
+        repetition_penalty=1.2,
+        stop_token_ids=[151643, 151645],
+        strip_thinking_response=True,
+        disable_thinking=False,
     )
     prompt = Prompt(prompt="Test", model=chat, options=options)
     kwargs = chat.build_kwargs(prompt, stream=False)
@@ -557,9 +512,7 @@ def test_new_parameters_merge_with_extra_body():
     # All venice_parameters should be preserved
     assert kwargs["extra_body"]["venice_parameters"]["strip_thinking_response"] is True
     assert kwargs["extra_body"]["venice_parameters"]["disable_thinking"] is False
-    # Custom field should be preserved
-    assert kwargs["extra_body"]["custom_field"] == "preserved"
-    # New parameters should be added
+    # Top-level parameters should all be present
     assert kwargs["extra_body"]["min_p"] == 0.05
     assert kwargs["extra_body"]["top_k"] == 40
     assert kwargs["extra_body"]["repetition_penalty"] == 1.2
@@ -574,16 +527,16 @@ def test_new_parameters_no_extra_body_pollution():
         api_base="https://api.venice.ai/api/v1",
     )
 
-    # Test with only venice_parameters, no new parameters
+    # Test with only venice_parameters, no top-level parameters
     options = VeniceChatOptions(
-        extra_body={"venice_parameters": {"strip_thinking_response": True}},
+        strip_thinking_response=True,
     )
     prompt = Prompt(prompt="Test", model=chat, options=options)
     kwargs = chat.build_kwargs(prompt, stream=False)
 
     assert "extra_body" in kwargs
     assert kwargs["extra_body"]["venice_parameters"]["strip_thinking_response"] is True
-    # New parameters should not appear
+    # Top-level parameters should not appear
     assert "min_p" not in kwargs["extra_body"]
     assert "top_k" not in kwargs["extra_body"]
     assert "repetition_penalty" not in kwargs["extra_body"]
@@ -777,3 +730,37 @@ def test_new_parameters_request_shape_client_call(monkeypatch):
 
     # Sanity check for other required arguments
     assert isinstance(captured_kwargs.get("messages"), list)
+
+
+def test_web_search_capability_guard():
+    """Test that ModelError is raised when web search is requested on unsupported model.
+
+    This verifies that the error handling works for both CLI and Python API usage.
+    """
+    import llm
+
+    # Create a model that doesn't support web search
+    chat = VeniceChat(
+        model_id="venice/test-model",
+        model_name="test-model",
+        api_base="https://api.venice.ai/api/v1",
+    )
+    chat.supports_web_search = False
+
+    # Create prompt with web search enabled
+    options = VeniceChatOptions(enable_web_search="on")
+    prompt_obj = Prompt(prompt="Test", model=chat, options=options)
+
+    # Should raise llm.ModelError (not click.ClickException)
+    with pytest.raises(llm.ModelError) as exc_info:
+        chat.build_kwargs(prompt_obj, stream=False)
+
+    assert "does not support web search" in str(exc_info.value)
+    assert "venice/test-model" in str(exc_info.value)
+
+    # Verify that a model WITH web search support doesn't raise
+    chat.supports_web_search = True
+    kwargs = chat.build_kwargs(prompt_obj, stream=False)
+    assert "extra_body" in kwargs
+    assert "venice_parameters" in kwargs["extra_body"]
+    assert kwargs["extra_body"]["venice_parameters"]["enable_web_search"] == "on"

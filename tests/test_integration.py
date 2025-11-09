@@ -72,7 +72,7 @@ def test_thinking_parameters_with_real_api(isolated_llm_dir):
     # Test with strip_thinking_response=True
     response = chat.prompt(
         "What is 2+2? Think step by step.",
-        extra_body={"venice_parameters": {"strip_thinking_response": True}},
+        strip_thinking_response=True,
     )
 
     # Verify we got a response
@@ -86,7 +86,8 @@ def test_thinking_parameters_with_real_api(isolated_llm_dir):
 
     # Test with disable_thinking=True
     response2 = chat.prompt(
-        "What is 3+3?", extra_body={"venice_parameters": {"disable_thinking": True}}
+        "What is 3+3?",
+        disable_thinking=True,
     )
 
     # Verify we got a response
@@ -97,12 +98,8 @@ def test_thinking_parameters_with_real_api(isolated_llm_dir):
     # Test with both parameters
     response3 = chat.prompt(
         "What is 4+4?",
-        extra_body={
-            "venice_parameters": {
-                "strip_thinking_response": True,
-                "disable_thinking": True,
-            }
-        },
+        strip_thinking_response=True,
+        disable_thinking=True,
     )
 
     # Verify we got a response
