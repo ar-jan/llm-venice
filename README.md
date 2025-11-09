@@ -115,8 +115,6 @@ It is recommended to use web search in combination with `--no-stream` so the sea
 
 `llm -m venice/qwen3-235b --character alan-watts "What is the meaning of life?"`
 
-*Note: these options override any `-o extra_body '{"venice_parameters": { ...}}'` and so should not be combined with that option.*
-
 ### Image generation
 
 Generated images are stored in the LLM user directory by default. Example:
