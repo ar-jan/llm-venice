@@ -730,3 +730,37 @@ def test_new_parameters_request_shape_client_call(monkeypatch):
 
     # Sanity check for other required arguments
     assert isinstance(captured_kwargs.get("messages"), list)
+
+
+def test_web_search_capability_guard():
+    """Test that ModelError is raised when web search is requested on unsupported model.
+
+    This verifies that the error handling works for both CLI and Python API usage.
+    """
+    import llm
+
+    # Create a model that doesn't support web search
+    chat = VeniceChat(
+        model_id="venice/test-model",
+        model_name="test-model",
+        api_base="https://api.venice.ai/api/v1",
+    )
+    chat.supports_web_search = False
+
+    # Create prompt with web search enabled
+    options = VeniceChatOptions(enable_web_search="on")
+    prompt_obj = Prompt(prompt="Test", model=chat, options=options)
+
+    # Should raise llm.ModelError (not click.ClickException)
+    with pytest.raises(llm.ModelError) as exc_info:
+        chat.build_kwargs(prompt_obj, stream=False)
+
+    assert "does not support web search" in str(exc_info.value)
+    assert "venice/test-model" in str(exc_info.value)
+
+    # Verify that a model WITH web search support doesn't raise
+    chat.supports_web_search = True
+    kwargs = chat.build_kwargs(prompt_obj, stream=False)
+    assert "extra_body" in kwargs
+    assert "venice_parameters" in kwargs["extra_body"]
+    assert kwargs["extra_body"]["venice_parameters"]["enable_web_search"] == "on"

@@ -3,7 +3,7 @@
 import json
 from typing import List, Optional, Union
 
-import click
+import llm
 from llm.default_plugins.openai_models import Chat
 from llm_venice.constants import VENICE_PARAMETERS, NON_OPENAI_COMPATIBLE_PARAMS
 from pydantic import Field, field_validator
@@ -159,7 +159,7 @@ class VeniceChat(Chat):
         if venice_parameters.get("enable_web_search") and not getattr(
             self, "supports_web_search", False
         ):
-            raise click.ClickException(
+            raise llm.ModelError(
                 f"Model {self.model_id} does not support web search"
             )
 
