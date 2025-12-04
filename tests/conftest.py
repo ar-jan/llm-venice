@@ -1,10 +1,12 @@
 """Shared fixtures for llm-venice tests"""
 
+import shutil
+from unittest.mock import patch
+
+import llm
+from llm import get_key
 import pytest
 from click.testing import CliRunner
-from unittest.mock import patch
-import llm
-import shutil
 
 
 @pytest.fixture
@@ -40,6 +42,22 @@ def cli_runner():
         CliRunner: A Click test runner configured for isolated testing
     """
     return CliRunner()
+
+
+@pytest.fixture(scope="session")
+def venice_api_key():
+    """Return the Venice API key or skip all Venice integration tests.
+
+    Using a session-scoped fixture ensures we only check for the key once and
+    keeps individual tests free of boilerplate skip logic.
+    """
+    try:
+        key = get_key(None, "venice", "LLM_VENICE_KEY")
+    except Exception:
+        pytest.skip("No Venice API key available")
+    if not key:
+        pytest.skip("No Venice API key available")
+    return key
 
 
 @pytest.fixture

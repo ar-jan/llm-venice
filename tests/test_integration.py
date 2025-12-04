@@ -1,14 +1,16 @@
 import json
-from llm import get_key
 
 import llm
 from llm.cli import cli
 import pytest
 import sqlite_utils
+
 from llm_venice import VeniceChat
 
 
-@pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("venice_api_key")]
+
+
 def test_prompt_web_search(cli_runner, isolated_llm_dir):
     """Test that the 'web_search on' option includes web_search_citations.
 
@@ -47,21 +49,12 @@ def test_prompt_web_search(cli_runner, isolated_llm_dir):
     assert len(citations) > 0
 
 
-@pytest.mark.integration
 def test_thinking_parameters_with_real_api(isolated_llm_dir):
     """Test that thinking parameters work correctly with the real Venice API using qwen3-4b model.
 
     This test requires a valid Venice API key to be set in the environment.
     It uses qwen3-4b which is a small, fast model suitable for testing.
     """
-    # Skip test if no API key is available
-    try:
-        api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-        if not api_key:
-            pytest.skip("No Venice API key available")
-    except Exception:
-        pytest.skip("No Venice API key available")
-
     # Use qwen3-4b model for testing
     chat = VeniceChat(
         model_id="venice/qwen3-4b",

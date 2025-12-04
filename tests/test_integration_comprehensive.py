@@ -5,19 +5,18 @@ Run with: pytest -m integration tests/test_integration_comprehensive.py
 """
 
 import json
-import os
 import struct
-import tempfile
 import zlib
 from pathlib import Path
 
 import llm
-from llm import get_key
 from llm.cli import cli
 import pytest
 import sqlite_utils
 
 from llm_venice import VeniceChat, VeniceImage
+
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("venice_api_key")]
 
 
 def _create_test_png(path: Path, size: int = 512, color=(255, 0, 0, 255)) -> Path:
@@ -52,19 +51,11 @@ def _create_test_png(path: Path, size: int = 512, color=(255, 0, 0, 255)) -> Pat
     return path
 
 
-@pytest.mark.integration
 class TestBasicChatCompletion:
     """Test basic chat completion functionality."""
 
     def test_simple_prompt(self, isolated_llm_dir):
         """Test a simple prompt with a small, fast model."""
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         chat = VeniceChat(
             model_id="venice/llama-3.2-3b",
             model_name="llama-3.2-3b",
@@ -79,13 +70,6 @@ class TestBasicChatCompletion:
 
     def test_prompt_with_temperature(self, isolated_llm_dir):
         """Test that temperature parameter works."""
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         chat = VeniceChat(
             model_id="venice/llama-3.2-3b",
             model_name="llama-3.2-3b",
@@ -102,19 +86,11 @@ class TestBasicChatCompletion:
         assert "paris" in response_text
 
 
-@pytest.mark.integration
 class TestStreamingChat:
     """Test streaming chat responses."""
 
     def test_streaming_response(self, isolated_llm_dir):
         """Test that streaming works correctly."""
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         chat = VeniceChat(
             model_id="venice/llama-3.2-3b",
             model_name="llama-3.2-3b",
@@ -134,19 +110,11 @@ class TestStreamingChat:
         assert len(full_text) > 0
 
 
-@pytest.mark.integration
 class TestConversationHistory:
     """Test conversation history / multi-turn chat."""
 
     def test_conversation_continuation(self, cli_runner, isolated_llm_dir):
         """Test that conversation history is maintained across turns."""
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         # Start a conversation
         result1 = cli_runner.invoke(
             cli,
@@ -173,19 +141,11 @@ class TestConversationHistory:
         assert "blue" in result2.output.lower()
 
 
-@pytest.mark.integration
 class TestNonOpenAIParameters:
     """Test Venice-specific non-OpenAI parameters."""
 
     def test_min_p_parameter(self, isolated_llm_dir):
         """Test min_p parameter."""
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         chat = VeniceChat(
             model_id="venice/qwen3-4b",
             model_name="qwen3-4b",
@@ -201,13 +161,6 @@ class TestNonOpenAIParameters:
 
     def test_top_k_parameter(self, isolated_llm_dir):
         """Test top_k parameter."""
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         chat = VeniceChat(
             model_id="venice/qwen3-4b",
             model_name="qwen3-4b",
@@ -223,13 +176,6 @@ class TestNonOpenAIParameters:
 
     def test_repetition_penalty_parameter(self, isolated_llm_dir):
         """Test repetition_penalty parameter."""
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         chat = VeniceChat(
             model_id="venice/qwen3-4b",
             model_name="qwen3-4b",
@@ -244,19 +190,11 @@ class TestNonOpenAIParameters:
         assert len(response.text()) > 0
 
 
-@pytest.mark.integration
 class TestVeniceSystemPrompt:
     """Test Venice system prompt control."""
 
     def test_disable_venice_system_prompt(self, cli_runner, isolated_llm_dir):
         """Test --no-venice-system-prompt flag."""
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         result = cli_runner.invoke(
             cli,
             [
@@ -270,19 +208,11 @@ class TestVeniceSystemPrompt:
         assert len(result.output) > 0
 
 
-@pytest.mark.integration
 class TestFunctionCalling:
     """Test function calling / tools functionality."""
 
     def test_simple_function_call(self, cli_runner, isolated_llm_dir):
         """Test that function calling works with a simple function."""
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         # Use llama-3.3-70b which supports function calling
         result = cli_runner.invoke(
             cli,
@@ -300,19 +230,11 @@ class TestFunctionCalling:
         assert "408" in result.output
 
 
-@pytest.mark.integration
 class TestStructuredOutputs:
     """Test structured outputs / JSON schema functionality."""
 
     def test_json_schema_output(self, isolated_llm_dir):
         """Test that JSON schema responses work correctly."""
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         # Use qwen3-4b which supports response schema
         # Get the model from the registry so it has the right capabilities
         chat = llm.get_model("venice/qwen3-4b")
@@ -346,19 +268,11 @@ class TestStructuredOutputs:
         assert isinstance(data["age"], int)
 
 
-@pytest.mark.integration
 class TestCharacterPersonas:
     """Test character personas functionality."""
 
     def test_character_in_prompt(self, cli_runner, isolated_llm_dir):
         """Test using a character persona in a prompt."""
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         # Use a model with a character
         result = cli_runner.invoke(
             cli,
@@ -373,7 +287,6 @@ class TestCharacterPersonas:
         assert len(result.output) > 0
 
 
-@pytest.mark.integration
 class TestVisionModels:
     """Test vision model functionality with image attachments."""
 
@@ -383,13 +296,6 @@ class TestVisionModels:
         Note: This test requires a properly sized/formatted image.
         The Venice API has validation checks on images that reject very small images.
         """
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         image_path = _create_test_png(tmp_path / "vision_test.png", size=512)
 
         result = cli_runner.invoke(
@@ -409,19 +315,11 @@ class TestVisionModels:
         assert len(result.output.strip()) > 0
 
 
-@pytest.mark.integration
 class TestWebSearch:
     """Test web search integration (uses existing test from test_integration.py)."""
 
     def test_web_search_with_citations(self, cli_runner, isolated_llm_dir):
         """Test that web search returns citations."""
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         # Use llama-3.3-70b with web search
         result = cli_runner.invoke(
             cli,
@@ -451,19 +349,11 @@ class TestWebSearch:
         # Just verify the structure is correct
 
 
-@pytest.mark.integration
 class TestImageGeneration:
     """Test image generation functionality."""
 
     def test_basic_image_generation(self, isolated_llm_dir):
         """Test basic image generation with default model."""
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         # Use venice-sd35 (default image model)
         image_model = llm.get_model("venice/venice-sd35")
 
@@ -477,7 +367,6 @@ class TestImageGeneration:
         assert len(response_text) > 0
 
 
-@pytest.mark.integration
 class TestImageUpscaling:
     """Test image upscaling functionality."""
 
@@ -487,13 +376,6 @@ class TestImageUpscaling:
         Note: Image upscaling requires a valid image file.
         For integration testing, we create a compliant PNG locally and upscale it.
         """
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         image_path = _create_test_png(tmp_path / "upscale_input.png", size=512)
 
         # Now upscale it
@@ -513,7 +395,6 @@ class TestImageUpscaling:
         assert saved_path.exists()
 
 
-@pytest.mark.integration
 class TestAPIManagement:
     """Test API key and management functionality."""
 
@@ -523,13 +404,6 @@ class TestAPIManagement:
         Note: This endpoint requires API key management permissions.
         Some API keys may not have these permissions and will return 401.
         """
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         result = cli_runner.invoke(
             cli,
             ["venice", "api-keys", "list"],
@@ -544,13 +418,6 @@ class TestAPIManagement:
 
     def test_rate_limits(self, cli_runner, isolated_llm_dir):
         """Test checking rate limits."""
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         result = cli_runner.invoke(
             cli,
             ["venice", "api-keys", "rate-limits"],
@@ -559,19 +426,11 @@ class TestAPIManagement:
         assert result.exit_code == 0
 
 
-@pytest.mark.integration
 class TestCharacterListing:
     """Test listing available characters."""
 
     def test_list_characters(self, cli_runner, isolated_llm_dir):
         """Test listing available character personas."""
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         result = cli_runner.invoke(
             cli,
             ["venice", "characters"],
@@ -582,19 +441,11 @@ class TestCharacterListing:
         assert len(result.output) > 0
 
 
-@pytest.mark.integration
 class TestModelRefresh:
     """Test model refresh functionality."""
 
     def test_refresh_models(self, cli_runner, isolated_llm_dir):
         """Test refreshing the model list."""
-        try:
-            api_key = get_key(None, "venice", "LLM_VENICE_KEY")
-            if not api_key:
-                pytest.skip("No Venice API key available")
-        except Exception:
-            pytest.skip("No Venice API key available")
-
         result = cli_runner.invoke(
             cli,
             ["venice", "refresh"],
@@ -602,7 +453,3 @@ class TestModelRefresh:
 
         assert result.exit_code == 0
         assert "models saved" in result.output.lower()
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v", "-m", "integration"])
