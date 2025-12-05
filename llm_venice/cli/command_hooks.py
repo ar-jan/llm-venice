@@ -6,6 +6,40 @@ from llm_venice.constants import VENICE_PARAMETERS_CLI
 from llm_venice.cli.options import process_venice_options
 
 
+venice_options = [
+    click.option(
+        "--no-venice-system-prompt",
+        is_flag=True,
+        help="Disable Venice AI's default system prompt",
+    ),
+    click.option(
+        "--web-search",
+        type=click.Choice(["auto", "on", "off"]),
+        help="Enable web search",
+    ),
+    click.option(
+        "--character",
+        help="Use a Venice AI character (e.g. 'alan-watts')",
+    ),
+    click.option(
+        "--strip-thinking-response",
+        is_flag=True,
+        help="Strip <think></think> blocks from the response (for reasoning models)",
+    ),
+    click.option(
+        "--disable-thinking",
+        is_flag=True,
+        help="Disable thinking and strip <think></think> blocks (for reasoning models)",
+    ),
+]
+
+
+def add_venice_options(f):
+    for opt in reversed(venice_options):
+        f = opt(f)
+    return f
+
+
 def install_command_hooks(cli):
     """
     Captures and extends prompt/chat commands with Venice options.
@@ -21,30 +55,7 @@ def install_command_hooks(cli):
 
     # Create new prompt command
     @cli.command(name="prompt")
-    @click.option(
-        "--no-venice-system-prompt",
-        is_flag=True,
-        help="Disable Venice AI's default system prompt",
-    )
-    @click.option(
-        "--web-search",
-        type=click.Choice(["auto", "on", "off"]),
-        help="Enable web search",
-    )
-    @click.option(
-        "--character",
-        help="Use a Venice AI public character (e.g. 'alan-watts')",
-    )
-    @click.option(
-        "--strip-thinking-response",
-        is_flag=True,
-        help="Strip <think></think> blocks from the response (for reasoning models)",
-    )
-    @click.option(
-        "--disable-thinking",
-        is_flag=True,
-        help="Disable thinking and strip <think></think> blocks (for reasoning models)",
-    )
+    @add_venice_options
     @click.pass_context
     def new_prompt(
         ctx,
@@ -70,30 +81,7 @@ def install_command_hooks(cli):
 
     # Create new chat command
     @cli.command(name="chat")
-    @click.option(
-        "--no-venice-system-prompt",
-        is_flag=True,
-        help="Disable Venice AI's default system prompt",
-    )
-    @click.option(
-        "--web-search",
-        type=click.Choice(["auto", "on", "off"]),
-        help="Enable web search",
-    )
-    @click.option(
-        "--character",
-        help="Use a Venice AI character (e.g. 'alan-watts')",
-    )
-    @click.option(
-        "--strip-thinking-response",
-        is_flag=True,
-        help="Strip <think></think> blocks from the response (for reasoning models)",
-    )
-    @click.option(
-        "--disable-thinking",
-        is_flag=True,
-        help="Disable thinking and strip <think></think> blocks (for reasoning models)",
-    )
+    @add_venice_options
     @click.pass_context
     def new_chat(
         ctx,
