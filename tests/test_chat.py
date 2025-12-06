@@ -122,6 +122,18 @@ def test_venice_parameters_validation():
         VeniceChatOptions(min_p=-0.1)
 
 
+def test_venice_chat_options_invalid_values_raise_validation_errors():
+    """Ensure Pydantic validators surface errors for bad option values."""
+    with pytest.raises(ValidationError) as exc_info:
+        VeniceChatOptions(min_p=-0.1)
+    assert any(error["loc"] == ("min_p",) for error in exc_info.value.errors())
+
+    with pytest.raises(ValidationError) as exc_info:
+        VeniceChatOptions(enable_web_search="maybe")
+    assert any(error["type"] == "value_error" for error in exc_info.value.errors())
+    assert "enable_web_search must be one of" in str(exc_info.value)
+
+
 def test_cli_thinking_parameters(cli_runner, monkeypatch):
     """Test that CLI properly accepts thinking parameters."""
     from llm import cli as llm_cli
