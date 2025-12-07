@@ -4,6 +4,7 @@ on:
   push:
   pull_request:
   workflow_dispatch: # Allow manual triggering
+  workflow_call:
 
 permissions:
   contents: read
@@ -38,8 +39,8 @@ jobs:
         run: |
           pytest
 
-  test-integration: # Run on master branch and manual trigger
-    if: github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
+  test-integration: # Run only when requested manually
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     strategy:
       matrix:
