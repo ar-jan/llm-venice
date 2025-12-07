@@ -59,6 +59,18 @@ class VeniceChatOptions(Chat.Options):
         ),
         default=None,
     )
+    enable_web_citations: Optional[bool] = Field(
+        description=(
+            "When web search is enabled, request that the LLM cite its sources using ^index^ or ^i,j^ superscript format."
+        ),
+        default=None,
+    )
+    include_search_results_in_stream: Optional[bool] = Field(
+        description=(
+            "Experimental: Include search results in the stream as the first emitted chunk."
+        ),
+        default=None,
+    )
     character_slug: Optional[str] = Field(
         description=(
             "Public character slug to use (e.g. 'alan-watts')."
@@ -155,12 +167,26 @@ class VeniceChat(Chat):
             if key in kwargs and kwargs[key] is not None:
                 venice_parameters[key] = kwargs.pop(key)
 
-        # Capability guard for web search if requested by user
-        if venice_parameters.get("enable_web_search") and not getattr(
-            self, "supports_web_search", False
+        web_search_requested = venice_parameters.get("enable_web_search")
+        web_citations_requested = venice_parameters.get("enable_web_citations")
+        include_results_requested = venice_parameters.get(
+            "include_search_results_in_stream"
+        )
+
+        # Capability guard for web-search-related features
+        if (
+            web_search_requested or web_citations_requested or include_results_requested
+        ) and not getattr(self, "supports_web_search", False):
+            raise llm.ModelError(f"Model {self.model_id} does not support web search")
+
+        if (
+            web_citations_requested or include_results_requested
+        ) and web_search_requested not in (
+            "on",
+            "auto",
         ):
             raise llm.ModelError(
-                f"Model {self.model_id} does not support web search"
+                "enable_web_search must be set to 'on' or 'auto' when using web citations or including search results in stream"
             )
 
         # Build extra_body
