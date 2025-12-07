@@ -1,6 +1,6 @@
 [project]
 name = "llm-venice"
-version = "0.8.1"
+version = "0.8.2"
 description = "LLM plugin to access models available via the Venice API"
 readme = "README.md"
 authors = [{name = "Arjan Mossel"}]
