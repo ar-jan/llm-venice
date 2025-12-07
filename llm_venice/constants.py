@@ -21,6 +21,8 @@ ENDPOINT_CHARACTERS = f"{VENICE_API_BASE}/characters"
 VENICE_PARAMETERS_CLI = {
     "no_venice_system_prompt",
     "web_search",
+    "web_citations",
+    "include_search_results_in_stream",
     "character",
     "strip_thinking_response",
     "disable_thinking",
@@ -31,6 +33,8 @@ VENICE_PARAMETERS_CLI = {
 VENICE_PARAMETERS = {
     "include_venice_system_prompt",
     "enable_web_search",
+    "enable_web_citations",
+    "include_search_results_in_stream",
     "character_slug",
     "strip_thinking_response",
     "disable_thinking",

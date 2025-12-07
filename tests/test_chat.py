@@ -776,3 +776,216 @@ def test_web_search_capability_guard():
     assert "extra_body" in kwargs
     assert "venice_parameters" in kwargs["extra_body"]
     assert kwargs["extra_body"]["venice_parameters"]["enable_web_search"] == "on"
+
+
+def test_web_search_citation_parameters_options():
+    """Test that web search citation parameters can be set in VeniceChatOptions."""
+    # Test enable_web_citations
+    options = VeniceChatOptions(enable_web_citations=True)
+    assert options.enable_web_citations is True
+
+    options = VeniceChatOptions(enable_web_citations=False)
+    assert options.enable_web_citations is False
+
+    # Test include_search_results_in_stream
+    options = VeniceChatOptions(include_search_results_in_stream=True)
+    assert options.include_search_results_in_stream is True
+
+    options = VeniceChatOptions(include_search_results_in_stream=False)
+    assert options.include_search_results_in_stream is False
+
+    # Test both together
+    options = VeniceChatOptions(
+        enable_web_citations=True,
+        include_search_results_in_stream=True,
+    )
+    assert options.enable_web_citations is True
+    assert options.include_search_results_in_stream is True
+
+
+def test_web_search_citation_parameters_build_kwargs():
+    """Test that web search citation parameters are properly passed in build_kwargs."""
+    chat = VeniceChat(
+        model_id="venice/test-model",
+        model_name="test-model",
+        api_base="https://api.venice.ai/api/v1",
+    )
+    import llm
+
+    # Should reject citations/search-results when model lacks web search
+    options = VeniceChatOptions(enable_web_citations=True)
+    prompt = Prompt(prompt="Test", model=chat, options=options)
+    with pytest.raises(llm.ModelError, match="does not support web search"):
+        chat.build_kwargs(prompt, stream=False)
+
+    options = VeniceChatOptions(include_search_results_in_stream=True)
+    prompt = Prompt(prompt="Test", model=chat, options=options)
+    with pytest.raises(llm.ModelError, match="does not support web search"):
+        chat.build_kwargs(prompt, stream=False)
+
+    # Enable support but require web search to be turned on
+    chat.supports_web_search = True
+
+    options = VeniceChatOptions(enable_web_citations=True)
+    prompt = Prompt(prompt="Test", model=chat, options=options)
+    with pytest.raises(
+        llm.ModelError, match="enable_web_search must be set to 'on' or 'auto'"
+    ):
+        chat.build_kwargs(prompt, stream=False)
+
+    options = VeniceChatOptions(include_search_results_in_stream=True)
+    prompt = Prompt(prompt="Test", model=chat, options=options)
+    with pytest.raises(
+        llm.ModelError, match="enable_web_search must be set to 'on' or 'auto'"
+    ):
+        chat.build_kwargs(prompt, stream=False)
+
+    # Test enable_web_citations with web search enabled
+    options = VeniceChatOptions(enable_web_search="on", enable_web_citations=True)
+    prompt = Prompt(prompt="Test", model=chat, options=options)
+    kwargs = chat.build_kwargs(prompt, stream=False)
+
+    assert "extra_body" in kwargs
+    assert "venice_parameters" in kwargs["extra_body"]
+    assert kwargs["extra_body"]["venice_parameters"]["enable_web_citations"] is True
+
+    # Test include_search_results_in_stream with web search enabled
+    options = VeniceChatOptions(
+        enable_web_search="auto", include_search_results_in_stream=True
+    )
+    prompt = Prompt(prompt="Test", model=chat, options=options)
+    kwargs = chat.build_kwargs(prompt, stream=False)
+
+    assert "extra_body" in kwargs
+    assert "venice_parameters" in kwargs["extra_body"]
+    assert (
+        kwargs["extra_body"]["venice_parameters"]["include_search_results_in_stream"]
+        is True
+    )
+
+    # Test both together with web search enabled
+    options = VeniceChatOptions(
+        enable_web_search="on",
+        enable_web_citations=True,
+        include_search_results_in_stream=True,
+    )
+    prompt = Prompt(prompt="Test", model=chat, options=options)
+
+    # Set web search support to avoid validation error
+    chat.supports_web_search = True
+    kwargs = chat.build_kwargs(prompt, stream=False)
+
+    assert "extra_body" in kwargs
+    assert "venice_parameters" in kwargs["extra_body"]
+    venice_params = kwargs["extra_body"]["venice_parameters"]
+    assert venice_params["enable_web_search"] == "on"
+    assert venice_params["enable_web_citations"] is True
+    assert venice_params["include_search_results_in_stream"] is True
+
+
+def test_cli_web_search_citation_parameters_registration(
+    cli_runner, monkeypatch, mock_venice_api_key
+):
+    """Test that web search citation parameters are registered in CLI."""
+    from llm import cli as llm_cli
+
+    # Check prompt command help
+    result = cli_runner.invoke(llm_cli.cli, ["prompt", "--help"])
+    assert result.exit_code == 0
+    assert "--web-citations" in result.output
+    assert "--include-search-results-in-stream" in result.output
+
+    # Check chat command help
+    result = cli_runner.invoke(llm_cli.cli, ["chat", "--help"])
+    assert result.exit_code == 0
+    assert "--web-citations" in result.output
+    assert "--include-search-results-in-stream" in result.output
+
+
+def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch):
+    """Test that CLI properly accepts web search citation parameters."""
+    from llm import cli as llm_cli
+    import llm
+    from unittest.mock import patch, MagicMock
+
+    monkeypatch.setenv("LLM_VENICE_KEY", "test-venice-key")
+    mock_response = MagicMock()
+    mock_response.text = lambda: "Mock response with citations"
+    mock_response.usage = lambda: (10, 5, 15)
+
+    # Ensure model supports web search to satisfy validation
+    model = llm.get_model("venice/qwen3-4b")
+    model.supports_web_search = True
+
+    # Spy on process_venice_options to verify options are forwarded
+    from llm_venice.cli import command_hooks
+
+    captured_options = []
+    original_process = command_hooks.process_venice_options
+
+    def spy_process(kwargs):
+        result = original_process(kwargs)
+        captured_options.append(list(result.get("options", [])))
+        return result
+
+    monkeypatch.setattr(command_hooks, "process_venice_options", spy_process)
+
+    with patch.object(VeniceChat, "prompt", return_value=mock_response):
+        # Test --web-citations
+        result = cli_runner.invoke(
+            llm_cli.cli,
+            [
+                "prompt",
+                "-m",
+                "venice/qwen3-4b",
+                "--web-citations",
+                "--web-search",
+                "on",
+                "--no-log",
+                "Test with citations",
+            ],
+        )
+        assert result.exit_code == 0, f"Command failed with: {result.output}"
+        options = captured_options[-1]
+        assert ("enable_web_search", "on") in options
+        assert ("enable_web_citations", True) in options
+
+        # Test --include-search-results-in-stream
+        result = cli_runner.invoke(
+            llm_cli.cli,
+            [
+                "prompt",
+                "-m",
+                "venice/qwen3-4b",
+                "--include-search-results-in-stream",
+                "--web-search",
+                "on",
+                "--no-log",
+                "Test with search results in stream",
+            ],
+        )
+        assert result.exit_code == 0, f"Command failed with: {result.output}"
+        options = captured_options[-1]
+        assert ("enable_web_search", "on") in options
+        assert ("include_search_results_in_stream", True) in options
+
+        # Test both together
+        result = cli_runner.invoke(
+            llm_cli.cli,
+            [
+                "prompt",
+                "-m",
+                "venice/qwen3-4b",
+                "--web-citations",
+                "--include-search-results-in-stream",
+                "--web-search",
+                "on",
+                "--no-log",
+                "Test with all citation parameters",
+            ],
+        )
+        assert result.exit_code == 0, f"Command failed with: {result.output}"
+        options = captured_options[-1]
+        assert ("enable_web_search", "on") in options
+        assert ("enable_web_citations", True) in options
+        assert ("include_search_results_in_stream", True) in options
