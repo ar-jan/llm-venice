@@ -26,9 +26,10 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -e '.[test,dev]'
-      - name: Type check
-        run: |
-          ty check
+    # TODO: fix Python env discovery in CI?
+    #   - name: Type check
+    #     run: |
+    #       ty check --output-format=github
       - name: Check formatting
         run: |
           ruff format --check .
