@@ -62,6 +62,6 @@ def create_upscale_command():
     )
     def upscale(**kwargs):
         """Upscale an image using Venice API"""
-        image_upscale(**kwargs)
+        image_upscale(**kwargs, use_click_exceptions=True)
 
     return upscale

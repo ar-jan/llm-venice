@@ -7,21 +7,26 @@ from typing import Optional, Union
 
 import click
 import llm
+from llm import NeedsKeyException
 
 
-def get_venice_key() -> str:
+def get_venice_key(explicit_key: Optional[str] = None, *, click_exceptions: bool = False) -> str:
     """
     Get the Venice API key from LLM's key management.
 
     Raises:
-        click.ClickException: If no key is found.
+        NeedsKeyException by default when no key is found; set click_exceptions=True
+        for CLI use to raise click.ClickException instead.
 
     Returns:
         The Venice API key.
     """
-    key = llm.get_key("", "venice", "LLM_VENICE_KEY")
+    key = llm.get_key(explicit_key, "venice", "LLM_VENICE_KEY")
     if not key:
-        raise click.ClickException("No key found for Venice")
+        message = "No key found for Venice"
+        if click_exceptions:
+            raise click.ClickException(message)
+        raise NeedsKeyException(message)
     return key
 
 

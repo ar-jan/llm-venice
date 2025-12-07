@@ -27,7 +27,7 @@ def create_characters_command():
     @click.option("--adult", type=click.Choice(["true", "false"]), help="Filter by adult category")
     def characters(web_enabled, adult):
         """List public characters."""
-        key = get_venice_key()
+        key = get_venice_key(click_exceptions=True)
         headers = {"Authorization": f"Bearer {key}"}
 
         params = {k: v for k, v in {"isWebEnabled": web_enabled, "isAdult": adult}.items() if v}

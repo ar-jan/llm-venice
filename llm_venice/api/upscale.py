@@ -19,6 +19,9 @@ def image_upscale(
     replication=None,
     output_path=None,
     overwrite=False,
+    *,
+    key=None,
+    use_click_exceptions: bool = False,
 ):
     """
     Upscale an image using Venice AI.
@@ -32,11 +35,13 @@ def image_upscale(
         replication: Line preservation strength (0.0-1.0)
         output_path: Path for the output image (file or directory)
         overwrite: Whether to overwrite existing files
+        key: Explicit API key to use (falls back to llm.get_key if not provided)
+        use_click_exceptions: Use click.ClickException for missing key instead of NeedsKeyException
 
     Example usage:
         llm venice upscale image.jpg --scale 4
     """
-    headers = get_auth_headers()
+    headers = get_auth_headers(key, click_exceptions=use_click_exceptions)
 
     with open(image_path, "rb") as img_file:
         image_data = img_file.read()
