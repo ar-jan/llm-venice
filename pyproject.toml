@@ -40,6 +40,9 @@ markers = [
 ]
 addopts = "-m 'not integration'"
 
+[tool.uv]
+managed = false
+
 [tool.ruff]
 line-length = 100
 indent-width = 4
