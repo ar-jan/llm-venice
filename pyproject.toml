@@ -5,6 +5,7 @@ description = "LLM plugin to access models available via the Venice API"
 readme = "README.md"
 authors = [{name = "Arjan Mossel"}]
 license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
 classifiers = [
     "License :: OSI Approved :: Apache Software License"
 ]
@@ -28,9 +29,30 @@ test = [
     "pytest-httpx",
     "sqlite_utils",
 ]
+dev = [
+    "ruff>=0.14.8",
+    "ty>=0.0.1a32",
+]
 
 [tool.pytest.ini_options]
 markers = [
     "integration: marks integration tests that call external APIs"
 ]
 addopts = "-m 'not integration'"
+
+[tool.uv]
+managed = false
+
+[tool.ruff]
+line-length = 100
+indent-width = 4
+target-version = "py310"
+
+[tool.ruff.lint]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+docstring-code-format = true
+line-ending = "lf"

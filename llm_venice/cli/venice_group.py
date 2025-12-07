@@ -15,6 +15,7 @@ def create_venice_group():
     Returns:
         Click group for venice commands
     """
+
     @click.group(name="venice")
     def venice():
         """llm-venice plugin commands"""

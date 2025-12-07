@@ -76,7 +76,7 @@ def install_command_hooks(cli):
         character,
         strip_thinking_response,
         disable_thinking,
-        **kwargs
+        **kwargs,
     ):
         """Execute a prompt"""
         kwargs = process_venice_options(
@@ -106,7 +106,7 @@ def install_command_hooks(cli):
         character,
         strip_thinking_response,
         disable_thinking,
-        **kwargs
+        **kwargs,
     ):
         """Hold an ongoing chat with a model"""
         kwargs = process_venice_options(

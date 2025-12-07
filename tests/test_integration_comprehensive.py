@@ -14,7 +14,7 @@ from llm.cli import cli
 import pytest
 import sqlite_utils
 
-from llm_venice import VeniceChat, VeniceImage
+from llm_venice import VeniceChat
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("venice_api_key")]
 
@@ -78,8 +78,7 @@ class TestBasicChatCompletion:
 
         # Test with low temperature (more deterministic)
         response = chat.prompt(
-            "What is the capital of France? Answer in one word.",
-            temperature=0.1
+            "What is the capital of France? Answer in one word.", temperature=0.1
         )
         assert response is not None
         response_text = response.text().lower()
@@ -120,9 +119,10 @@ class TestConversationHistory:
             cli,
             [
                 "chat",
-                "-m", "venice/llama-3.2-3b",
+                "-m",
+                "venice/llama-3.2-3b",
             ],
-            input="My favorite color is blue.\nexit\n"
+            input="My favorite color is blue.\nexit\n",
         )
         assert result1.exit_code == 0
 
@@ -131,10 +131,11 @@ class TestConversationHistory:
             cli,
             [
                 "chat",
-                "-m", "venice/llama-3.2-3b",
+                "-m",
+                "venice/llama-3.2-3b",
                 "--continue",  # Continue the most recent conversation
             ],
-            input="What is my favorite color?\nexit\n"
+            input="What is my favorite color?\nexit\n",
         )
         assert result2.exit_code == 0
         # The model should remember the previous context
@@ -152,10 +153,7 @@ class TestNonOpenAIParameters:
             api_base="https://api.venice.ai/api/v1",
         )
 
-        response = chat.prompt(
-            "Say hello.",
-            min_p=0.1
-        )
+        response = chat.prompt("Say hello.", min_p=0.1)
         assert response is not None
         assert len(response.text()) > 0
 
@@ -167,10 +165,7 @@ class TestNonOpenAIParameters:
             api_base="https://api.venice.ai/api/v1",
         )
 
-        response = chat.prompt(
-            "Say hello.",
-            top_k=50
-        )
+        response = chat.prompt("Say hello.", top_k=50)
         assert response is not None
         assert len(response.text()) > 0
 
@@ -182,10 +177,7 @@ class TestNonOpenAIParameters:
             api_base="https://api.venice.ai/api/v1",
         )
 
-        response = chat.prompt(
-            "Say hello.",
-            repetition_penalty=1.1
-        )
+        response = chat.prompt("Say hello.", repetition_penalty=1.1)
         assert response is not None
         assert len(response.text()) > 0
 
@@ -196,13 +188,7 @@ class TestVeniceSystemPrompt:
     def test_disable_venice_system_prompt(self, cli_runner, isolated_llm_dir):
         """Test --no-venice-system-prompt flag."""
         result = cli_runner.invoke(
-            cli,
-            [
-                "prompt",
-                "-m", "venice/llama-3.2-3b",
-                "--no-venice-system-prompt",
-                "Say hello."
-            ]
+            cli, ["prompt", "-m", "venice/llama-3.2-3b", "--no-venice-system-prompt", "Say hello."]
         )
         assert result.exit_code == 0
         assert len(result.output) > 0
@@ -218,12 +204,13 @@ class TestFunctionCalling:
             cli,
             [
                 "prompt",
-                "-m", "venice/llama-3.3-70b",
+                "-m",
+                "venice/llama-3.3-70b",
                 "--functions",
                 'def multiply(x: int, y: int) -> int:\n    """Multiply two numbers together."""\n    return x * y',
                 "--no-stream",
-                "What is 12 times 34?"
-            ]
+                "What is 12 times 34?",
+            ],
         )
         assert result.exit_code == 0
         # The model should have called the function and used the result
@@ -245,16 +232,12 @@ class TestStructuredOutputs:
         # Create a simple schema
         schema = {
             "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "age": {"type": "integer"}
-            },
-            "required": ["name", "age"]
+            "properties": {"name": {"type": "string"}, "age": {"type": "integer"}},
+            "required": ["name", "age"],
         }
 
         response = chat.prompt(
-            "Generate data for a person named Alice who is 30 years old.",
-            schema=schema
+            "Generate data for a person named Alice who is 30 years old.", schema=schema
         )
 
         assert response is not None
@@ -262,6 +245,7 @@ class TestStructuredOutputs:
 
         # Parse the JSON response
         import json
+
         data = json.loads(response_text)
         assert "name" in data
         assert "age" in data
@@ -278,10 +262,12 @@ class TestCharacterPersonas:
             cli,
             [
                 "prompt",
-                "-m", "venice/qwen3-235b",
-                "--character", "alan-watts",
-                "What is consciousness?"
-            ]
+                "-m",
+                "venice/qwen3-235b",
+                "--character",
+                "alan-watts",
+                "What is consciousness?",
+            ],
         )
         assert result.exit_code == 0
         assert len(result.output) > 0
@@ -325,8 +311,10 @@ class TestWebSearch:
             cli,
             [
                 "prompt",
-                "-m", "venice/llama-3.3-70b",
-                "--web-search", "on",
+                "-m",
+                "venice/llama-3.3-70b",
+                "--web-search",
+                "on",
                 "--no-stream",
                 "What is Venice AI VVV token?",
             ],
@@ -386,7 +374,11 @@ class TestImageUpscaling:
 
         assert result.exit_code == 0
         result_line = next(
-            (line for line in result.output.splitlines() if "upscaled image saved to" in line.lower()),
+            (
+                line
+                for line in result.output.splitlines()
+                if "upscaled image saved to" in line.lower()
+            ),
             None,
         )
         assert result_line is not None

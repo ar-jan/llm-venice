@@ -125,9 +125,7 @@ def test_build_kwargs_with_empty_tools_list(chat_model_with_tools):
     assert "tools" not in kwargs
 
 
-def test_execute_sends_tools_and_parses_response(
-    chat_model_with_tools, mock_venice_api_key
-):
+def test_execute_sends_tools_and_parses_response(chat_model_with_tools, mock_venice_api_key):
     """
     Integration-style test to verify that the 'tools' payload is sent
     and a 'tool_calls' response from the API is correctly parsed.
@@ -144,9 +142,7 @@ def test_execute_sends_tools_and_parses_response(
         function=Function(name="get_weather", arguments='{"city": "Leiden"}'),
     )
 
-    message = ChatCompletionMessage(
-        role="assistant", content=None, tool_calls=[tool_call]
-    )
+    message = ChatCompletionMessage(role="assistant", content=None, tool_calls=[tool_call])
 
     choice = Choice(index=0, message=message, finish_reason="tool_calls")
 
@@ -199,9 +195,7 @@ def test_execute_sends_tools_and_parses_response(
         tool_call = tool_calls[0]
         assert tool_call.tool_call_id == "call_abc123"
         assert tool_call.name == "get_weather"
-        assert tool_call.arguments == {
-            "city": "Leiden"
-        }  # llm auto-parses the JSON string
+        assert tool_call.arguments == {"city": "Leiden"}  # llm auto-parses the JSON string
 
 
 def test_prompt_with_tools_raises_error_if_unsupported(chat_model_without_tools):

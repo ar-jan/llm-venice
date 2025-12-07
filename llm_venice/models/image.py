@@ -44,9 +44,7 @@ class VeniceImageOptions(llm.Options):
     width: Optional[int] = Field(
         description="Width of generated image", default=DEFAULT_IMAGE_SIZE, ge=64, le=1280
     )
-    steps: Optional[int] = Field(
-        description="Number of inference steps", default=None, ge=7, le=50
-    )
+    steps: Optional[int] = Field(description="Number of inference steps", default=None, ge=7, le=50)
     cfg_scale: Optional[float] = Field(
         description="CFG scale for generation", default=None, gt=0, le=20.0
     )
@@ -162,13 +160,9 @@ class VeniceImage(llm.Model):
             resolved_output_dir.mkdir(exist_ok=True)
 
         if not output_filename:
-            output_filename = generate_timestamp_filename(
-                "venice", self.model_name, image_format
-            )
+            output_filename = generate_timestamp_filename("venice", self.model_name, image_format)
 
-        output_filepath = get_unique_filepath(
-            resolved_output_dir, output_filename, overwrite_files
-        )
+        output_filepath = get_unique_filepath(resolved_output_dir, output_filename, overwrite_files)
 
         try:
             output_filepath.write_bytes(image_bytes)

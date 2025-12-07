@@ -19,9 +19,7 @@ def process_venice_options(kwargs):
     no_venice_system_prompt = kwargs.pop("no_venice_system_prompt", False)
     web_search = kwargs.pop("web_search", False)
     web_citations = kwargs.pop("web_citations", False)
-    include_search_results_in_stream = kwargs.pop(
-        "include_search_results_in_stream", False
-    )
+    include_search_results_in_stream = kwargs.pop("include_search_results_in_stream", False)
     character = kwargs.pop("character", None)
     strip_thinking_response = kwargs.pop("strip_thinking_response", False)
     disable_thinking = kwargs.pop("disable_thinking", False)
@@ -32,9 +30,9 @@ def process_venice_options(kwargs):
         model = llm.get_model(model_id)
 
         # Validate capability for web search early for a better UX
-        if (
-            web_search or web_citations or include_search_results_in_stream
-        ) and not getattr(model, "supports_web_search", False):
+        if (web_search or web_citations or include_search_results_in_stream) and not getattr(
+            model, "supports_web_search", False
+        ):
             raise click.ClickException(f"Model {model_id} does not support web search")
 
         # Web citations/search result streaming require web search to be enabled

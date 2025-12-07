@@ -80,9 +80,7 @@ def test_venice_chat_build_kwargs_json_schema():
     assert "test" in json_schema["schema"]["properties"]
 
 
-def test_cli_venice_parameters_registration(
-    cli_runner, monkeypatch, mock_venice_api_key
-):
+def test_cli_venice_parameters_registration(cli_runner, monkeypatch, mock_venice_api_key):
     """Test that venice parameter options are registered."""
     from llm import cli as llm_cli
 
@@ -200,20 +198,17 @@ def test_thinking_parameters_build_kwargs():
     kwargs = chat.build_kwargs(prompt, stream=False)
 
     assert "extra_body" in kwargs, "extra_body should be present in kwargs"
-    assert "venice_parameters" in kwargs["extra_body"], (
-        "venice_parameters should be in extra_body"
+    assert "venice_parameters" in kwargs["extra_body"], "venice_parameters should be in extra_body"
+    assert kwargs["extra_body"]["venice_parameters"]["strip_thinking_response"] is True, (
+        "strip_thinking_response should be True"
     )
-    assert (
-        kwargs["extra_body"]["venice_parameters"]["strip_thinking_response"] is True
-    ), "strip_thinking_response should be True"
 
     # Test with streaming enabled
     kwargs_stream = chat.build_kwargs(prompt, stream=True)
     assert "extra_body" in kwargs_stream, "extra_body should be present when streaming"
-    assert (
-        kwargs_stream["extra_body"]["venice_parameters"]["strip_thinking_response"]
-        is True
-    ), "strip_thinking_response should be preserved when streaming"
+    assert kwargs_stream["extra_body"]["venice_parameters"]["strip_thinking_response"] is True, (
+        "strip_thinking_response should be preserved when streaming"
+    )
 
     # Test single parameter: disable_thinking
     options = VeniceChatOptions(disable_thinking=True)
@@ -253,9 +248,9 @@ def test_thinking_parameters_build_kwargs():
     assert kwargs["extra_body"]["min_p"] == 0.05, "min_p should be in extra_body"
     assert kwargs["extra_body"]["top_k"] == 40, "top_k should be in extra_body"
     # Venice parameters should be nested
-    assert (
-        kwargs["extra_body"]["venice_parameters"]["strip_thinking_response"] is True
-    ), "venice_parameters should coexist with top-level params"
+    assert kwargs["extra_body"]["venice_parameters"]["strip_thinking_response"] is True, (
+        "venice_parameters should coexist with top-level params"
+    )
 
     # Test without any Venice parameters (shouldn't create extra_body)
     options = VeniceChatOptions()
@@ -263,13 +258,11 @@ def test_thinking_parameters_build_kwargs():
     kwargs = chat.build_kwargs(prompt, stream=False)
 
     # Should not raise an error and should return a dict (may be empty)
-    assert isinstance(kwargs, dict), (
-        "build_kwargs should return a dict even without extra_body"
-    )
+    assert isinstance(kwargs, dict), "build_kwargs should return a dict even without extra_body"
     # When no options are provided, kwargs may be empty
-    assert "extra_body" not in kwargs or "venice_parameters" not in kwargs.get(
-        "extra_body", {}
-    ), "venice_parameters should not be added when not specified in options"
+    assert "extra_body" not in kwargs or "venice_parameters" not in kwargs.get("extra_body", {}), (
+        "venice_parameters should not be added when not specified in options"
+    )
 
 
 def test_venice_parameters_edge_cases():
@@ -385,9 +378,7 @@ def test_new_parameters_build_kwargs():
     options = VeniceChatOptions(repetition_penalty=1.2)
     prompt = Prompt(prompt="Test", model=chat, options=options)
     kwargs = chat.build_kwargs(prompt, stream=False)
-    assert "repetition_penalty" not in kwargs, (
-        "repetition_penalty should not be at top level"
-    )
+    assert "repetition_penalty" not in kwargs, "repetition_penalty should not be at top level"
     assert "extra_body" in kwargs
     assert kwargs["extra_body"]["repetition_penalty"] == 1.2
 
@@ -462,7 +453,6 @@ def test_new_parameters_with_streaming():
     assert kwargs["extra_body"]["stop_token_ids"] == [151643, 151645]
     assert "stream_options" in kwargs
     assert kwargs["stream_options"]["include_usage"] is True
-
 
     # Enable web search validator (invalid value)
     with pytest.raises(ValidationError) as exc_info:
@@ -828,16 +818,12 @@ def test_web_search_citation_parameters_build_kwargs():
 
     options = VeniceChatOptions(enable_web_citations=True)
     prompt = Prompt(prompt="Test", model=chat, options=options)
-    with pytest.raises(
-        llm.ModelError, match="enable_web_search must be set to 'on' or 'auto'"
-    ):
+    with pytest.raises(llm.ModelError, match="enable_web_search must be set to 'on' or 'auto'"):
         chat.build_kwargs(prompt, stream=False)
 
     options = VeniceChatOptions(include_search_results_in_stream=True)
     prompt = Prompt(prompt="Test", model=chat, options=options)
-    with pytest.raises(
-        llm.ModelError, match="enable_web_search must be set to 'on' or 'auto'"
-    ):
+    with pytest.raises(llm.ModelError, match="enable_web_search must be set to 'on' or 'auto'"):
         chat.build_kwargs(prompt, stream=False)
 
     # Test enable_web_citations with web search enabled
@@ -850,18 +836,13 @@ def test_web_search_citation_parameters_build_kwargs():
     assert kwargs["extra_body"]["venice_parameters"]["enable_web_citations"] is True
 
     # Test include_search_results_in_stream with web search enabled
-    options = VeniceChatOptions(
-        enable_web_search="auto", include_search_results_in_stream=True
-    )
+    options = VeniceChatOptions(enable_web_search="auto", include_search_results_in_stream=True)
     prompt = Prompt(prompt="Test", model=chat, options=options)
     kwargs = chat.build_kwargs(prompt, stream=False)
 
     assert "extra_body" in kwargs
     assert "venice_parameters" in kwargs["extra_body"]
-    assert (
-        kwargs["extra_body"]["venice_parameters"]["include_search_results_in_stream"]
-        is True
-    )
+    assert kwargs["extra_body"]["venice_parameters"]["include_search_results_in_stream"] is True
 
     # Test both together with web search enabled
     options = VeniceChatOptions(

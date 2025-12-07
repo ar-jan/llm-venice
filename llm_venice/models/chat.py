@@ -24,8 +24,7 @@ class VeniceChatOptions(Chat.Options):
     )
     top_k: Optional[int] = Field(
         description=(
-            "The number of highest probability vocabulary tokens to keep for "
-            "top-k-filtering."
+            "The number of highest probability vocabulary tokens to keep for top-k-filtering."
         ),
         ge=0,
         default=None,
@@ -54,9 +53,7 @@ class VeniceChatOptions(Chat.Options):
         default=None,
     )
     enable_web_search: Optional[str] = Field(
-        description=(
-            "Enable web search: one of 'on', 'off', or 'auto'."
-        ),
+        description=("Enable web search: one of 'on', 'off', or 'auto'."),
         default=None,
     )
     enable_web_citations: Optional[bool] = Field(
@@ -72,21 +69,15 @@ class VeniceChatOptions(Chat.Options):
         default=None,
     )
     character_slug: Optional[str] = Field(
-        description=(
-            "Public character slug to use (e.g. 'alan-watts')."
-        ),
+        description=("Public character slug to use (e.g. 'alan-watts')."),
         default=None,
     )
     strip_thinking_response: Optional[bool] = Field(
-        description=(
-            "Strip <think></think> blocks from the response (reasoning models)."
-        ),
+        description=("Strip <think></think> blocks from the response (reasoning models)."),
         default=None,
     )
     disable_thinking: Optional[bool] = Field(
-        description=(
-            "Disable thinking and strip <think></think> blocks (reasoning models)."
-        ),
+        description=("Disable thinking and strip <think></think> blocks (reasoning models)."),
         default=None,
     )
 
@@ -146,14 +137,9 @@ class VeniceChat(Chat):
         kwargs = super().build_kwargs(prompt, stream)
 
         # Venice requires strict mode and no additional properties for JSON schema
-        if (
-            "response_format" in kwargs
-            and kwargs["response_format"].get("type") == "json_schema"
-        ):
+        if "response_format" in kwargs and kwargs["response_format"].get("type") == "json_schema":
             kwargs["response_format"]["json_schema"]["strict"] = True
-            kwargs["response_format"]["json_schema"]["schema"][
-                "additionalProperties"
-            ] = False
+            kwargs["response_format"]["json_schema"]["schema"]["additionalProperties"] = False
 
         # Move non-openai-compatible generation parameters into extra_body
         non_openai_compatible_params = {}
@@ -169,9 +155,7 @@ class VeniceChat(Chat):
 
         web_search_requested = venice_parameters.get("enable_web_search")
         web_citations_requested = venice_parameters.get("enable_web_citations")
-        include_results_requested = venice_parameters.get(
-            "include_search_results_in_stream"
-        )
+        include_results_requested = venice_parameters.get("include_search_results_in_stream")
 
         # Capability guard for web-search-related features
         if (
@@ -179,9 +163,7 @@ class VeniceChat(Chat):
         ) and not getattr(self, "supports_web_search", False):
             raise llm.ModelError(f"Model {self.model_id} does not support web search")
 
-        if (
-            web_citations_requested or include_results_requested
-        ) and web_search_requested not in (
+        if (web_citations_requested or include_results_requested) and web_search_requested not in (
             "on",
             "auto",
         ):

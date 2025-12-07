@@ -15,6 +15,7 @@ def create_api_keys_group():
     Returns:
         Click group for API key management commands
     """
+
     @click.group(name="api-keys", invoke_without_command=True)
     @click.pass_context
     def api_keys_group(ctx):
@@ -84,9 +85,7 @@ def create_api_keys_group():
     @click.pass_context
     def create_key(ctx, description, key_type, expiration_date, limits_vcu, limits_usd):
         """Create a new API key."""
-        expiration_str = (
-            expiration_date.strftime("%Y-%m-%dT%H:%M:%SZ") if expiration_date else None
-        )
+        expiration_str = expiration_date.strftime("%Y-%m-%dT%H:%M:%SZ") if expiration_date else None
         response = api_keys.create_api_key(
             ctx.obj["headers"],
             description,

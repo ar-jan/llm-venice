@@ -99,6 +99,4 @@ def test_thinking_parameters_with_real_api(isolated_llm_dir):
     assert response3 is not None
     response3_text = response3.text()
     assert len(response3_text) > 0, "Should have received a response"
-    assert "<think>" not in response3_text.lower(), (
-        "Response should not contain thinking tags"
-    )
+    assert "<think>" not in response3_text.lower(), "Response should not contain thinking tags"

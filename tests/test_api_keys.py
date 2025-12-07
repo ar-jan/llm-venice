@@ -6,9 +6,7 @@ from llm.cli import cli
 import pytest
 
 
-api_keys_rate_limits_path = (
-    pathlib.Path(__file__).parent / "schemas" / "api_keys_rate_limits.json"
-)
+api_keys_rate_limits_path = pathlib.Path(__file__).parent / "schemas" / "api_keys_rate_limits.json"
 with open(api_keys_rate_limits_path) as f:
     api_keys_rate_limits_schema = json.load(f)
 

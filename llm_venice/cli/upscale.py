@@ -12,10 +12,9 @@ def create_upscale_command():
     Returns:
         Click command for image upscaling
     """
+
     @click.command(name="upscale")
-    @click.argument(
-        "image_path", type=click.Path(exists=True, dir_okay=False, readable=True)
-    )
+    @click.argument("image_path", type=click.Path(exists=True, dir_okay=False, readable=True))
     @click.option(
         "--scale",
         type=click.FloatRange(1, 4),

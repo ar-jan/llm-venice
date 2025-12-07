@@ -32,12 +32,12 @@ def test_upscale_function(mocked_responses, temp_image_file, tmp_path, mock_veni
         assert f.read() == b"upscaled image data"
 
 
-def test_upscale_command(mocked_responses, temp_image_file, tmp_path, mock_venice_api_key, cli_runner):
+def test_upscale_command(
+    mocked_responses, temp_image_file, tmp_path, mock_venice_api_key, cli_runner
+):
     """Test the CLI command for upscaling"""
     # Run the CLI command
-    result = cli_runner.invoke(
-        cli, ["venice", "upscale", str(temp_image_file), "--scale", "4"]
-    )
+    result = cli_runner.invoke(cli, ["venice", "upscale", str(temp_image_file), "--scale", "4"])
 
     # Verify the command completed successfully
     assert result.exit_code == 0
@@ -85,13 +85,13 @@ def test_upscale_missing_api_key():
 def test_upscale_with_enhancement_options(mocked_responses, temp_image_file, mock_venice_api_key):
     """Test upscaling with enhancement options enabled"""
     image_upscale(
-            str(temp_image_file),
-            scale=3,
-            enhance=True,
-            enhance_creativity=0.7,
-            enhance_prompt="spooky",
-            replication=0.5,
-        )
+        str(temp_image_file),
+        scale=3,
+        enhance=True,
+        enhance_creativity=0.7,
+        enhance_prompt="spooky",
+        replication=0.5,
+    )
 
     # Verify the API was called with enhancement parameters
     requests = mocked_responses.get_requests()
@@ -104,7 +104,9 @@ def test_upscale_with_enhancement_options(mocked_responses, temp_image_file, moc
     assert b'name="replication"\r\n\r\n0.5' in request_body
 
 
-def test_upscale_custom_output_path_file(mocked_responses, mock_image_file, tmp_path, mock_venice_api_key):
+def test_upscale_custom_output_path_file(
+    mocked_responses, mock_image_file, tmp_path, mock_venice_api_key
+):
     """Test upscaling with custom output file path"""
     test_img_path = tmp_path / "input.jpg"
     custom_output_path = tmp_path / "custom_output.png"
@@ -164,7 +166,9 @@ def test_upscale_avoid_overwrite_with_timestamp(
         assert f.read() == b"upscaled image data"
 
 
-def test_upscale_overwrite_existing_file(mocked_responses, temp_image_file, tmp_path, mock_venice_api_key):
+def test_upscale_overwrite_existing_file(
+    mocked_responses, temp_image_file, tmp_path, mock_venice_api_key
+):
     """Test overwriting existing files when --overwrite is True"""
     # Expected output path: test.jpg -> test_upscaled.png
     existing_output = tmp_path / "test_upscaled.png"
@@ -184,30 +188,32 @@ def test_upscale_overwrite_existing_file(mocked_responses, temp_image_file, tmp_
     assert len(timestamped_files) == 0
 
 
-def test_upscale_cli_with_all_options(mocked_responses, temp_image_file, tmp_path, mock_venice_api_key, cli_runner):
+def test_upscale_cli_with_all_options(
+    mocked_responses, temp_image_file, tmp_path, mock_venice_api_key, cli_runner
+):
     """Test CLI command with all available options"""
     output_path = tmp_path / "custom_output.png"
 
     result = cli_runner.invoke(
-            cli,
-            [
-                "venice",
-                "upscale",
-                str(temp_image_file),
-                "--scale",
-                "3.5",
-                "--enhance",
-                "--enhance-creativity",
-                "0.8",
-                "--enhance-prompt",
-                "spooky",
-                "--replication",
-                "0.3",
-                "--output-path",
-                str(output_path),
-                "--overwrite",
-            ],
-        )
+        cli,
+        [
+            "venice",
+            "upscale",
+            str(temp_image_file),
+            "--scale",
+            "3.5",
+            "--enhance",
+            "--enhance-creativity",
+            "0.8",
+            "--enhance-prompt",
+            "spooky",
+            "--replication",
+            "0.3",
+            "--output-path",
+            str(output_path),
+            "--overwrite",
+        ],
+    )
 
     assert result.exit_code == 0
     assert f"Upscaled image saved to {output_path}" in result.output
@@ -251,7 +257,9 @@ def test_upscale_network_timeout(httpx_mock, temp_image_file, mock_venice_api_ke
         image_upscale(str(temp_image_file), scale=2)
 
 
-def test_upscale_binary_response_handling(httpx_mock, temp_image_file, tmp_path, mock_venice_api_key):
+def test_upscale_binary_response_handling(
+    httpx_mock, temp_image_file, tmp_path, mock_venice_api_key
+):
     """Test that binary image data is handled correctly"""
     # Mock response with specific binary PNG data
     png_header = b"\x89PNG\r\n\x1a\n"

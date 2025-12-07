@@ -47,9 +47,7 @@ def register_venice_models(register):
                 supports_tools=capabilities.get("supportsFunctionCalling", False),
             )
             # Venice-specific capabilities added as instance attributes
-            model_instance.supports_web_search = capabilities.get(
-                "supportsWebSearch", False
-            )
+            model_instance.supports_web_search = capabilities.get("supportsWebSearch", False)
             register(model_instance)
         elif model.get("type") == "image":
             register(VeniceImage(model_id=model_id, model_name=model_id))
