@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -e '.[test,dev]'
+      - name: Type check
+        run: |
+          ty check
       - name: Check formatting
         run: |
           ruff format --check .
