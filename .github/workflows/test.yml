@@ -4,6 +4,7 @@ on:
   push:
   pull_request:
   workflow_dispatch: # Allow manual triggering
+  workflow_call:
 
 permissions:
   contents: read
@@ -25,6 +26,10 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -e '.[test,dev]'
+    # TODO: fix Python env discovery in CI?
+    #   - name: Type check
+    #     run: |
+    #       ty check --output-format=github
       - name: Check formatting
         run: |
           ruff format --check .
@@ -35,8 +40,8 @@ jobs:
         run: |
           pytest
 
-  test-integration: # Run on master branch and manual trigger
-    if: github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
+  test-integration: # Run only when requested manually
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     strategy:
       matrix:

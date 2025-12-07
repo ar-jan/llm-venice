@@ -2,7 +2,7 @@
 
 import pytest
 from pydantic import ValidationError
-from llm import Prompt
+from llm import Prompt, Response
 from llm_venice import VeniceChat, VeniceChatOptions
 
 
@@ -342,7 +342,7 @@ def test_new_parameters_validation():
 
     # Test invalid stop_token_ids values (not integers in list)
     with pytest.raises(ValidationError):
-        VeniceChatOptions(stop_token_ids=[1.5, 2.5])
+        VeniceChatOptions(stop_token_ids=[1.5, 2.5])  # type: ignore[invalid-argument-type]
 
     # Test invalid stop_token_ids values (non-integers in JSON string)
     with pytest.raises(ValidationError) as exc_info:
@@ -703,12 +703,9 @@ def test_new_parameters_request_shape_client_call(monkeypatch):
     )
     prompt_obj = Prompt(prompt="Test request shape", model=chat, options=options)
 
-    # Minimal stub response object for execute(); streaming branch will assign response_json
-    class StubResponse:
-        pass
-
     # Execute with streaming to take the simpler code path
-    list(chat.execute(prompt_obj, stream=True, response=StubResponse()))
+    response = Response(prompt_obj, chat, stream=True)
+    list(chat.execute(prompt_obj, stream=True, response=response))
 
     # Ensure our fake client was called with expected shape
     assert "extra_body" in captured_kwargs, "extra_body must be included"
@@ -896,7 +893,7 @@ def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch):
 
     # Ensure model supports web search to satisfy validation
     model = llm.get_model("venice/qwen3-4b")
-    model.supports_web_search = True
+    model.supports_web_search = True  # type: ignore[invalid-argument-type]
 
     # Spy on process_venice_options to verify options are forwarded
     from llm_venice.cli import command_hooks

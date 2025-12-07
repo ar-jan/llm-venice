@@ -60,8 +60,8 @@ def install_command_hooks(cli):
     """
     # Remove and store the original prompt and chat commands
     # in order to add them back with custom cli options
-    original_prompt = cli.commands.pop("prompt")
-    original_chat = cli.commands.pop("chat")
+    original_prompt: click.Command = cli.commands.pop("prompt")
+    original_chat: click.Command = cli.commands.pop("chat")
 
     # Create new prompt command
     @cli.command(name="prompt")
@@ -124,10 +124,13 @@ def install_command_hooks(cli):
         return ctx.invoke(original_chat, **kwargs)
 
     # Copy over all params from original commands
+    new_prompt_command: click.Command = cli.commands["prompt"]
+    new_chat_command: click.Command = cli.commands["chat"]
+
     for param in original_prompt.params:
         if param.name not in VENICE_PARAMETERS_CLI:
-            new_prompt.params.append(param)
+            new_prompt_command.params.append(param)
 
     for param in original_chat.params:
         if param.name not in VENICE_PARAMETERS_CLI:
-            new_chat.params.append(param)
+            new_chat_command.params.append(param)
