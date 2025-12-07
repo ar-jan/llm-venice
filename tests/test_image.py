@@ -882,3 +882,35 @@ def test_venice_image_logging_client_usage(mock_venice_api_key, monkeypatch):
                 assert call_args[0][0] == "https://api.venice.ai/api/v1/image/generate"
                 assert "Authorization" in call_args[1]["headers"]
                 assert call_args[1]["timeout"] == 120
+
+
+def test_venice_image_honors_explicit_key(monkeypatch):
+    """Ensure an explicit key is used when provided."""
+    model = VeniceImage("test-model")
+
+    prompt = MagicMock()
+    prompt.prompt = "Test"
+    prompt.options = VeniceImage.Options(return_binary=True)
+
+    captured_headers = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured_headers.update(headers or {})
+
+        class FakeResponse:
+            headers = {}
+
+            def raise_for_status(self):
+                return None
+
+            content = b"\x89PNG\r\n\x1a\n"
+
+        return FakeResponse()
+
+    monkeypatch.setattr("llm_venice.models.image.httpx.post", fake_post)
+
+    with patch.object(model, "get_key", return_value="explicit-key"):
+        with patch("pathlib.Path.write_bytes"):
+            list(model.execute(prompt, False, MagicMock(), None, key="provided"))
+
+    assert captured_headers["Authorization"] == "Bearer explicit-key"

@@ -87,7 +87,7 @@ class VeniceImageOptions(llm.Options):
     )
 
 
-class VeniceImage(llm.Model):
+class VeniceImage(llm.KeyModel):
     """Venice AI image generation model."""
 
     can_stream = False
@@ -104,7 +104,7 @@ class VeniceImage(llm.Model):
     class Options(VeniceImageOptions):
         pass
 
-    def execute(self, prompt, stream, response, conversation=None):
+    def execute(self, prompt, stream, response, conversation=None, key=None):
         """Execute image generation request."""
         options_dict = prompt.options.model_dump(by_alias=True)
         output_dir = options_dict.pop("output_dir", None)
@@ -112,6 +112,9 @@ class VeniceImage(llm.Model):
         overwrite_files = options_dict.pop("overwrite_files", False)
         return_binary = options_dict.get("return_binary", False)
         image_format = options_dict.get("format")
+
+        # Allow explicit key to be provided (e.g., via CLI --key or Python)
+        api_key = self.get_key(key)
 
         # Validate user-provided output directory before making an API call
         resolved_output_dir = validate_output_directory(output_dir)
@@ -122,7 +125,7 @@ class VeniceImage(llm.Model):
             **{k: v for k, v in options_dict.items() if v is not None},
         }
 
-        headers = get_auth_headers_with_content_type()
+        headers = get_auth_headers_with_content_type(api_key)
 
         # Logging client option like LLM_OPENAI_SHOW_RESPONSES
         if os.environ.get("LLM_VENICE_SHOW_RESPONSES"):
