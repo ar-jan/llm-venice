@@ -17,25 +17,20 @@ def create_characters_command():
     Returns:
         Click command for listing characters
     """
+
     @click.command(name="characters")
     @click.option(
         "--web-enabled",
         type=click.Choice(["true", "false"]),
         help="Filter by web-enabled status",
     )
-    @click.option(
-        "--adult", type=click.Choice(["true", "false"]), help="Filter by adult category"
-    )
+    @click.option("--adult", type=click.Choice(["true", "false"]), help="Filter by adult category")
     def characters(web_enabled, adult):
         """List public characters."""
         key = get_venice_key()
         headers = {"Authorization": f"Bearer {key}"}
 
-        params = {
-            k: v
-            for k, v in {"isWebEnabled": web_enabled, "isAdult": adult}.items()
-            if v
-        }
+        params = {k: v for k, v in {"isWebEnabled": web_enabled, "isAdult": adult}.items() if v}
 
         response = httpx.get(
             ENDPOINT_CHARACTERS,

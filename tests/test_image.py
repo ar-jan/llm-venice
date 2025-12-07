@@ -93,10 +93,7 @@ def test_venice_image_content_violation_handling(mock_venice_api_key):
 
             # Verify the appropriate error message was yielded
             assert len(results) == 1
-            assert (
-                results[0]
-                == "Response marked as content violation; no image was returned."
-            )
+            assert results[0] == "Response marked as content violation; no image was returned."
 
             # Verify the API was called
             mock_post.assert_called_once()
@@ -244,9 +241,7 @@ def test_venice_image_default_filename_path(mock_venice_api_key, tmp_path):
         mock_post.assert_called_once()
 
     expected_dir = tmp_path / "images"
-    expected_filename = (
-        f"{fixed_now.strftime('%Y-%m-%dT%H-%M-%S')}_venice_{model.model_name}.png"
-    )
+    expected_filename = f"{fixed_now.strftime('%Y-%m-%dT%H-%M-%S')}_venice_{model.model_name}.png"
     expected_path = expected_dir / expected_filename
 
     assert expected_dir.exists()
@@ -291,9 +286,7 @@ def test_existing_file_no_overwrite_adds_timestamp(mock_venice_api_key, tmp_path
         with patch.object(model, "get_key", return_value=mock_venice_api_key):
             # Mock datetime to get predictable timestamp
             mock_datetime = Mock()
-            mock_datetime.now.return_value.strftime.return_value = (
-                "20250101_120000_123456"
-            )
+            mock_datetime.now.return_value.strftime.return_value = "20250101_120000_123456"
 
             with patch("llm_venice.models.image.datetime.datetime", mock_datetime):
                 results = list(model.execute(prompt, False, response, None))
@@ -443,9 +436,7 @@ def test_nonexistent_directory_raises_valueerror(mock_venice_api_key, tmp_path):
         mock_post.assert_not_called()
 
 
-def test_file_path_instead_of_directory_raises_valueerror(
-    mock_venice_api_key, tmp_path
-):
+def test_file_path_instead_of_directory_raises_valueerror(mock_venice_api_key, tmp_path):
     """Test that passing a file path instead of directory raises ValueError."""
     model = VeniceImage("test-model")
 
@@ -583,9 +574,7 @@ def test_no_existing_file_no_timestamp(mock_venice_api_key, tmp_path):
         assert files_in_dir[0] == expected_file
 
 
-def test_multiple_collisions_create_multiple_timestamped_files(
-    mock_venice_api_key, tmp_path
-):
+def test_multiple_collisions_create_multiple_timestamped_files(mock_venice_api_key, tmp_path):
     """Test that multiple executions with same filename create multiple timestamped files."""
     model = VeniceImage("test-model")
 
@@ -665,9 +654,7 @@ def test_http_error_raises_valueerror(mock_venice_api_key):
         response = MagicMock()
         with patch.object(model, "get_key", return_value=mock_venice_api_key):
             # Should raise ValueError with API error message
-            with pytest.raises(
-                ValueError, match="API request failed:.*Rate limit exceeded"
-            ):
+            with pytest.raises(ValueError, match="API request failed:.*Rate limit exceeded"):
                 list(model.execute(prompt, False, response, None))
 
 
@@ -705,9 +692,7 @@ def test_invalid_base64_data_raises_valueerror(mock_venice_api_key):
         response = MagicMock()
         with patch.object(model, "get_key", return_value=mock_venice_api_key):
             # Should raise ValueError about base64 decoding failure
-            with pytest.raises(
-                ValueError, match="Failed to decode base64 image data"
-            ):
+            with pytest.raises(ValueError, match="Failed to decode base64 image data"):
                 list(model.execute(prompt, False, response, None))
 
 
@@ -767,9 +752,7 @@ def test_http_500_error_with_json_body(mock_venice_api_key):
     # Mock the API call with 500 error
     with patch("httpx.post") as mock_post:
         mock_response = Mock()
-        mock_response.text = (
-            '{"error": "Internal server error", "code": "server_error"}'
-        )
+        mock_response.text = '{"error": "Internal server error", "code": "server_error"}'
         mock_response.status_code = 500
 
         http_error = httpx.HTTPStatusError(
