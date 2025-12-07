@@ -23,7 +23,13 @@ jobs:
         cache-dependency-path: pyproject.toml
     - name: Install dependencies
       run: |
-        pip install -e '.[test]'
+        pip install -e '.[test,dev]'
+    - name: Check formatting
+      run: |
+        ruff format --check .
+    - name: Run lint
+      run: |
+        ruff check --output-format=github .
     - name: Run tests
       run: |
         pytest -m "not integration"
