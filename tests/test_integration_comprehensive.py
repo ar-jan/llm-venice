@@ -14,7 +14,7 @@ from llm.cli import cli
 import pytest
 import sqlite_utils
 
-from llm_venice import VeniceChat, VeniceImage
+from llm_venice import VeniceChat
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("venice_api_key")]
 
