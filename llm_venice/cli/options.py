@@ -18,6 +18,7 @@ def process_venice_options(kwargs):
     """
     no_venice_system_prompt = kwargs.pop("no_venice_system_prompt", False)
     web_search = kwargs.pop("web_search", False)
+    web_scraping = kwargs.pop("web_scraping", False)
     web_citations = kwargs.pop("web_citations", False)
     include_search_results_in_stream = kwargs.pop("include_search_results_in_stream", False)
     character = kwargs.pop("character", None)
@@ -50,6 +51,8 @@ def process_venice_options(kwargs):
             options.append(("include_venice_system_prompt", False))
         if web_search:
             options.append(("enable_web_search", web_search))
+        if web_scraping:
+            options.append(("enable_web_scraping", True))
         if web_citations:
             options.append(("enable_web_citations", True))
         if include_search_results_in_stream:

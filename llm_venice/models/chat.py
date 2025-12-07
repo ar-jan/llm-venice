@@ -56,6 +56,10 @@ class VeniceChatOptions(Chat.Options):
         description=("Enable web search: one of 'on', 'off', or 'auto'."),
         default=None,
     )
+    enable_web_scraping: Optional[bool] = Field(
+        description=("Enable scraping of URLs in the latest user message using."),
+        default=None,
+    )
     enable_web_citations: Optional[bool] = Field(
         description=(
             "When web search is enabled, request that the LLM cite its sources using ^index^ or ^i,j^ superscript format."

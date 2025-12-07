@@ -84,20 +84,22 @@ def test_cli_venice_parameters_registration(cli_runner, monkeypatch, mock_venice
     """Test that venice parameter options are registered."""
     from llm import cli as llm_cli
 
-    # Verify Venice parameters are present in the help text
+    # Verify Venice parameters are present in the prompt help text
     result = cli_runner.invoke(llm_cli.cli, ["prompt", "--help"])
     assert result.exit_code == 0
     assert "--no-venice-system-prompt" in result.output
     assert "--web-search" in result.output
+    assert "--web-scraping" in result.output
     assert "--character" in result.output
     assert "--strip-thinking-response" in result.output
     assert "--disable-thinking" in result.output
 
-    # Verify Venice parameters are present in the help text
+    # Verify Venice parameters are present in the chat help text
     result = cli_runner.invoke(llm_cli.cli, ["chat", "--help"])
     assert result.exit_code == 0
     assert "--no-venice-system-prompt" in result.output
     assert "--web-search" in result.output
+    assert "--web-scraping" in result.output
     assert "--character" in result.output
     assert "--strip-thinking-response" in result.output
     assert "--disable-thinking" in result.output
@@ -764,6 +766,15 @@ def test_web_search_capability_guard():
     assert "venice_parameters" in kwargs["extra_body"]
     assert kwargs["extra_body"]["venice_parameters"]["enable_web_search"] == "on"
 
+    # Web scraping should work regardless of web_search
+    scraping_options = VeniceChatOptions(enable_web_scraping=True)
+    scraping_prompt = Prompt(prompt="Test", model=chat, options=scraping_options)
+    kwargs = chat.build_kwargs(scraping_prompt, stream=False)
+    assert kwargs["extra_body"]["venice_parameters"]["enable_web_scraping"] is True
+
+    kwargs = chat.build_kwargs(scraping_prompt, stream=False)
+    assert kwargs["extra_body"]["venice_parameters"]["enable_web_scraping"] is True
+
 
 def test_web_search_citation_parameters_options():
     """Test that web search citation parameters can be set in VeniceChatOptions."""
@@ -812,6 +823,11 @@ def test_web_search_citation_parameters_build_kwargs():
 
     # Enable support but require web search to be turned on
     chat.supports_web_search = True
+
+    options = VeniceChatOptions(enable_web_scraping=True)
+    prompt = Prompt(prompt="Test", model=chat, options=options)
+    kwargs = chat.build_kwargs(prompt, stream=False)
+    assert kwargs["extra_body"]["venice_parameters"]["enable_web_scraping"] is True
 
     options = VeniceChatOptions(enable_web_citations=True)
     prompt = Prompt(prompt="Test", model=chat, options=options)
@@ -927,6 +943,22 @@ def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch):
         options = captured_options[-1]
         assert ("enable_web_search", "on") in options
         assert ("enable_web_citations", True) in options
+
+        # Test --web-scraping
+        result = cli_runner.invoke(
+            llm_cli.cli,
+            [
+                "prompt",
+                "-m",
+                "venice/qwen3-4b",
+                "--web-scraping",
+                "--no-log",
+                "Test with scraping",
+            ],
+        )
+        assert result.exit_code == 0, f"Command failed with: {result.output}"
+        options = captured_options[-1]
+        assert ("enable_web_scraping", True) in options
 
         # Test --include-search-results-in-stream
         result = cli_runner.invoke(
