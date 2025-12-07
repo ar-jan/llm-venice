@@ -111,6 +111,10 @@ The following CLI options are available to configure `venice_parameters`:
 
 It is recommended to use web search in combination with `--no-stream` so the search citations are available in `response_json`.
 
+**--web-scraping** to let Venice scrape URLs in your latest message:
+
+`llm -m venice/llama-3.3-70b --web-scraping "Summarize https://venice.ai"`
+
 **--character character_slug** to use a public character, for example:
 
 `llm -m venice/qwen3-235b --character alan-watts "What is the meaning of life?"`
