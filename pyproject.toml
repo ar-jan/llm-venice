@@ -29,6 +29,10 @@ test = [
     "pytest-httpx",
     "sqlite_utils",
 ]
+dev = [
+    "ruff>=0.14.8",
+    "ty>=0.0.1a32",
+]
 
 [tool.pytest.ini_options]
 markers = [

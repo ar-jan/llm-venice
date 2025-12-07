@@ -159,10 +159,10 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
-Install the plugin with dependencies and test dependencies:
+Install the plugin with dependencies (including test and dev):
 
 ```bash
-pip install -e '.[test]'
+pip install -e '.[test,dev]'
 ```
 
 Preferably also install and enable pre-commit hooks:
