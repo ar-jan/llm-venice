@@ -2,7 +2,7 @@
 
 import pytest
 from pydantic import ValidationError
-from llm import Prompt
+from llm import Prompt, Response
 from llm_venice import VeniceChat, VeniceChatOptions
 
 
@@ -703,12 +703,9 @@ def test_new_parameters_request_shape_client_call(monkeypatch):
     )
     prompt_obj = Prompt(prompt="Test request shape", model=chat, options=options)
 
-    # Minimal stub response object for execute(); streaming branch will assign response_json
-    class StubResponse:
-        pass
-
     # Execute with streaming to take the simpler code path
-    list(chat.execute(prompt_obj, stream=True, response=StubResponse()))
+    response = Response(prompt_obj, chat, stream=True)
+    list(chat.execute(prompt_obj, stream=True, response=response))
 
     # Ensure our fake client was called with expected shape
     assert "extra_body" in captured_kwargs, "extra_body must be included"
