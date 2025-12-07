@@ -165,6 +165,12 @@ Install the plugin with dependencies and test dependencies:
 pip install -e '.[test]'
 ```
 
+Preferably also install and enable pre-commit hooks:
+```bash
+pip install pre-commit
+pre-commit install
+```
+
 To run the tests:
 ```bash
 pytest
