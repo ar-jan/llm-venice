@@ -5,6 +5,7 @@ import click
 from llm_venice.api.refresh import fetch_models, persist_models
 from llm_venice.cli.api_keys import create_api_keys_group
 from llm_venice.cli.characters import create_characters_command
+from llm_venice.cli.errors import handle_cli_error
 from llm_venice.cli.upscale import create_upscale_command
 from llm_venice.utils import get_venice_key
 
@@ -29,7 +30,7 @@ def create_venice_group():
         try:
             models = fetch_models(key)
         except ValueError as e:
-            raise click.ClickException(str(e)) from e
+            handle_cli_error(e)
         path = persist_models(models)
         click.echo(f"{len(models)} models saved to {path}", err=True)
 

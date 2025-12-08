@@ -4,8 +4,10 @@ import json
 
 import click
 
-from llm_venice.utils import get_venice_key
 from llm_venice.api import keys as api_keys
+from llm_venice.api.errors import VeniceAPIError
+from llm_venice.cli.errors import handle_cli_error
+from llm_venice.utils import get_venice_key
 
 
 def create_api_keys_group():
@@ -32,22 +34,34 @@ def create_api_keys_group():
     @click.pass_context
     def list_keys(ctx):
         """List all API keys."""
-        response = api_keys.list_api_keys(ctx.obj["headers"])
-        click.echo(json.dumps(response, indent=2))
+        try:
+            response = api_keys.list_api_keys(ctx.obj["headers"])
+        except VeniceAPIError as e:
+            handle_cli_error(e)
+        else:
+            click.echo(json.dumps(response, indent=2))
 
     @api_keys_group.command(name="rate-limits")
     @click.pass_context
     def rate_limits(ctx):
         """Show current rate limits for your API key"""
-        response = api_keys.get_rate_limits(ctx.obj["headers"])
-        click.echo(json.dumps(response, indent=2))
+        try:
+            response = api_keys.get_rate_limits(ctx.obj["headers"])
+        except VeniceAPIError as e:
+            handle_cli_error(e)
+        else:
+            click.echo(json.dumps(response, indent=2))
 
     @api_keys_group.command(name="rate-limits-log")
     @click.pass_context
     def rate_limits_log(ctx):
         """Show the last 50 rate limit logs for the account"""
-        response = api_keys.get_rate_limits_log(ctx.obj["headers"])
-        click.echo(json.dumps(response, indent=2))
+        try:
+            response = api_keys.get_rate_limits_log(ctx.obj["headers"])
+        except VeniceAPIError as e:
+            handle_cli_error(e)
+        else:
+            click.echo(json.dumps(response, indent=2))
 
     @api_keys_group.command(name="create")
     @click.option(
@@ -86,22 +100,30 @@ def create_api_keys_group():
     def create_key(ctx, description, key_type, expiration_date, limits_vcu, limits_usd):
         """Create a new API key."""
         expiration_str = expiration_date.strftime("%Y-%m-%dT%H:%M:%SZ") if expiration_date else None
-        response = api_keys.create_api_key(
-            ctx.obj["headers"],
-            description,
-            key_type,
-            expiration_str,
-            limits_vcu,
-            limits_usd,
-        )
-        click.echo(json.dumps(response, indent=2))
+        try:
+            response = api_keys.create_api_key(
+                ctx.obj["headers"],
+                description,
+                key_type,
+                expiration_str,
+                limits_vcu,
+                limits_usd,
+            )
+        except VeniceAPIError as e:
+            handle_cli_error(e)
+        else:
+            click.echo(json.dumps(response, indent=2))
 
     @api_keys_group.command(name="delete")
     @click.argument("api_key_id")
     @click.pass_context
     def delete_key(ctx, api_key_id):
         """Delete an API key by ID."""
-        response = api_keys.delete_api_key(ctx.obj["headers"], api_key_id)
-        click.echo(json.dumps(response, indent=2))
+        try:
+            response = api_keys.delete_api_key(ctx.obj["headers"], api_key_id)
+        except VeniceAPIError as e:
+            handle_cli_error(e)
+        else:
+            click.echo(json.dumps(response, indent=2))
 
     return api_keys_group
