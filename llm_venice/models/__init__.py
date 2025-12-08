@@ -18,19 +18,23 @@ def register_venice_models(register):
     Args:
         register: The LLM registration function
     """
-    key = llm.get_key("", "venice", "LLM_VENICE_KEY")
-    if not key:
-        click.echo(
-            "Venice models skipped: configure LLM_VENICE_KEY to enable them.",
-            err=True,
-        )
-        return
-
     venice_models_path = llm.user_dir() / "venice_models.json"
+    models = None
+
+    # Prefer cached models so it works without a stored key
     if venice_models_path.exists():
         models = json.loads(venice_models_path.read_text())
     else:
-        models = refresh_models()
+        # Only hit the API if we already have a key configured; otherwise warn
+        key = llm.get_key("", "venice", "LLM_VENICE_KEY")
+        if key:
+            models = refresh_models()
+        else:
+            click.echo(
+                "Skipped refreshing Venice models: run 'llm venice refresh' after configuring LLM_VENICE_KEY or providing a key.",
+                err=True,
+            )
+            return
 
     for model in models:
         model_id = model["id"]

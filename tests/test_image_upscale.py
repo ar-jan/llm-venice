@@ -1,6 +1,5 @@
 from unittest.mock import patch
 
-import click
 from llm.cli import cli
 from llm_venice import image_upscale
 import pytest
@@ -76,7 +75,9 @@ def test_upscale_missing_api_key():
     """Test behavior when API key is missing"""
     # Mock get_key to return None to simulate missing API key
     with patch("llm.get_key", return_value=None):
-        with pytest.raises(click.ClickException) as excinfo:
+        from llm import NeedsKeyException
+
+        with pytest.raises(NeedsKeyException) as excinfo:
             image_upscale("test.jpg", scale=2)
 
         assert "No key found for Venice" in str(excinfo.value)

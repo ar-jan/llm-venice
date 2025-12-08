@@ -21,7 +21,7 @@ def create_api_keys_group():
     def api_keys_group(ctx):
         """Manage API keys - list, create, delete, rate-limits"""
         # Retrieve the API key once and store it in context
-        key = get_venice_key()
+        key = get_venice_key(click_exceptions=True)
         ctx.obj = {"headers": {"Authorization": f"Bearer {key}"}}
 
         # Default to listing API keys if no subcommand is provided

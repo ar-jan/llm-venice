@@ -24,7 +24,7 @@ def create_venice_group():
     @venice.command(name="refresh")
     def refresh():
         """Refresh the list of models from the Venice API"""
-        refresh_models()
+        refresh_models(use_click_exceptions=True)
 
     # Add subcommands
     venice.add_command(create_api_keys_group())
