@@ -7,9 +7,16 @@ from llm_venice.models import register_venice_models
 
 # Public API exports
 from llm_venice.models.chat import VeniceChat, VeniceChatOptions
-from llm_venice.models.image import VeniceImage, VeniceImageOptions
-from llm_venice.api.upscale import image_upscale
-from llm_venice.api.refresh import refresh_models
+from llm_venice.models.image import (
+    VeniceImage,
+    VeniceImageOptions,
+    generate_image_result,
+    ImageGenerationResult,
+    save_image_result,
+)
+from llm_venice.api.upscale import UpscaleResult, perform_image_upscale, write_upscaled_image
+from llm_venice.api.refresh import fetch_models, persist_models
+from llm_venice.api.characters import list_characters, persist_characters
 
 
 @llm.hookimpl
@@ -41,6 +48,14 @@ __all__ = [
     "VeniceChatOptions",
     "VeniceImage",
     "VeniceImageOptions",
-    "image_upscale",
-    "refresh_models",
+    "ImageGenerationResult",
+    "generate_image_result",
+    "save_image_result",
+    "UpscaleResult",
+    "perform_image_upscale",
+    "write_upscaled_image",
+    "fetch_models",
+    "persist_models",
+    "list_characters",
+    "persist_characters",
 ]

@@ -99,7 +99,7 @@ def test_venice_image_content_violation_handling(mock_venice_api_key):
             mock_post.assert_called_once()
 
 
-def test_venice_image_return_binary_vs_json_parsing(mock_venice_api_key):
+def test_venice_image_return_binary_vs_json_parsing(mock_venice_api_key, tmp_path):
     """Test return_binary=True uses raw content vs base64 JSON decoding."""
     model = VeniceImage("test-model")
 
@@ -123,16 +123,17 @@ def test_venice_image_return_binary_vs_json_parsing(mock_venice_api_key):
 
         response = MagicMock()
         with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            with patch("pathlib.Path.write_bytes") as mock_write:
-                list(model.execute(prompt, False, response, None))
+            with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
+                with patch("pathlib.Path.write_bytes") as mock_write:
+                    list(model.execute(prompt, False, response, None))
 
-                # Verify raw content was written directly
-                mock_write.assert_called_once()
-                written_data = mock_write.call_args[0][0]
-                assert written_data == raw_binary_content
+                    # Verify raw content was written directly
+                    mock_write.assert_called_once()
+                    written_data = mock_write.call_args[0][0]
+                    assert written_data == raw_binary_content
 
-                # Verify JSON parsing was NOT called
-                mock_response.json.assert_not_called()
+                    # Verify JSON parsing was NOT called
+                    mock_response.json.assert_not_called()
 
     # Test Case 2: return_binary=False - should parse JSON and decode base64
     prompt.options = VeniceImage.Options(return_binary=False)
@@ -150,23 +151,24 @@ def test_venice_image_return_binary_vs_json_parsing(mock_venice_api_key):
 
         response = MagicMock()
         with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            with patch("pathlib.Path.write_bytes") as mock_write:
-                list(model.execute(prompt, False, response, None))
+            with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
+                with patch("pathlib.Path.write_bytes") as mock_write:
+                    list(model.execute(prompt, False, response, None))
 
-                # Verify JSON was parsed
-                mock_response.json.assert_called_once()
+                    # Verify JSON was parsed
+                    mock_response.json.assert_called_once()
 
-                # Verify base64 was decoded and written
-                mock_write.assert_called_once()
-                written_data = mock_write.call_args[0][0]
-                assert written_data == raw_binary_content
+                    # Verify base64 was decoded and written
+                    mock_write.assert_called_once()
+                    written_data = mock_write.call_args[0][0]
+                    assert written_data == raw_binary_content
 
-                # Verify response metadata was stored
-                assert response.response_json["request"]["seed"] == 12345
-                assert response.response_json["timing"]["inference"] == 2.5
+                    # Verify response metadata was stored
+                    assert response.response_json["request"]["seed"] == 12345
+                    assert response.response_json["timing"]["inference"] == 2.5
 
 
-def test_venice_image_default_output_directory_creation(mock_venice_api_key):
+def test_venice_image_default_output_directory_creation(mock_venice_api_key, tmp_path):
     """Test that default output directory is created from llm.user_dir() when not specified."""
     model = VeniceImage("test-model")
 
@@ -182,7 +184,6 @@ def test_venice_image_default_output_directory_creation(mock_venice_api_key):
     }
     prompt.options = options
 
-    # Mock API response with binary content
     with patch("httpx.post") as mock_post:
         mock_response = Mock()
         mock_response.raise_for_status.return_value = None
@@ -192,21 +193,15 @@ def test_venice_image_default_output_directory_creation(mock_venice_api_key):
 
         response = MagicMock()
 
-        # Mock llm.user_dir() to return a test path
-        mock_user_dir = MagicMock()
-        mock_images_dir = MagicMock()
-        mock_user_dir.__truediv__ = Mock(return_value=mock_images_dir)
-
-        with patch("llm_venice.models.image.llm.user_dir", return_value=mock_user_dir):
+        with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
             with patch.object(model, "get_key", return_value=mock_venice_api_key):
-                with patch("pathlib.Path.write_bytes"):
-                    list(model.execute(prompt, False, response, None))
+                list(model.execute(prompt, False, response, None))
 
-                    # Verify llm.user_dir() was called
-                    mock_user_dir.__truediv__.assert_called_once_with("images")
-
-                    # Verify mkdir was called with exist_ok=True
-                    mock_images_dir.mkdir.assert_called_once_with(exist_ok=True)
+    images_dir = tmp_path / "images"
+    assert images_dir.exists()
+    saved_files = list(images_dir.glob("*"))
+    assert len(saved_files) == 1
+    assert saved_files[0].read_bytes() == mock_response.content
 
 
 def test_venice_image_default_filename_path(mock_venice_api_key, tmp_path):
@@ -233,7 +228,7 @@ def test_venice_image_default_filename_path(mock_venice_api_key, tmp_path):
         fixed_now = datetime.datetime(2025, 10, 6, 18, 7, 5)
 
         with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
-            with patch("llm_venice.models.image.datetime.datetime") as mock_datetime:
+            with patch("llm_venice.utils.datetime.datetime") as mock_datetime:
                 mock_datetime.now.return_value = fixed_now
                 with patch.object(model, "get_key", return_value=mock_venice_api_key):
                     results = list(model.execute(prompt, False, MagicMock(), None))
@@ -288,7 +283,7 @@ def test_existing_file_no_overwrite_adds_timestamp(mock_venice_api_key, tmp_path
             mock_datetime = Mock()
             mock_datetime.now.return_value.strftime.return_value = "20250101_120000_123456"
 
-            with patch("llm_venice.models.image.datetime.datetime", mock_datetime):
+            with patch("llm_venice.utils.datetime.datetime", mock_datetime):
                 results = list(model.execute(prompt, False, response, None))
 
         # Verify original file is unchanged

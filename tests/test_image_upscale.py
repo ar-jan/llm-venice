@@ -1,14 +1,14 @@
 from unittest.mock import patch
 
 from llm.cli import cli
-from llm_venice import image_upscale
+from llm_venice import perform_image_upscale, write_upscaled_image
 import pytest
 
 
 def test_upscale_function(mocked_responses, temp_image_file, tmp_path, mock_venice_api_key):
     """Test the image_upscale function directly"""
-    # Test the function
-    image_upscale(str(temp_image_file), scale=2)
+    result = perform_image_upscale(str(temp_image_file), scale=2)
+    saved_path = write_upscaled_image(result)
 
     # Verify the API was called correctly
     requests = mocked_responses.get_requests()
@@ -24,6 +24,7 @@ def test_upscale_function(mocked_responses, temp_image_file, tmp_path, mock_veni
     # Check if the output file was created with the correct name
     # temp_image_file's test.jpg results in test_upscaled.png
     expected_output_path = tmp_path / "test_upscaled.png"
+    assert saved_path == expected_output_path
     assert expected_output_path.exists()
 
     # Verify the content was written
@@ -65,7 +66,7 @@ def test_upscale_error_handling(httpx_mock, mock_venice_api_key, temp_image_file
     )
 
     with pytest.raises(ValueError) as excinfo:
-        image_upscale(str(temp_image_file), scale=2)
+        perform_image_upscale(str(temp_image_file), scale=2)
 
     # Verify the error message includes the API response
     assert "API request failed" in str(excinfo.value)
@@ -78,14 +79,14 @@ def test_upscale_missing_api_key():
         from llm import NeedsKeyException
 
         with pytest.raises(NeedsKeyException) as excinfo:
-            image_upscale("test.jpg", scale=2)
+            perform_image_upscale("test.jpg", scale=2)
 
         assert "No key found for Venice" in str(excinfo.value)
 
 
 def test_upscale_with_enhancement_options(mocked_responses, temp_image_file, mock_venice_api_key):
     """Test upscaling with enhancement options enabled"""
-    image_upscale(
+    perform_image_upscale(
         str(temp_image_file),
         scale=3,
         enhance=True,
@@ -115,7 +116,8 @@ def test_upscale_custom_output_path_file(
     with open(test_img_path, "wb") as f:
         f.write(mock_image_file)
 
-    image_upscale(str(test_img_path), scale=2, output_path=str(custom_output_path))
+    result = perform_image_upscale(str(test_img_path), scale=2, output_path=str(custom_output_path))
+    write_upscaled_image(result)
 
     # Verify the custom output path was used
     assert custom_output_path.exists()
@@ -134,7 +136,8 @@ def test_upscale_custom_output_path_directory(
     with open(test_img_path, "wb") as f:
         f.write(mock_image_file)
 
-    image_upscale(str(test_img_path), scale=2, output_path=str(output_dir))
+    result = perform_image_upscale(str(test_img_path), scale=2, output_path=str(output_dir))
+    write_upscaled_image(result)
 
     # Should save to output_dir with default filename
     expected_output = output_dir / "input_upscaled.png"
@@ -152,7 +155,8 @@ def test_upscale_avoid_overwrite_with_timestamp(
     with open(existing_output, "w") as f:
         f.write("existing content")
 
-    image_upscale(str(temp_image_file), scale=2, overwrite=False)
+    result = perform_image_upscale(str(temp_image_file), scale=2, overwrite=False)
+    write_upscaled_image(result)
 
     # Original file should be unchanged
     with open(existing_output, "r") as f:
@@ -178,7 +182,8 @@ def test_upscale_overwrite_existing_file(
     with open(existing_output, "w") as f:
         f.write("existing content")
 
-    image_upscale(str(temp_image_file), scale=2, overwrite=True)
+    result = perform_image_upscale(str(temp_image_file), scale=2, overwrite=True)
+    write_upscaled_image(result)
 
     # File should be overwritten
     with open(existing_output, "rb") as f:
@@ -232,7 +237,7 @@ def test_upscale_cli_with_all_options(
 def test_upscale_file_not_found(mock_venice_api_key):
     """Test error handling when input file doesn't exist"""
     with pytest.raises(FileNotFoundError):
-        image_upscale("nonexistent.jpg", scale=2)
+        perform_image_upscale("nonexistent.jpg", scale=2)
 
 
 def test_upscale_cli_file_not_found(mock_venice_api_key, cli_runner):
@@ -255,7 +260,7 @@ def test_upscale_network_timeout(httpx_mock, temp_image_file, mock_venice_api_ke
     )
 
     with pytest.raises(httpx.TimeoutException):
-        image_upscale(str(temp_image_file), scale=2)
+        perform_image_upscale(str(temp_image_file), scale=2)
 
 
 def test_upscale_binary_response_handling(
@@ -273,7 +278,8 @@ def test_upscale_binary_response_handling(
         headers={"Content-Type": "image/png"},
     )
 
-    image_upscale(str(temp_image_file), scale=2)
+    result = perform_image_upscale(str(temp_image_file), scale=2)
+    write_upscaled_image(result)
 
     # Verify the output file was created with expected naming convention
     output_file = tmp_path / "test_upscaled.png"

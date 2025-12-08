@@ -130,7 +130,7 @@ class VeniceChat(Chat):
     key_env_var = "LLM_VENICE_KEY"
     supports_web_search = False
 
-    def __str__(self):
+    def __str__(self):  # type: ignore[invalid-argument-type]
         return f"Venice Chat: {self.model_id}"
 
     class Options(VeniceChatOptions):

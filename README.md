@@ -152,6 +152,16 @@ List the available Venice commands with:
 
 Read the `llm` [docs](https://llm.datasette.io/en/stable/usage.html) for more usage options.
 
+## Programmatic use
+
+You can call the library helpers directly from Python (minimally tested):
+
+- `fetch_models()` → list of model dicts, `persist_models(models)` writes to `venice_models.json`
+- `list_characters()` → dict, `persist_characters(data)` writes to `venice_characters.json`
+- `perform_image_upscale()` → `UpscaleResult` with bytes and a resolved output path; persist with `write_upscaled_image(result)`
+- `generate_image_result()` → `ImageGenerationResult` with bytes/metadata/output path for image generation; persist with `save_image_result(result)`
+
+All helpers accept an optional `key=` argument if you do not want to rely on the stored `LLM_VENICE_KEY`.
 
 ## Development
 

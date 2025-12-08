@@ -2,13 +2,12 @@
 
 import json
 
-import click
 import llm
 
 from llm_venice.models.chat import VeniceChat
 from llm_venice.models.image import VeniceImage
 from llm_venice.constants import VENICE_API_BASE
-from llm_venice.api.refresh import refresh_models
+from llm_venice.api.refresh import fetch_models, persist_models
 
 
 def register_venice_models(register):
@@ -21,20 +20,17 @@ def register_venice_models(register):
     venice_models_path = llm.user_dir() / "venice_models.json"
     models = None
 
-    # Prefer cached models so it works without a stored key
     if venice_models_path.exists():
         models = json.loads(venice_models_path.read_text())
     else:
-        # Only hit the API if we already have a key configured; otherwise warn
         key = llm.get_key("", "venice", "LLM_VENICE_KEY")
-        if key:
-            models = refresh_models()
-        else:
-            click.echo(
-                "Skipped refreshing Venice models: run 'llm venice refresh' after configuring LLM_VENICE_KEY or providing a key.",
-                err=True,
-            )
+        if not key:
             return
+        try:
+            models = fetch_models(key)
+        except ValueError:
+            return
+        persist_models(models, venice_models_path)
 
     for model in models:
         model_id = model["id"]
