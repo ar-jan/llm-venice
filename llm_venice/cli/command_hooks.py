@@ -1,6 +1,7 @@
 """Command hooks to extend prompt and chat commands with Venice options."""
 
 import click
+import llm
 
 from llm_venice.constants import VENICE_PARAMETERS_CLI
 from llm_venice.cli.options import process_venice_options
@@ -98,7 +99,10 @@ def install_command_hooks(cli):
                 "disable_thinking": disable_thinking,
             }
         )
-        return ctx.invoke(original_prompt, **kwargs)
+        try:
+            return ctx.invoke(original_prompt, **kwargs)
+        except llm.ModelError as exc:
+            raise click.ClickException(str(exc)) from exc
 
     # Create new chat command
     @cli.command(name="chat")
@@ -130,7 +134,10 @@ def install_command_hooks(cli):
                 "disable_thinking": disable_thinking,
             }
         )
-        return ctx.invoke(original_chat, **kwargs)
+        try:
+            return ctx.invoke(original_chat, **kwargs)
+        except llm.ModelError as exc:
+            raise click.ClickException(str(exc)) from exc
 
     # Copy over all params from original commands
     new_prompt_command: click.Command = cli.commands["prompt"]

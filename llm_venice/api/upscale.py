@@ -1,6 +1,5 @@
 """Image upscaling functionality for Venice API."""
 
-import datetime
 import pathlib
 from dataclasses import dataclass
 from typing import Optional, Union
@@ -9,6 +8,7 @@ import httpx
 
 from llm_venice.constants import ENDPOINT_IMAGE_UPSCALE
 from llm_venice.api.client import get_auth_headers
+from llm_venice.utils import get_unique_filepath
 
 
 @dataclass
@@ -62,23 +62,22 @@ def perform_image_upscale(
 
     image_bytes = r.content
 
-    # Handle output path logic
     input_path = pathlib.Path(image_path)
-    # The upscaled image is always PNG
     default_filename = f"{input_path.stem}_upscaled.png"
 
-    resolved_output_path = (
-        pathlib.Path(output_path) if output_path else input_path.parent / default_filename
-    )
-    if resolved_output_path.is_dir():
-        resolved_output_path = resolved_output_path / default_filename
+    if output_path:
+        candidate_path = pathlib.Path(output_path)
+        if candidate_path.is_dir():
+            target_dir = candidate_path
+            filename = default_filename
+        else:
+            target_dir = candidate_path.parent
+            filename = candidate_path.name
+    else:
+        target_dir = input_path.parent
+        filename = default_filename
 
-    if resolved_output_path.exists() and not overwrite:
-        stem = resolved_output_path.stem
-        suffix = resolved_output_path.suffix
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        new_filename = f"{stem}_{timestamp}{suffix}"
-        resolved_output_path = resolved_output_path.parent / new_filename
+    resolved_output_path = get_unique_filepath(target_dir, filename, overwrite)
 
     return UpscaleResult(image_bytes=image_bytes, output_path=resolved_output_path)
 

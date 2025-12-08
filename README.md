@@ -158,6 +158,7 @@ You can call the library helpers directly from Python (minimally tested):
 
 - `fetch_models()` → list of model dicts, `persist_models(models)` writes to `venice_models.json`
 - `list_characters()` → dict, `persist_characters(data)` writes to `venice_characters.json`
+- API keys: `list_api_keys()`, `get_rate_limits()`, `get_rate_limits_log()`, `create_api_key()`, `delete_api_key()`
 - `perform_image_upscale()` → `UpscaleResult` with bytes and a resolved output path; persist with `write_upscaled_image(result)`
 - `generate_image_result()` → `ImageGenerationResult` with bytes/metadata/output path for image generation; persist with `save_image_result(result)`
 

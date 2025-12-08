@@ -17,6 +17,13 @@ from llm_venice.models.image import (
 from llm_venice.api.upscale import UpscaleResult, perform_image_upscale, write_upscaled_image
 from llm_venice.api.refresh import fetch_models, persist_models
 from llm_venice.api.characters import list_characters, persist_characters
+from llm_venice.api.keys import (
+    list_api_keys,
+    get_rate_limits,
+    get_rate_limits_log,
+    create_api_key,
+    delete_api_key,
+)
 
 
 @llm.hookimpl
@@ -58,4 +65,9 @@ __all__ = [
     "persist_models",
     "list_characters",
     "persist_characters",
+    "list_api_keys",
+    "get_rate_limits",
+    "get_rate_limits_log",
+    "create_api_key",
+    "delete_api_key",
 ]
