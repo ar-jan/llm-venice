@@ -8,6 +8,7 @@ import httpx
 import llm
 
 from llm_venice.api.client import get_auth_headers
+from llm_venice.api.errors import raise_api_error
 from llm_venice.constants import ENDPOINT_CHARACTERS
 
 
@@ -36,7 +37,10 @@ def list_characters(
         headers=headers,
         params=params,
     )
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise_api_error("Listing characters", exc)
     return response.json()
 
 

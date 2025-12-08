@@ -4,6 +4,7 @@ import click
 import llm
 
 from llm_venice.api.upscale import perform_image_upscale, write_upscaled_image
+from llm_venice.api.errors import VeniceAPIError
 from llm_venice.cli.errors import handle_cli_error
 
 
@@ -67,6 +68,8 @@ def create_upscale_command():
         try:
             result = perform_image_upscale(**kwargs)
         except llm.NeedsKeyException as e:
+            handle_cli_error(e)
+        except VeniceAPIError as e:
             handle_cli_error(e)
         except ValueError as e:
             handle_cli_error(e)

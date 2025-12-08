@@ -4,6 +4,7 @@ from unittest.mock import Mock, MagicMock, patch
 import pytest
 
 import httpx
+import llm
 from pydantic import ValidationError
 
 from llm_venice import VeniceImage
@@ -619,8 +620,8 @@ def test_multiple_collisions_create_multiple_timestamped_files(mock_venice_api_k
     assert len(timestamped_files) == 2
 
 
-def test_http_error_raises_valueerror(mock_venice_api_key):
-    """Test that HTTP errors from the API are raised as ValueError."""
+def test_http_error_raises_model_error(mock_venice_api_key):
+    """Test that HTTP errors from the API are raised as ModelError."""
     model = VeniceImage("test-model")
 
     # Create a prompt object
@@ -636,6 +637,8 @@ def test_http_error_raises_valueerror(mock_venice_api_key):
         mock_response = Mock()
         mock_response.text = "API Error: Rate limit exceeded"
         mock_response.status_code = 429
+        mock_response.reason_phrase = "Too Many Requests"
+        mock_response.json.side_effect = ValueError
 
         # Create an HTTPStatusError
         http_error = httpx.HTTPStatusError(
@@ -648,8 +651,8 @@ def test_http_error_raises_valueerror(mock_venice_api_key):
 
         response = MagicMock()
         with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            # Should raise ValueError with API error message
-            with pytest.raises(ValueError, match="API request failed:.*Rate limit exceeded"):
+            # Should raise ModelError with API error message
+            with pytest.raises(llm.ModelError, match="429.*Rate limit exceeded"):
                 list(model.execute(prompt, False, response, None))
 
 
@@ -749,6 +752,8 @@ def test_http_500_error_with_json_body(mock_venice_api_key):
         mock_response = Mock()
         mock_response.text = '{"error": "Internal server error", "code": "server_error"}'
         mock_response.status_code = 500
+        mock_response.reason_phrase = "Internal Server Error"
+        mock_response.json.return_value = {"error": "Internal server error", "code": "server_error"}
 
         http_error = httpx.HTTPStatusError(
             "500 Server Error",
@@ -760,7 +765,7 @@ def test_http_500_error_with_json_body(mock_venice_api_key):
 
         response = MagicMock()
         with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            with pytest.raises(ValueError, match="API request failed:.*server_error"):
+            with pytest.raises(llm.ModelError, match="500.*server_error"):
                 list(model.execute(prompt, False, response, None))
 
 

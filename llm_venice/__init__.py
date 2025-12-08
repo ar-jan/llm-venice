@@ -24,6 +24,7 @@ from llm_venice.api.keys import (
     create_api_key,
     delete_api_key,
 )
+from llm_venice.api.errors import VeniceAPIError
 
 
 @llm.hookimpl
@@ -70,4 +71,5 @@ __all__ = [
     "get_rate_limits_log",
     "create_api_key",
     "delete_api_key",
+    "VeniceAPIError",
 ]

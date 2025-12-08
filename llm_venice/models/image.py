@@ -24,6 +24,7 @@ from llm_venice.utils import (
     validate_output_directory,
 )
 from llm_venice.api.client import get_auth_headers_with_content_type
+from llm_venice.api.errors import VeniceAPIError, raise_api_error
 
 
 class VeniceImageOptions(llm.Options):
@@ -133,8 +134,8 @@ def generate_image_result(
 
     try:
         r.raise_for_status()
-    except httpx.HTTPStatusError as e:
-        raise ValueError(f"API request failed: {e.response.text}")
+    except httpx.HTTPStatusError as exc:
+        raise_api_error("Generating image", exc)
 
     if r.headers.get("x-venice-is-content-violation") == "true":
         return ImageGenerationResult(image_bytes=None, output_path=None, content_violation=True)
@@ -200,25 +201,28 @@ class VeniceImage(llm.KeyModel):
 
     def execute(self, prompt, stream, response, conversation=None, key=None):
         """Execute image generation request."""
-        api_key = self.get_key(key)
-        if api_key is None:
-            raise llm.NeedsKeyException("No key found for Venice")
-        result = generate_image_result(
-            prompt=prompt.prompt,
-            options=prompt.options,
-            model_name=self.model_name,
-            api_key=api_key,
-        )
-
-        if result.content_violation:
-            yield "Response marked as content violation; no image was returned."
-            return
-
-        if result.response_json is not None:
-            response.response_json = result.response_json
-
         try:
-            saved_path = save_image_result(result)
-            yield f"Image saved to {saved_path}"
-        except Exception as e:
-            raise ValueError(f"Failed to write image file: {e}")
+            api_key = self.get_key(key)
+            if api_key is None:
+                raise llm.NeedsKeyException("No key found for Venice")
+            result = generate_image_result(
+                prompt=prompt.prompt,
+                options=prompt.options,
+                model_name=self.model_name,
+                api_key=api_key,
+            )
+
+            if result.content_violation:
+                yield "Response marked as content violation; no image was returned."
+                return
+
+            if result.response_json is not None:
+                response.response_json = result.response_json
+
+            try:
+                saved_path = save_image_result(result)
+                yield f"Image saved to {saved_path}"
+            except Exception as e:
+                raise ValueError(f"Failed to write image file: {e}")
+        except VeniceAPIError as exc:
+            raise llm.ModelError(str(exc)) from exc
