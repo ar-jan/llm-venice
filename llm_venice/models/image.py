@@ -1,5 +1,6 @@
 """Venice image generation model implementation."""
 
+import asyncio
 import base64
 import os
 import pathlib
@@ -221,6 +222,53 @@ class VeniceImage(llm.KeyModel):
 
             try:
                 saved_path = save_image_result(result)
+                yield f"Image saved to {saved_path}"
+            except Exception as e:
+                raise ValueError(f"Failed to write image file: {e}")
+        except VeniceAPIError as exc:
+            raise llm.ModelError(str(exc)) from exc
+
+
+class AsyncVeniceImage(llm.AsyncKeyModel):
+    """Asynchronous Venice AI image generation model."""
+
+    can_stream = False
+    needs_key = "venice"
+    key_env_var = "LLM_VENICE_KEY"
+
+    def __init__(self, model_id, model_name=None):
+        self.model_id = f"venice/{model_id}"
+        self.model_name = model_id
+
+    def __str__(self):
+        return f"Venice Image: {self.model_id}"
+
+    class Options(VeniceImageOptions):  # type: ignore[override]
+        pass
+
+    async def execute(self, prompt, stream, response, conversation=None, key=None):
+        """Execute image generation request asynchronously."""
+        try:
+            api_key = self.get_key(key)
+            if api_key is None:
+                raise llm.NeedsKeyException("No key found for Venice")
+            result = await asyncio.to_thread(
+                generate_image_result,
+                prompt=prompt.prompt,
+                options=prompt.options,
+                model_name=self.model_name,
+                api_key=api_key,
+            )
+
+            if result.content_violation:
+                yield "Response marked as content violation; no image was returned."
+                return
+
+            if result.response_json is not None:
+                response.response_json = result.response_json
+
+            try:
+                saved_path = await asyncio.to_thread(save_image_result, result)
                 yield f"Image saved to {saved_path}"
             except Exception as e:
                 raise ValueError(f"Failed to write image file: {e}")

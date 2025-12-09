@@ -5,7 +5,7 @@ import json
 import llm
 
 from llm_venice.models.chat import AsyncVeniceChat, VeniceChat
-from llm_venice.models.image import VeniceImage
+from llm_venice.models.image import AsyncVeniceImage, VeniceImage
 from llm_venice.constants import VENICE_API_BASE
 from llm_venice.api.refresh import fetch_models, persist_models
 from llm_venice.api.errors import VeniceAPIError
@@ -62,7 +62,16 @@ def register_venice_models(register):
             async_model_instance.supports_web_search = supports_web_search
             register(model_instance, async_model=async_model_instance)
         elif model.get("type") == "image":
-            register(VeniceImage(model_id=model_id, model_name=model_id))
+            register(
+                VeniceImage(model_id=model_id, model_name=model_id),
+                async_model=AsyncVeniceImage(model_id=model_id, model_name=model_id),
+            )
 
 
-__all__ = ["VeniceChat", "AsyncVeniceChat", "VeniceImage", "register_venice_models"]
+__all__ = [
+    "VeniceChat",
+    "AsyncVeniceChat",
+    "VeniceImage",
+    "AsyncVeniceImage",
+    "register_venice_models",
+]

@@ -182,6 +182,8 @@ async def main():
 asyncio.run(main())
 ```
 
+Async image generation is also available via `llm.get_async_model("venice/<image-model-id>")`, which returns an `AsyncVeniceImage` instance.
+
 ## Development
 
 To set up this plugin locally, first checkout the code. Then create a new virtual environment:

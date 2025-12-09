@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import datetime
 from unittest.mock import Mock, MagicMock, patch
@@ -7,7 +8,8 @@ import httpx
 import llm
 from pydantic import ValidationError
 
-from llm_venice import VeniceImage
+from llm_venice import AsyncVeniceImage, VeniceImage
+from llm_venice.models.image import ImageGenerationResult
 
 
 def test_venice_image_format_in_payload(mock_venice_api_key):
@@ -914,3 +916,79 @@ def test_venice_image_honors_explicit_key(monkeypatch):
             list(model.execute(prompt, False, MagicMock(), None, key="provided"))
 
     assert captured_headers["Authorization"] == "Bearer explicit-key"
+
+
+def test_async_venice_image_generate_and_save(monkeypatch, tmp_path, mock_venice_api_key):
+    """AsyncVeniceImage should delegate to generate_image_result and save_image_result."""
+
+    async def run():
+        model = AsyncVeniceImage("test-model")
+
+        prompt = MagicMock()
+        prompt.prompt = "Async test"
+        prompt.options = VeniceImage.Options(return_binary=True)
+
+        fake_result = ImageGenerationResult(
+            image_bytes=b"binary",
+            output_path=tmp_path / "async.png",
+            response_json={"request": {"model": "test-model"}},
+            content_violation=False,
+        )
+
+        async def immediate_to_thread(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        monkeypatch.setattr("llm_venice.models.image.asyncio.to_thread", immediate_to_thread)
+        monkeypatch.setattr(
+            "llm_venice.models.image.generate_image_result", lambda **_: fake_result
+        )
+        monkeypatch.setattr(
+            "llm_venice.models.image.save_image_result", lambda result: result.output_path
+        )
+        monkeypatch.setattr(model, "get_key", lambda key=None: mock_venice_api_key)
+
+        response = MagicMock()
+        chunks = []
+        async for chunk in model.execute(prompt, False, response, None):
+            chunks.append(chunk)
+
+        assert response.response_json == fake_result.response_json
+        assert chunks == [f"Image saved to {fake_result.output_path}"]
+
+    asyncio.run(run())
+
+
+def test_async_venice_image_content_violation(monkeypatch, mock_venice_api_key):
+    """AsyncVeniceImage should surface content violation message."""
+
+    async def run():
+        model = AsyncVeniceImage("test-model")
+
+        prompt = MagicMock()
+        prompt.prompt = "Async test violation"
+        prompt.options = VeniceImage.Options()
+
+        fake_result = ImageGenerationResult(
+            image_bytes=None,
+            output_path=None,
+            response_json=None,
+            content_violation=True,
+        )
+
+        async def immediate_to_thread(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        monkeypatch.setattr("llm_venice.models.image.asyncio.to_thread", immediate_to_thread)
+        monkeypatch.setattr(
+            "llm_venice.models.image.generate_image_result", lambda **_: fake_result
+        )
+        monkeypatch.setattr(model, "get_key", lambda key=None: mock_venice_api_key)
+
+        response = MagicMock()
+        chunks = []
+        async for chunk in model.execute(prompt, False, response, None):
+            chunks.append(chunk)
+
+        assert chunks == ["Response marked as content violation; no image was returned."]
+
+    asyncio.run(run())

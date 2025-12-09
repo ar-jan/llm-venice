@@ -8,6 +8,7 @@ from llm_venice.models import register_venice_models
 # Public API exports
 from llm_venice.models.chat import AsyncVeniceChat, VeniceChat, VeniceChatOptions
 from llm_venice.models.image import (
+    AsyncVeniceImage,
     VeniceImage,
     VeniceImageOptions,
     generate_image_result,
@@ -56,6 +57,7 @@ __all__ = [
     "AsyncVeniceChat",
     "VeniceChatOptions",
     "VeniceImage",
+    "AsyncVeniceImage",
     "VeniceImageOptions",
     "ImageGenerationResult",
     "generate_image_result",
