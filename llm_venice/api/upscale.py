@@ -1,47 +1,40 @@
 """Image upscaling functionality for Venice API."""
 
-import datetime
 import pathlib
+from dataclasses import dataclass
+from typing import Optional, Union
 
-import click
 import httpx
 
 from llm_venice.constants import ENDPOINT_IMAGE_UPSCALE
 from llm_venice.api.client import get_auth_headers
+from llm_venice.utils import get_unique_filepath
 
 
-def image_upscale(
+@dataclass
+class UpscaleResult:
+    image_bytes: bytes
+    output_path: pathlib.Path
+
+
+def perform_image_upscale(
     image_path,
     scale,
-    enhance=False,
+    enhance: bool = False,
     enhance_creativity=None,
     enhance_prompt=None,
     replication=None,
-    output_path=None,
-    overwrite=False,
+    output_path: Optional[Union[pathlib.Path, str]] = None,
+    overwrite: bool = False,
     *,
     key=None,
-    use_click_exceptions: bool = False,
-):
+) -> UpscaleResult:
     """
-    Upscale an image using Venice AI.
+    Upscale an image using Venice AI without writing to disk.
 
-    Args:
-        image_path: Path to the input image
-        scale: Scale factor (1-4)
-        enhance: Whether to enhance the image
-        enhance_creativity: Creativity level for enhancement (0.0-1.0)
-        enhance_prompt: Text prompt for enhancement
-        replication: Line preservation strength (0.0-1.0)
-        output_path: Path for the output image (file or directory)
-        overwrite: Whether to overwrite existing files
-        key: Explicit API key to use (falls back to llm.get_key if not provided)
-        use_click_exceptions: Use click.ClickException for missing key instead of NeedsKeyException
-
-    Example usage:
-        llm venice upscale image.jpg --scale 4
+    Returns an UpscaleResult containing the image bytes and the resolved output path.
     """
-    headers = get_auth_headers(key, click_exceptions=use_click_exceptions)
+    headers = get_auth_headers(key)
 
     with open(image_path, "rb") as img_file:
         image_data = img_file.read()
@@ -58,12 +51,10 @@ def image_upscale(
         "enhancePrompt": enhance_prompt,
         "replication": replication,
     }
-
     # Remove None values from data in order to use API defaults
     data = {k: v for k, v in data.items() if v is not None}
 
     r = httpx.post(ENDPOINT_IMAGE_UPSCALE, headers=headers, files=files, data=data, timeout=120)
-
     try:
         r.raise_for_status()
     except httpx.HTTPStatusError as e:
@@ -71,30 +62,28 @@ def image_upscale(
 
     image_bytes = r.content
 
-    # Handle output path logic
     input_path = pathlib.Path(image_path)
-    # The upscaled image is always PNG
     default_filename = f"{input_path.stem}_upscaled.png"
 
-    if output_path is None:
-        # No output path specified, save next to input
-        output_path = input_path.parent / default_filename
+    if output_path:
+        candidate_path = pathlib.Path(output_path)
+        if candidate_path.is_dir():
+            target_dir = candidate_path
+            filename = default_filename
+        else:
+            target_dir = candidate_path.parent
+            filename = candidate_path.name
     else:
-        output_path = pathlib.Path(output_path)
-        if output_path.is_dir():
-            # If output_path is a directory, save there with default filename
-            output_path = output_path / default_filename
+        target_dir = input_path.parent
+        filename = default_filename
 
-    # Handle existing files by adding timestamp
-    if output_path.exists() and not overwrite:
-        stem = output_path.stem
-        suffix = output_path.suffix
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        new_filename = f"{stem}_{timestamp}{suffix}"
-        output_path = output_path.parent / new_filename
+    resolved_output_path = get_unique_filepath(target_dir, filename, overwrite)
 
-    try:
-        output_path.write_bytes(image_bytes)
-        click.echo(f"Upscaled image saved to {output_path}")
-    except Exception as e:
-        raise ValueError(f"Failed to write image file: {e}")
+    return UpscaleResult(image_bytes=image_bytes, output_path=resolved_output_path)
+
+
+def write_upscaled_image(result: UpscaleResult) -> pathlib.Path:
+    """Persist an UpscaleResult to disk."""
+    result.output_path.parent.mkdir(parents=True, exist_ok=True)
+    result.output_path.write_bytes(result.image_bytes)
+    return result.output_path

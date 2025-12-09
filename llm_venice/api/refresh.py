@@ -2,8 +2,8 @@
 
 import json
 from typing import Optional
+import pathlib
 
-import click
 import httpx
 import llm
 
@@ -11,20 +11,18 @@ from llm_venice.constants import ENDPOINT_MODELS
 from llm_venice.api.client import get_auth_headers
 
 
-def refresh_models(key: Optional[str] = None, *, use_click_exceptions: bool = False):
+def fetch_models(key: Optional[str] = None):
     """
-    Refresh the list of models from the Venice API.
-
-    Fetches all available models and saves them to a cache file.
+    Fetch the list of models from the Venice API.
 
     Raises:
-        NeedsKeyException (or click.ClickException when use_click_exceptions=True) if no key is found.
+        NeedsKeyException if no key is found.
         ValueError if the API returns an empty model list.
 
     Returns:
         List of model dictionaries.
     """
-    headers = get_auth_headers(key, click_exceptions=use_click_exceptions)
+    headers = get_auth_headers(key)
 
     models_response = httpx.get(
         ENDPOINT_MODELS,
@@ -35,12 +33,22 @@ def refresh_models(key: Optional[str] = None, *, use_click_exceptions: bool = Fa
     models = models_response.json()["data"]
 
     if not models:
-        if use_click_exceptions:
-            raise click.ClickException("No models found")
         raise ValueError("No models found")
 
-    path = llm.user_dir() / "venice_models.json"
-    path.write_text(json.dumps(models, indent=4))
-    click.echo(f"{len(models)} models saved to {path}", err=True)
-
     return models
+
+
+def persist_models(models, path: Optional[pathlib.Path] = None):
+    """
+    Persist the provided models list to disk.
+
+    Args:
+        models: List of model dictionaries to write.
+        path: Optional custom path. Defaults to llm.user_dir()/venice_models.json.
+
+    Returns:
+        The path that was written.
+    """
+    target_path = llm.user_dir() / "venice_models.json" if path is None else path
+    target_path.write_text(json.dumps(models, indent=4))
+    return target_path

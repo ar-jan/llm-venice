@@ -1,12 +1,9 @@
 """Characters command for Venice CLI."""
 
-import json
-
 import click
 import httpx
-import llm
 
-from llm_venice.constants import ENDPOINT_CHARACTERS
+from llm_venice.api.characters import list_characters, persist_characters
 from llm_venice.utils import get_venice_key
 
 
@@ -28,20 +25,11 @@ def create_characters_command():
     def characters(web_enabled, adult):
         """List public characters."""
         key = get_venice_key(click_exceptions=True)
-        headers = {"Authorization": f"Bearer {key}"}
-
-        params = {k: v for k, v in {"isWebEnabled": web_enabled, "isAdult": adult}.items() if v}
-
-        response = httpx.get(
-            ENDPOINT_CHARACTERS,
-            headers=headers,
-            params=params,
-        )
-        response.raise_for_status()
-        characters_data = response.json()
-
-        path = llm.user_dir() / "venice_characters.json"
-        path.write_text(json.dumps(characters_data, indent=4))
+        try:
+            characters_data = list_characters(key, web_enabled=web_enabled, adult=adult)
+        except httpx.HTTPStatusError as e:
+            raise click.ClickException(str(e)) from e
+        path = persist_characters(characters_data)
         characters_count = len(characters_data.get("data", []))
         click.echo(f"{characters_count} characters saved to {path}", err=True)
 

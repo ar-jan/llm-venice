@@ -1,8 +1,9 @@
 """Upscale command for Venice CLI."""
 
 import click
+import llm
 
-from llm_venice.api.upscale import image_upscale
+from llm_venice.api.upscale import perform_image_upscale, write_upscaled_image
 
 
 def create_upscale_command():
@@ -62,6 +63,13 @@ def create_upscale_command():
     )
     def upscale(**kwargs):
         """Upscale an image using Venice API"""
-        image_upscale(**kwargs, use_click_exceptions=True)
+        try:
+            result = perform_image_upscale(**kwargs)
+        except llm.NeedsKeyException as e:
+            raise click.ClickException(str(e)) from e
+        except ValueError as e:
+            raise click.ClickException(str(e)) from e
+        saved_path = write_upscaled_image(result)
+        click.echo(f"Upscaled image saved to {saved_path}")
 
     return upscale

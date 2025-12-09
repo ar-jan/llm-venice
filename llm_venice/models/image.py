@@ -1,9 +1,9 @@
 """Venice image generation model implementation."""
 
 import base64
-import datetime  # noqa: F401  # Used for test monkeypatch
 import os
 import pathlib
+from dataclasses import dataclass
 from typing import Literal, Optional, Union
 
 import httpx
@@ -87,6 +87,100 @@ class VeniceImageOptions(llm.Options):
     )
 
 
+@dataclass
+class ImageGenerationResult:
+    image_bytes: Optional[bytes]
+    output_path: Optional[pathlib.Path]
+    response_json: Optional[dict] = None
+    content_violation: bool = False
+
+
+def generate_image_result(
+    *,
+    prompt: str,
+    options: llm.Options,
+    model_name: str,
+    api_key: str,
+) -> ImageGenerationResult:
+    """
+    Generate an image via the Venice API without writing to disk.
+
+    Returns the image bytes, the resolved output path, and any response metadata.
+    """
+    options_dict = options.model_dump(by_alias=True)
+    output_dir = options_dict.pop("output_dir", None)
+    output_filename = options_dict.pop("output_filename", None)
+    overwrite_files = options_dict.pop("overwrite_files", False)
+    return_binary = options_dict.get("return_binary", False)
+    image_format = options_dict.get("format")
+
+    resolved_output_dir = validate_output_directory(output_dir)
+
+    payload = {
+        "model": model_name,
+        "prompt": prompt,
+        **{k: v for k, v in options_dict.items() if v is not None},
+    }
+
+    headers = get_auth_headers_with_content_type(api_key)
+
+    # Logging client option like LLM_OPENAI_SHOW_RESPONSES
+    if os.environ.get("LLM_VENICE_SHOW_RESPONSES"):
+        client = logging_client()
+        r = client.post(ENDPOINT_IMAGE_GENERATE, headers=headers, json=payload, timeout=120)
+    else:
+        r = httpx.post(ENDPOINT_IMAGE_GENERATE, headers=headers, json=payload, timeout=120)
+
+    try:
+        r.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        raise ValueError(f"API request failed: {e.response.text}")
+
+    if r.headers.get("x-venice-is-content-violation") == "true":
+        return ImageGenerationResult(image_bytes=None, output_path=None, content_violation=True)
+
+    response_json = None
+    if return_binary:
+        image_bytes = r.content
+    else:
+        data = r.json()
+        response_json = {
+            "request": data["request"],
+            "timing": data["timing"],
+        }
+        image_data = data["images"][0]
+        try:
+            image_bytes = base64.b64decode(image_data)
+        except Exception as e:
+            raise ValueError(f"Failed to decode base64 image data: {e}")
+
+    target_dir = resolved_output_dir or (llm.user_dir() / "images")
+
+    if not output_filename:
+        extension = image_format or DEFAULT_IMAGE_FORMAT
+        output_filename = generate_timestamp_filename("venice", model_name, extension)
+
+    output_filepath = get_unique_filepath(target_dir, output_filename, overwrite_files)
+
+    return ImageGenerationResult(
+        image_bytes=image_bytes,
+        output_path=output_filepath,
+        response_json=response_json,
+        content_violation=False,
+    )
+
+
+def save_image_result(result: ImageGenerationResult) -> pathlib.Path:
+    """Persist an ImageGenerationResult to disk."""
+    if result.output_path is None:
+        raise ValueError("No output path available to save image")
+    result.output_path.parent.mkdir(parents=True, exist_ok=True)
+    if result.image_bytes is None:
+        raise ValueError("No image bytes available to save")
+    result.output_path.write_bytes(result.image_bytes)
+    return result.output_path
+
+
 class VeniceImage(llm.KeyModel):
     """Venice AI image generation model."""
 
@@ -101,74 +195,30 @@ class VeniceImage(llm.KeyModel):
     def __str__(self):
         return f"Venice Image: {self.model_id}"
 
-    class Options(VeniceImageOptions):
+    class Options(VeniceImageOptions):  # type: ignore[override]
         pass
 
     def execute(self, prompt, stream, response, conversation=None, key=None):
         """Execute image generation request."""
-        options_dict = prompt.options.model_dump(by_alias=True)
-        output_dir = options_dict.pop("output_dir", None)
-        output_filename = options_dict.pop("output_filename", None)
-        overwrite_files = options_dict.pop("overwrite_files", False)
-        return_binary = options_dict.get("return_binary", False)
-        image_format = options_dict.get("format")
-
-        # Allow explicit key to be provided (e.g., via CLI --key or Python)
         api_key = self.get_key(key)
+        if api_key is None:
+            raise llm.NeedsKeyException("No key found for Venice")
+        result = generate_image_result(
+            prompt=prompt.prompt,
+            options=prompt.options,
+            model_name=self.model_name,
+            api_key=api_key,
+        )
 
-        # Validate user-provided output directory before making an API call
-        resolved_output_dir = validate_output_directory(output_dir)
-
-        payload = {
-            "model": self.model_name,
-            "prompt": prompt.prompt,
-            **{k: v for k, v in options_dict.items() if v is not None},
-        }
-
-        headers = get_auth_headers_with_content_type(api_key)
-
-        # Logging client option like LLM_OPENAI_SHOW_RESPONSES
-        if os.environ.get("LLM_VENICE_SHOW_RESPONSES"):
-            client = logging_client()
-            r = client.post(ENDPOINT_IMAGE_GENERATE, headers=headers, json=payload, timeout=120)
-        else:
-            r = httpx.post(ENDPOINT_IMAGE_GENERATE, headers=headers, json=payload, timeout=120)
-
-        try:
-            r.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            raise ValueError(f"API request failed: {e.response.text}")
-
-        if r.headers.get("x-venice-is-content-violation") == "true":
+        if result.content_violation:
             yield "Response marked as content violation; no image was returned."
             return
 
-        if return_binary:
-            image_bytes = r.content
-        else:
-            data = r.json()
-            # Store generation parameters including seed in response_json
-            response.response_json = {
-                "request": data["request"],
-                "timing": data["timing"],
-            }
-            image_data = data["images"][0]
-            try:
-                image_bytes = base64.b64decode(image_data)
-            except Exception as e:
-                raise ValueError(f"Failed to decode base64 image data: {e}")
-
-        if resolved_output_dir is None:
-            resolved_output_dir = llm.user_dir() / "images"
-            resolved_output_dir.mkdir(exist_ok=True)
-
-        if not output_filename:
-            output_filename = generate_timestamp_filename("venice", self.model_name, image_format)
-
-        output_filepath = get_unique_filepath(resolved_output_dir, output_filename, overwrite_files)
+        if result.response_json is not None:
+            response.response_json = result.response_json
 
         try:
-            output_filepath.write_bytes(image_bytes)
-            yield f"Image saved to {output_filepath}"
+            saved_path = save_image_result(result)
+            yield f"Image saved to {saved_path}"
         except Exception as e:
             raise ValueError(f"Failed to write image file: {e}")
