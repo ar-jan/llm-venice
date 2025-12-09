@@ -4,9 +4,10 @@ import json
 from typing import List, Optional, Union
 
 import llm
-from llm.default_plugins.openai_models import Chat
+from llm.default_plugins.openai_models import AsyncChat, Chat
 from llm_venice.constants import VENICE_PARAMETERS, NON_OPENAI_COMPATIBLE_PARAMS
 from pydantic import Field, field_validator
+from typing import Dict
 
 
 class VeniceChatOptions(Chat.Options):
@@ -123,6 +124,56 @@ class VeniceChatOptions(Chat.Options):
         raise ValueError("stop_token_ids must be a list or JSON array string")
 
 
+def _build_venice_kwargs(model_id: str, supports_web_search: bool, kwargs: Dict) -> Dict:
+    """Apply Venice-specific request shaping to kwargs."""
+    # Venice requires strict mode and no additional properties for JSON schema
+    if "response_format" in kwargs and kwargs["response_format"].get("type") == "json_schema":
+        kwargs["response_format"]["json_schema"]["strict"] = True
+        kwargs["response_format"]["json_schema"]["schema"]["additionalProperties"] = False
+
+    # Move non-openai-compatible generation parameters into extra_body
+    non_openai_compatible_params = {}
+
+    for param in NON_OPENAI_COMPATIBLE_PARAMS:
+        if param in kwargs:
+            non_openai_compatible_params[param] = kwargs.pop(param)
+
+    venice_parameters = {}
+    for key in VENICE_PARAMETERS:
+        if key in kwargs and kwargs[key] is not None:
+            venice_parameters[key] = kwargs.pop(key)
+
+    web_search_requested = venice_parameters.get("enable_web_search")
+    web_citations_requested = venice_parameters.get("enable_web_citations")
+    include_results_requested = venice_parameters.get("include_search_results_in_stream")
+
+    # Capability guard for web-search-related features
+    if (
+        web_search_requested or web_citations_requested or include_results_requested
+    ) and not supports_web_search:
+        raise llm.ModelError(f"Model {model_id} does not support web search")
+
+    if (web_citations_requested or include_results_requested) and web_search_requested not in (
+        "on",
+        "auto",
+    ):
+        raise llm.ModelError(
+            "enable_web_search must be set to 'on' or 'auto' when using web citations or including search results in stream"
+        )
+
+    # Build extra_body
+    if non_openai_compatible_params or venice_parameters:
+        kwargs["extra_body"] = {}
+        # Non-standard parameters go top-level inside extra_body
+        if non_openai_compatible_params:
+            kwargs["extra_body"].update(non_openai_compatible_params)
+        # Venice-specific parameters go in extra_body.venice_parameters
+        if venice_parameters:
+            kwargs["extra_body"]["venice_parameters"] = venice_parameters
+
+    return kwargs
+
+
 class VeniceChat(Chat):
     """Venice AI chat model."""
 
@@ -137,52 +188,27 @@ class VeniceChat(Chat):
         pass
 
     def build_kwargs(self, prompt, stream):
-        """Build kwargs for the API request, modifying JSON schema parameters."""
-        kwargs = super().build_kwargs(prompt, stream)
+        base_kwargs = super().build_kwargs(prompt, stream)
+        return _build_venice_kwargs(
+            self.model_id, getattr(self, "supports_web_search", False), base_kwargs
+        )
 
-        # Venice requires strict mode and no additional properties for JSON schema
-        if "response_format" in kwargs and kwargs["response_format"].get("type") == "json_schema":
-            kwargs["response_format"]["json_schema"]["strict"] = True
-            kwargs["response_format"]["json_schema"]["schema"]["additionalProperties"] = False
 
-        # Move non-openai-compatible generation parameters into extra_body
-        non_openai_compatible_params = {}
+class AsyncVeniceChat(AsyncChat):
+    """Venice AI async chat model."""
 
-        for param in NON_OPENAI_COMPATIBLE_PARAMS:
-            if param in kwargs:
-                non_openai_compatible_params[param] = kwargs.pop(param)
+    needs_key = "venice"
+    key_env_var = "LLM_VENICE_KEY"
+    supports_web_search = False
 
-        venice_parameters = {}
-        for key in VENICE_PARAMETERS:
-            if key in kwargs and kwargs[key] is not None:
-                venice_parameters[key] = kwargs.pop(key)
+    def __str__(self):  # type: ignore[invalid-argument-type]
+        return f"Venice Chat: {self.model_id}"
 
-        web_search_requested = venice_parameters.get("enable_web_search")
-        web_citations_requested = venice_parameters.get("enable_web_citations")
-        include_results_requested = venice_parameters.get("include_search_results_in_stream")
+    class Options(VeniceChatOptions, AsyncChat.Options):
+        pass
 
-        # Capability guard for web-search-related features
-        if (
-            web_search_requested or web_citations_requested or include_results_requested
-        ) and not getattr(self, "supports_web_search", False):
-            raise llm.ModelError(f"Model {self.model_id} does not support web search")
-
-        if (web_citations_requested or include_results_requested) and web_search_requested not in (
-            "on",
-            "auto",
-        ):
-            raise llm.ModelError(
-                "enable_web_search must be set to 'on' or 'auto' when using web citations or including search results in stream"
-            )
-
-        # Build extra_body
-        if non_openai_compatible_params or venice_parameters:
-            kwargs["extra_body"] = {}
-            # Non-standard parameters go top-level inside extra_body
-            if non_openai_compatible_params:
-                kwargs["extra_body"].update(non_openai_compatible_params)
-            # Venice-specific parameters go in extra_body.venice_parameters
-            if venice_parameters:
-                kwargs["extra_body"]["venice_parameters"] = venice_parameters
-
-        return kwargs
+    def build_kwargs(self, prompt, stream):
+        base_kwargs = super().build_kwargs(prompt, stream)
+        return _build_venice_kwargs(
+            self.model_id, getattr(self, "supports_web_search", False), base_kwargs
+        )
