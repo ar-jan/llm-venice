@@ -3,8 +3,9 @@
 import click
 import llm
 
-from llm_venice.constants import VENICE_PARAMETERS_CLI
+from llm_venice.cli.errors import handle_cli_error
 from llm_venice.cli.options import process_venice_options
+from llm_venice.constants import VENICE_PARAMETERS_CLI
 
 
 venice_options = [
@@ -102,7 +103,7 @@ def install_command_hooks(cli):
         try:
             return ctx.invoke(original_prompt, **kwargs)
         except llm.ModelError as exc:
-            raise click.ClickException(str(exc)) from exc
+            handle_cli_error(exc)
 
     # Create new chat command
     @cli.command(name="chat")
@@ -137,7 +138,7 @@ def install_command_hooks(cli):
         try:
             return ctx.invoke(original_chat, **kwargs)
         except llm.ModelError as exc:
-            raise click.ClickException(str(exc)) from exc
+            handle_cli_error(exc)
 
     # Copy over all params from original commands
     new_prompt_command: click.Command = cli.commands["prompt"]

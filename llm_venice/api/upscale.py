@@ -8,6 +8,7 @@ import httpx
 
 from llm_venice.constants import ENDPOINT_IMAGE_UPSCALE
 from llm_venice.api.client import get_auth_headers
+from llm_venice.api.errors import raise_api_error
 from llm_venice.utils import get_unique_filepath
 
 
@@ -57,8 +58,8 @@ def perform_image_upscale(
     r = httpx.post(ENDPOINT_IMAGE_UPSCALE, headers=headers, files=files, data=data, timeout=120)
     try:
         r.raise_for_status()
-    except httpx.HTTPStatusError as e:
-        raise ValueError(f"API request failed: {e.response.text}")
+    except httpx.HTTPStatusError as exc:
+        raise_api_error("Upscaling image", exc)
 
     image_bytes = r.content
 

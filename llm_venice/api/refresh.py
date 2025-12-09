@@ -9,6 +9,7 @@ import llm
 
 from llm_venice.constants import ENDPOINT_MODELS
 from llm_venice.api.client import get_auth_headers
+from llm_venice.api.errors import raise_api_error
 
 
 def fetch_models(key: Optional[str] = None):
@@ -29,7 +30,10 @@ def fetch_models(key: Optional[str] = None):
         headers=headers,
         params={"type": "all"},
     )
-    models_response.raise_for_status()
+    try:
+        models_response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise_api_error("Fetching model list", exc)
     models = models_response.json()["data"]
 
     if not models:

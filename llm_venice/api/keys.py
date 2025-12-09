@@ -4,6 +4,7 @@ from typing import Dict, Optional
 
 import httpx
 
+from llm_venice.api.errors import raise_api_error
 from llm_venice.constants import (
     ENDPOINT_API_KEYS,
     ENDPOINT_API_KEYS_RATE_LIMITS,
@@ -22,7 +23,10 @@ def list_api_keys(headers: Dict[str, str]) -> dict:
         JSON response with API keys
     """
     response = httpx.get(ENDPOINT_API_KEYS, headers=headers)
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise_api_error("Listing API keys", exc)
     return response.json()
 
 
@@ -37,7 +41,10 @@ def get_rate_limits(headers: Dict[str, str]) -> dict:
         JSON response with rate limits
     """
     response = httpx.get(ENDPOINT_API_KEYS_RATE_LIMITS, headers=headers)
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise_api_error("Retrieving rate limits", exc)
     return response.json()
 
 
@@ -52,7 +59,10 @@ def get_rate_limits_log(headers: Dict[str, str]) -> dict:
         JSON response with rate limit logs
     """
     response = httpx.get(ENDPOINT_API_KEYS_RATE_LIMITS_LOG, headers=headers)
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise_api_error("Retrieving rate limit logs", exc)
     return response.json()
 
 
@@ -88,7 +98,10 @@ def create_api_key(
         },
     }
     response = httpx.post(ENDPOINT_API_KEYS, headers=headers, json=payload)
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise_api_error("Creating API key", exc)
     return response.json()
 
 
@@ -105,5 +118,8 @@ def delete_api_key(headers: Dict[str, str], api_key_id: str) -> dict:
     """
     params = {"id": api_key_id}
     response = httpx.delete(ENDPOINT_API_KEYS, headers=headers, params=params)
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise_api_error("Deleting API key", exc)
     return response.json()

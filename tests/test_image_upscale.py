@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
 from llm.cli import cli
-from llm_venice import perform_image_upscale, write_upscaled_image
+from llm_venice import VeniceAPIError, perform_image_upscale, write_upscaled_image
 import pytest
 
 
@@ -65,11 +65,13 @@ def test_upscale_error_handling(httpx_mock, mock_venice_api_key, temp_image_file
         json={"error": "Invalid request"},
     )
 
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(VeniceAPIError) as excinfo:
         perform_image_upscale(str(temp_image_file), scale=2)
 
-    # Verify the error message includes the API response
-    assert "API request failed" in str(excinfo.value)
+    # Verify the error message includes the status and detail
+    message = str(excinfo.value)
+    assert "400" in message
+    assert "invalid request" in message.lower()
 
 
 def test_upscale_missing_api_key():

@@ -8,6 +8,7 @@ from llm_venice.models.chat import VeniceChat
 from llm_venice.models.image import VeniceImage
 from llm_venice.constants import VENICE_API_BASE
 from llm_venice.api.refresh import fetch_models, persist_models
+from llm_venice.api.errors import VeniceAPIError
 
 
 def register_venice_models(register):
@@ -28,7 +29,7 @@ def register_venice_models(register):
             return
         try:
             models = fetch_models(key)
-        except ValueError:
+        except (ValueError, VeniceAPIError):
             return
         persist_models(models, venice_models_path)
 
