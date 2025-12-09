@@ -6,7 +6,7 @@ from llm_venice.cli import register_venice_commands
 from llm_venice.models import register_venice_models
 
 # Public API exports
-from llm_venice.models.chat import VeniceChat, VeniceChatOptions
+from llm_venice.models.chat import AsyncVeniceChat, VeniceChat, VeniceChatOptions
 from llm_venice.models.image import (
     VeniceImage,
     VeniceImageOptions,
@@ -53,6 +53,7 @@ __all__ = [
     "register_commands",
     "register_models",
     "VeniceChat",
+    "AsyncVeniceChat",
     "VeniceChatOptions",
     "VeniceImage",
     "VeniceImageOptions",

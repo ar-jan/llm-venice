@@ -4,7 +4,7 @@ import json
 from typing import List, Optional, Union
 
 import llm
-from llm.default_plugins.openai_models import Chat
+from llm.default_plugins.openai_models import AsyncChat, Chat
 from llm_venice.constants import VENICE_PARAMETERS, NON_OPENAI_COMPATIBLE_PARAMS
 from pydantic import Field, field_validator
 
@@ -123,8 +123,8 @@ class VeniceChatOptions(Chat.Options):
         raise ValueError("stop_token_ids must be a list or JSON array string")
 
 
-class VeniceChat(Chat):
-    """Venice AI chat model."""
+class _VeniceChatMixin:
+    """Shared Venice chat behavior for sync and async chat models."""
 
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
@@ -186,3 +186,15 @@ class VeniceChat(Chat):
                 kwargs["extra_body"]["venice_parameters"] = venice_parameters
 
         return kwargs
+
+
+class VeniceChat(_VeniceChatMixin, Chat):
+    """Venice AI chat model."""
+
+    pass
+
+
+class AsyncVeniceChat(_VeniceChatMixin, AsyncChat):
+    """Venice AI async chat model."""
+
+    pass

@@ -164,6 +164,24 @@ You can call the library helpers directly from Python (minimally tested):
 
 All helpers accept an optional `key=` argument if you do not want to rely on the stored `LLM_VENICE_KEY`.
 
+### Async usage
+
+Async chat models are registered alongside the sync ones; fetch them with `llm.get_async_model("venice/<id>")`:
+
+```python
+import asyncio
+import llm
+
+
+async def main():
+    model = llm.get_async_model("venice/llama-3.3-70b")
+    response = await model.prompt("Hello Venice")
+    print(await response.text())
+
+
+asyncio.run(main())
+```
+
 ## Development
 
 To set up this plugin locally, first checkout the code. Then create a new virtual environment:

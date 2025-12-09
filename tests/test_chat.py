@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 from llm import Prompt, Response
-from llm_venice import VeniceChat, VeniceChatOptions
+from llm_venice import AsyncVeniceChat, VeniceChat, VeniceChatOptions
 
 
 def test_venice_chat_options_fields():
@@ -78,6 +78,41 @@ def test_venice_chat_build_kwargs_json_schema():
     # Verify the original schema content is preserved
     assert json_schema["schema"]["type"] == "object"
     assert "test" in json_schema["schema"]["properties"]
+
+
+def test_async_venice_chat_parity_with_sync_build_kwargs():
+    """Ensure async Venice chat builds identical kwargs to the sync model."""
+    sync_chat = VeniceChat(
+        model_id="venice/test-model",
+        model_name="test-model",
+        api_base="https://api.venice.ai/api/v1",
+    )
+    async_chat = AsyncVeniceChat(
+        model_id="venice/test-model",
+        model_name="test-model",
+        api_base="https://api.venice.ai/api/v1",
+    )
+
+    # Enable web search to exercise Venice-specific validation paths
+    sync_chat.supports_web_search = True
+    async_chat.supports_web_search = True
+
+    options = VeniceChatOptions(
+        min_p=0.05,
+        strip_thinking_response=True,
+        enable_web_search="on",
+        enable_web_scraping=True,
+    )
+    prompt_sync = Prompt(prompt="Test", model=sync_chat, options=options)
+    prompt_async = Prompt(prompt="Test", model=async_chat, options=options)
+
+    kwargs_sync_stream = sync_chat.build_kwargs(prompt_sync, stream=True)
+    kwargs_async_stream = async_chat.build_kwargs(prompt_async, stream=True)
+    kwargs_sync_nonstream = sync_chat.build_kwargs(prompt_sync, stream=False)
+    kwargs_async_nonstream = async_chat.build_kwargs(prompt_async, stream=False)
+
+    assert kwargs_sync_stream == kwargs_async_stream
+    assert kwargs_sync_nonstream == kwargs_async_nonstream
 
 
 def test_cli_venice_parameters_registration(cli_runner, monkeypatch, mock_venice_api_key):

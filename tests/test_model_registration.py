@@ -25,10 +25,17 @@ def test_registers_from_cache_without_key(monkeypatch, tmp_path):
     monkeypatch.setattr(llm, "get_key", lambda *_, **__: None)
 
     registered = []
+    registered_async = []
 
-    register_venice_models(registered.append)
+    def register(model, async_model=None, aliases=None):
+        registered.append(model)
+        if async_model:
+            registered_async.append(async_model)
+
+    register_venice_models(register)
 
     assert [m.model_id for m in registered] == ["venice/qwen3-4b"]
+    assert [m.model_id for m in registered_async] == ["venice/qwen3-4b"]
 
 
 def test_register_skips_without_cache_or_key(monkeypatch, tmp_path):
@@ -38,7 +45,10 @@ def test_register_skips_without_cache_or_key(monkeypatch, tmp_path):
 
     registered = []
 
-    register_venice_models(registered.append)
+    def register(model, async_model=None, aliases=None):
+        registered.append(model)
+
+    register_venice_models(register)
 
     assert registered == []
 
