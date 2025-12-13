@@ -206,12 +206,15 @@ class VeniceImage(llm.KeyModel):
             api_key = self.get_key(key)
             if api_key is None:
                 raise llm.NeedsKeyException("No key found for Venice")
-            result = generate_image_result(
-                prompt=prompt.prompt,
-                options=prompt.options,
-                model_name=self.model_name,
-                api_key=api_key,
-            )
+            try:
+                result = generate_image_result(
+                    prompt=prompt.prompt,
+                    options=prompt.options,
+                    model_name=self.model_name,
+                    api_key=api_key,
+                )
+            except ValueError as exc:
+                raise llm.ModelError(str(exc)) from exc
 
             if result.content_violation:
                 yield "Response marked as content violation; no image was returned."
@@ -223,8 +226,8 @@ class VeniceImage(llm.KeyModel):
             try:
                 saved_path = save_image_result(result)
                 yield f"Image saved to {saved_path}"
-            except Exception as e:
-                raise ValueError(f"Failed to write image file: {e}")
+            except (OSError, ValueError) as exc:
+                raise llm.ModelError(f"Failed to write image file: {exc}") from exc
         except VeniceAPIError as exc:
             raise llm.ModelError(str(exc)) from exc
 
@@ -252,13 +255,16 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
             api_key = self.get_key(key)
             if api_key is None:
                 raise llm.NeedsKeyException("No key found for Venice")
-            result = await asyncio.to_thread(
-                generate_image_result,
-                prompt=prompt.prompt,
-                options=prompt.options,
-                model_name=self.model_name,
-                api_key=api_key,
-            )
+            try:
+                result = await asyncio.to_thread(
+                    generate_image_result,
+                    prompt=prompt.prompt,
+                    options=prompt.options,
+                    model_name=self.model_name,
+                    api_key=api_key,
+                )
+            except ValueError as exc:
+                raise llm.ModelError(str(exc)) from exc
 
             if result.content_violation:
                 yield "Response marked as content violation; no image was returned."
@@ -270,7 +276,7 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
             try:
                 saved_path = await asyncio.to_thread(save_image_result, result)
                 yield f"Image saved to {saved_path}"
-            except Exception as e:
-                raise ValueError(f"Failed to write image file: {e}")
+            except (OSError, ValueError) as exc:
+                raise llm.ModelError(f"Failed to write image file: {exc}") from exc
         except VeniceAPIError as exc:
             raise llm.ModelError(str(exc)) from exc
