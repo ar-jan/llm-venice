@@ -1,3 +1,4 @@
+import httpx
 import pytest
 from llm.cli import cli
 
@@ -20,6 +21,22 @@ def test_characters_http_error_cli(cli_runner, httpx_mock, mock_venice_api_key):
     output = result.output
     assert "500" in output
     assert "server unavailable" in output.lower()
+    assert "Traceback" not in output
+
+
+def test_characters_network_error_cli(cli_runner, httpx_mock, mock_venice_api_key):
+    """CLI should surface network errors without traceback."""
+    httpx_mock.add_exception(
+        httpx.TimeoutException("Request timed out"),
+        method="GET",
+        url="https://api.venice.ai/api/v1/characters",
+    )
+
+    result = cli_runner.invoke(cli, ["venice", "characters"])
+
+    assert result.exit_code == 1
+    output = result.output
+    assert "timed out" in output.lower()
     assert "Traceback" not in output
 
 

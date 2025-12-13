@@ -1,6 +1,7 @@
 """Characters command for Venice CLI."""
 
 import click
+import httpx
 
 from llm_venice.api.characters import list_characters, persist_characters
 from llm_venice.api.errors import VeniceAPIError
@@ -28,7 +29,7 @@ def create_characters_command():
         key = get_venice_key(click_exceptions=True)
         try:
             characters_data = list_characters(key, web_enabled=web_enabled, adult=adult)
-        except VeniceAPIError as e:
+        except (VeniceAPIError, httpx.RequestError) as e:
             handle_cli_error(e)
         path = persist_characters(characters_data)
         characters_count = len(characters_data.get("data", []))

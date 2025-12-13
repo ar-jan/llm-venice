@@ -1,6 +1,7 @@
 """Upscale command for Venice CLI."""
 
 import click
+import httpx
 import llm
 
 from llm_venice.api.upscale import perform_image_upscale, write_upscaled_image
@@ -72,6 +73,8 @@ def create_upscale_command():
         except VeniceAPIError as e:
             handle_cli_error(e)
         except ValueError as e:
+            handle_cli_error(e)
+        except httpx.RequestError as e:
             handle_cli_error(e)
         saved_path = write_upscaled_image(result)
         click.echo(f"Upscaled image saved to {saved_path}")
