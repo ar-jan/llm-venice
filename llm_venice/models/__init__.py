@@ -2,6 +2,7 @@
 
 import json
 
+import httpx
 import llm
 
 from llm_venice.models.chat import AsyncVeniceChat, VeniceChat
@@ -29,7 +30,7 @@ def register_venice_models(register):
             return
         try:
             models = fetch_models(key)
-        except (ValueError, VeniceAPIError):
+        except (httpx.RequestError, ValueError, VeniceAPIError):
             return
         persist_models(models, venice_models_path)
 
