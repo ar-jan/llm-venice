@@ -351,8 +351,8 @@ def test_existing_file_with_overwrite_replaces_file(mock_venice_api_key, tmp_pat
         assert str(existing_file) in results[0]
 
 
-def test_non_writable_directory_raises_valueerror(mock_venice_api_key, tmp_path):
-    """Test that non-writable directory raises ValueError."""
+def test_non_writable_directory_raises_model_error(mock_venice_api_key, tmp_path):
+    """Test that non-writable directory raises ModelError."""
     model = VeniceImage("test-model")
 
     # Create a directory and make it non-writable
@@ -385,8 +385,8 @@ def test_non_writable_directory_raises_valueerror(mock_venice_api_key, tmp_path)
 
         response = MagicMock()
         with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            # Should raise ValueError before making API call
-            with pytest.raises(ValueError, match="is not a writable directory"):
+            # Should raise ModelError before making API call
+            with pytest.raises(llm.ModelError, match="is not a writable directory"):
                 list(model.execute(prompt, False, response, None))
 
         mock_post.assert_not_called()
@@ -395,8 +395,8 @@ def test_non_writable_directory_raises_valueerror(mock_venice_api_key, tmp_path)
     non_writable_dir.chmod(0o755)
 
 
-def test_nonexistent_directory_raises_valueerror(mock_venice_api_key, tmp_path):
-    """Test that nonexistent directory raises ValueError."""
+def test_nonexistent_directory_raises_model_error(mock_venice_api_key, tmp_path):
+    """Test that nonexistent directory raises ModelError."""
     model = VeniceImage("test-model")
 
     # Point to a directory that doesn't exist
@@ -427,15 +427,15 @@ def test_nonexistent_directory_raises_valueerror(mock_venice_api_key, tmp_path):
 
         response = MagicMock()
         with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            # Should raise ValueError before making API call
-            with pytest.raises(ValueError, match="is not a writable directory"):
+            # Should raise ModelError before making API call
+            with pytest.raises(llm.ModelError, match="is not a writable directory"):
                 list(model.execute(prompt, False, response, None))
 
         mock_post.assert_not_called()
 
 
-def test_file_path_instead_of_directory_raises_valueerror(mock_venice_api_key, tmp_path):
-    """Test that passing a file path instead of directory raises ValueError."""
+def test_file_path_instead_of_directory_raises_model_error(mock_venice_api_key, tmp_path):
+    """Test that passing a file path instead of directory raises ModelError."""
     model = VeniceImage("test-model")
 
     # Create a file (not a directory)
@@ -467,8 +467,8 @@ def test_file_path_instead_of_directory_raises_valueerror(mock_venice_api_key, t
 
         response = MagicMock()
         with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            # Should raise ValueError for file path instead of directory
-            with pytest.raises(ValueError, match="is not a writable directory"):
+            # Should raise ModelError for file path instead of directory
+            with pytest.raises(llm.ModelError, match="is not a writable directory"):
                 list(model.execute(prompt, False, response, None))
 
         mock_post.assert_not_called()
@@ -658,8 +658,8 @@ def test_http_error_raises_model_error(mock_venice_api_key):
                 list(model.execute(prompt, False, response, None))
 
 
-def test_invalid_base64_data_raises_valueerror(mock_venice_api_key):
-    """Test that invalid base64 data from JSON response raises ValueError."""
+def test_invalid_base64_data_raises_model_error(mock_venice_api_key):
+    """Test that invalid base64 data from JSON response raises ModelError."""
     model = VeniceImage("test-model")
 
     # Create a prompt object
@@ -691,13 +691,13 @@ def test_invalid_base64_data_raises_valueerror(mock_venice_api_key):
 
         response = MagicMock()
         with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            # Should raise ValueError about base64 decoding failure
-            with pytest.raises(ValueError, match="Failed to decode base64 image data"):
+            # Should raise ModelError about base64 decoding failure
+            with pytest.raises(llm.ModelError, match="Failed to decode base64 image data"):
                 list(model.execute(prompt, False, response, None))
 
 
-def test_file_write_failure_raises_valueerror(mock_venice_api_key, tmp_path):
-    """Test that file write failures are caught and raised as ValueError."""
+def test_file_write_failure_raises_model_error(mock_venice_api_key, tmp_path):
+    """Test that file write failures are caught and raised as ModelError."""
     model = VeniceImage("test-model")
 
     # Create a prompt object
@@ -728,8 +728,8 @@ def test_file_write_failure_raises_valueerror(mock_venice_api_key, tmp_path):
             with patch("pathlib.Path.write_bytes") as mock_write:
                 mock_write.side_effect = PermissionError("Permission denied")
 
-                # Should raise ValueError about file write failure
-                with pytest.raises(ValueError, match="Failed to write image file"):
+                # Should raise ModelError about file write failure
+                with pytest.raises(llm.ModelError, match="Failed to write image file"):
                     list(model.execute(prompt, False, response, None))
 
 
@@ -990,5 +990,71 @@ def test_async_venice_image_content_violation(monkeypatch, mock_venice_api_key):
             chunks.append(chunk)
 
         assert chunks == ["Response marked as content violation; no image was returned."]
+
+    asyncio.run(run())
+
+
+def test_async_venice_image_wraps_generate_errors_in_model_error(monkeypatch, mock_venice_api_key):
+    """AsyncVeniceImage should raise ModelError when generation fails."""
+
+    async def run():
+        model = AsyncVeniceImage("test-model")
+
+        prompt = MagicMock()
+        prompt.prompt = "Async test"
+        prompt.options = VeniceImage.Options()
+
+        async def immediate_to_thread(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        def generate_failure(**_):
+            raise ValueError("Failed to decode base64 image data: boom")
+
+        monkeypatch.setattr("llm_venice.models.image.asyncio.to_thread", immediate_to_thread)
+        monkeypatch.setattr("llm_venice.models.image.generate_image_result", generate_failure)
+        monkeypatch.setattr(model, "get_key", lambda key=None: mock_venice_api_key)
+
+        with pytest.raises(llm.ModelError, match="Failed to decode base64 image data"):
+            async for _ in model.execute(prompt, False, MagicMock(), None):
+                pass
+
+    asyncio.run(run())
+
+
+def test_async_venice_image_wraps_write_errors_in_model_error(
+    monkeypatch, tmp_path, mock_venice_api_key
+):
+    """AsyncVeniceImage should raise ModelError when saving fails."""
+
+    async def run():
+        model = AsyncVeniceImage("test-model")
+
+        prompt = MagicMock()
+        prompt.prompt = "Async test"
+        prompt.options = VeniceImage.Options()
+
+        fake_result = ImageGenerationResult(
+            image_bytes=b"binary",
+            output_path=tmp_path / "async.png",
+            response_json=None,
+            content_violation=False,
+        )
+
+        async def immediate_to_thread(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        def save_failure(_result):
+            raise PermissionError("Permission denied")
+
+        monkeypatch.setattr("llm_venice.models.image.asyncio.to_thread", immediate_to_thread)
+        monkeypatch.setattr(
+            "llm_venice.models.image.generate_image_result", lambda **_: fake_result
+        )
+        monkeypatch.setattr("llm_venice.models.image.save_image_result", save_failure)
+        monkeypatch.setattr(model, "get_key", lambda key=None: mock_venice_api_key)
+
+        with pytest.raises(llm.ModelError, match="Failed to write image file"):
+            async for _ in model.execute(prompt, False, MagicMock(), None):
+                pass
 
     asyncio.run(run())

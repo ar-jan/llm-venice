@@ -1,6 +1,7 @@
 """Main venice CLI command group."""
 
 import click
+import httpx
 
 from llm_venice.api.refresh import fetch_models, persist_models
 from llm_venice.api.errors import VeniceAPIError
@@ -30,7 +31,7 @@ def create_venice_group():
         key = get_venice_key(click_exceptions=True)
         try:
             models = fetch_models(key)
-        except (ValueError, VeniceAPIError) as e:
+        except (ValueError, VeniceAPIError, httpx.RequestError) as e:
             handle_cli_error(e)
         path = persist_models(models)
         click.echo(f"{len(models)} models saved to {path}", err=True)

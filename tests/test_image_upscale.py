@@ -265,6 +265,24 @@ def test_upscale_network_timeout(httpx_mock, temp_image_file, mock_venice_api_ke
         perform_image_upscale(str(temp_image_file), scale=2)
 
 
+def test_upscale_network_error_cli(cli_runner, httpx_mock, temp_image_file, mock_venice_api_key):
+    """CLI should surface network errors without traceback."""
+    import httpx
+
+    httpx_mock.add_exception(
+        httpx.TimeoutException("Request timed out"),
+        method="POST",
+        url="https://api.venice.ai/api/v1/image/upscale",
+    )
+
+    result = cli_runner.invoke(cli, ["venice", "upscale", str(temp_image_file), "--scale", "2"])
+
+    assert result.exit_code == 1
+    output = result.output
+    assert "timed out" in output.lower()
+    assert "Traceback" not in output
+
+
 def test_upscale_binary_response_handling(
     httpx_mock, temp_image_file, tmp_path, mock_venice_api_key
 ):

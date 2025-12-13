@@ -1,5 +1,6 @@
 import json
 
+import httpx
 import llm
 import pytest
 from llm_venice import AsyncVeniceImage, VeniceImage
@@ -43,6 +44,29 @@ def test_register_skips_without_cache_or_key(monkeypatch, tmp_path):
     """Skip registration when cache is missing and no key is available."""
     monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
     monkeypatch.setattr(llm, "get_key", lambda *_, **__: None)
+
+    registered = []
+
+    def register(model, async_model=None, aliases=None):
+        registered.append(model)
+
+    register_venice_models(register)
+
+    assert registered == []
+
+
+def test_register_skips_on_request_error_without_cache(monkeypatch, tmp_path):
+    """Network failures should never crash plugin loading on first run."""
+    monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
+    monkeypatch.setattr(llm, "get_key", lambda *_, **__: "test-key")
+
+    def fetch_failure(_key):
+        raise httpx.RequestError(
+            "Network down",
+            request=httpx.Request("GET", "https://api.venice.ai/api/v1/models"),
+        )
+
+    monkeypatch.setattr("llm_venice.models.fetch_models", fetch_failure)
 
     registered = []
 

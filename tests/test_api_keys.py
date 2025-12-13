@@ -1,3 +1,4 @@
+import httpx
 import json
 import pathlib
 
@@ -24,6 +25,44 @@ def test_list_api_keys_http_error(cli_runner, httpx_mock, mock_venice_api_key):
     assert "401" in result.output
     assert "admin privileges required" in result.output.lower()
     assert "Traceback" not in result.output
+
+
+@pytest.mark.parametrize(
+    ("args", "method", "url"),
+    [
+        (["venice", "api-keys", "list"], "GET", "https://api.venice.ai/api/v1/api_keys"),
+        (
+            ["venice", "api-keys", "rate-limits"],
+            "GET",
+            "https://api.venice.ai/api/v1/api_keys/rate_limits",
+        ),
+        (
+            ["venice", "api-keys", "rate-limits-log"],
+            "GET",
+            "https://api.venice.ai/api/v1/api_keys/rate_limits/log",
+        ),
+        (
+            ["venice", "api-keys", "create", "--type", "ADMIN"],
+            "POST",
+            "https://api.venice.ai/api/v1/api_keys",
+        ),
+        (
+            ["venice", "api-keys", "delete", "example-key"],
+            "DELETE",
+            "https://api.venice.ai/api/v1/api_keys?id=example-key",
+        ),
+    ],
+)
+def test_api_keys_network_error_cli(cli_runner, httpx_mock, mock_venice_api_key, args, method, url):
+    """CLI should surface network errors without traceback."""
+    httpx_mock.add_exception(httpx.TimeoutException("Request timed out"), method=method, url=url)
+
+    result = cli_runner.invoke(cli, args)
+
+    assert result.exit_code == 1
+    output = result.output
+    assert "timed out" in output.lower()
+    assert "Traceback" not in output
 
 
 def test_list_api_keys_http_error_programmatic(httpx_mock, mock_venice_api_key):

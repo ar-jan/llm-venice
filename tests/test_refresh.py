@@ -1,3 +1,4 @@
+import httpx
 import pytest
 from llm.cli import cli
 
@@ -20,6 +21,22 @@ def test_refresh_http_error_cli(cli_runner, httpx_mock, mock_venice_api_key):
     output = result.output
     assert "502" in output
     assert "bad gateway" in output.lower()
+    assert "Traceback" not in output
+
+
+def test_refresh_network_error_cli(cli_runner, httpx_mock, mock_venice_api_key):
+    """CLI should present network errors cleanly when refresh fails."""
+    httpx_mock.add_exception(
+        httpx.TimeoutException("Request timed out"),
+        method="GET",
+        url="https://api.venice.ai/api/v1/models?type=all",
+    )
+
+    result = cli_runner.invoke(cli, ["venice", "refresh"])
+
+    assert result.exit_code == 1
+    output = result.output
+    assert "timed out" in output.lower()
     assert "Traceback" not in output
 
 
