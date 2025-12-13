@@ -7,6 +7,16 @@ from llm_venice.models import register_venice_models
 
 # Public API exports
 from llm_venice.models.chat import AsyncVeniceChat, VeniceChat, VeniceChatOptions
+from llm_venice.models.audio import (
+    AsyncVeniceSpeech,
+    VeniceSpeech,
+    VeniceSpeechOptions,
+    SpeechGenerationResult,
+    SpeechStreamResult,
+    generate_speech_result,
+    stream_speech_result,
+    save_speech_result,
+)
 from llm_venice.models.image import (
     AsyncVeniceImage,
     VeniceImage,
@@ -56,6 +66,14 @@ __all__ = [
     "VeniceChat",
     "AsyncVeniceChat",
     "VeniceChatOptions",
+    "VeniceSpeech",
+    "AsyncVeniceSpeech",
+    "VeniceSpeechOptions",
+    "SpeechGenerationResult",
+    "SpeechStreamResult",
+    "generate_speech_result",
+    "stream_speech_result",
+    "save_speech_result",
     "VeniceImage",
     "AsyncVeniceImage",
     "VeniceImageOptions",

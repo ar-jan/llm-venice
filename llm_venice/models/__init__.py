@@ -6,6 +6,7 @@ import httpx
 import llm
 
 from llm_venice.models.chat import AsyncVeniceChat, VeniceChat
+from llm_venice.models.audio import AsyncVeniceSpeech, VeniceSpeech
 from llm_venice.models.image import AsyncVeniceImage, VeniceImage
 from llm_venice.constants import VENICE_API_BASE
 from llm_venice.api.refresh import fetch_models, persist_models
@@ -67,6 +68,11 @@ def register_venice_models(register):
                 VeniceImage(model_id=model_id, model_name=model_id),
                 async_model=AsyncVeniceImage(model_id=model_id, model_name=model_id),
             )
+        elif model.get("type") == "tts":
+            register(
+                VeniceSpeech(model_id=model_id, model_name=model_id),
+                async_model=AsyncVeniceSpeech(model_id=model_id, model_name=model_id),
+            )
 
 
 __all__ = [
@@ -74,5 +80,7 @@ __all__ = [
     "AsyncVeniceChat",
     "VeniceImage",
     "AsyncVeniceImage",
+    "VeniceSpeech",
+    "AsyncVeniceSpeech",
     "register_venice_models",
 ]

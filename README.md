@@ -119,6 +119,34 @@ It is recommended to use web search in combination with `--no-stream` so the sea
 
 `llm -m venice/qwen3-235b --character alan-watts "What is the meaning of life?"`
 
+### Text-to-speech
+
+Text-to-speech models (currently `tts-kokoro`) generate audio from text. Audio files are stored in the LLM user directory by default.
+
+Basic usage:
+
+`llm -m venice/tts-kokoro "Hello, welcome to Venice Voice." -o voice af_sky -o response_format mp3 -o speed 1.0`
+
+Streaming (default; writes the output file immediately; useful for long outputs):
+
+`llm -m venice/tts-kokoro "First sentence. Second sentence. Third sentence." -o progress true`
+
+Disable streaming (wait for the full audio before writing the file):
+
+`llm --no-stream -m venice/tts-kokoro "First sentence. Second sentence. Third sentence."`
+
+Write audio bytes to stdout (progress/status go to stderr):
+
+`llm -m venice/tts-kokoro "Hello." -o stdout true -o response_format mp3 > out.mp3`
+
+You can also save a copy while writing to stdout by providing `output_dir` and/or `output_filename`:
+
+`llm -m venice/tts-kokoro "Hello." -o stdout true -o output_dir . -o output_filename out.mp3`
+
+To see all available options:
+
+`llm models list --query tts-kokoro --options`
+
 ### Image generation
 
 Generated images are stored in the LLM user directory by default. Example:
@@ -161,6 +189,8 @@ You can call the library helpers directly from Python (minimally tested):
 - API keys: `list_api_keys()`, `get_rate_limits()`, `get_rate_limits_log()`, `create_api_key()`, `delete_api_key()`
 - `perform_image_upscale()` → `UpscaleResult` with bytes and a resolved output path; persist with `write_upscaled_image(result)`
 - `generate_image_result()` → `ImageGenerationResult` with bytes/metadata/output path for image generation; persist with `save_image_result(result)`
+- `generate_speech_result()` → `SpeechGenerationResult` with bytes/metadata/output path for TTS generation; persist with `save_speech_result(result)`
+- `stream_speech_result()` (context manager) yields `SpeechStreamResult` with an iterator of audio chunks and a resolved output path
 
 All helpers accept an optional `key=` argument if you do not want to rely on the stored `LLM_VENICE_KEY`.
 

@@ -3,7 +3,7 @@ import json
 import httpx
 import llm
 import pytest
-from llm_venice import AsyncVeniceImage, VeniceImage
+from llm_venice import AsyncVeniceImage, AsyncVeniceSpeech, VeniceImage, VeniceSpeech
 from llm_venice.api.refresh import fetch_models
 from llm_venice.models import register_venice_models
 
@@ -112,3 +112,31 @@ def test_registers_image_async_model(monkeypatch, tmp_path):
 
     assert isinstance(registered[0], VeniceImage)
     assert isinstance(registered_async[0], AsyncVeniceImage)
+
+
+def test_registers_tts_async_model(monkeypatch, tmp_path):
+    """Ensure TTS models register both sync and async variants."""
+    monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
+    (tmp_path / "venice_models.json").write_text(
+        json.dumps(
+            [
+                {
+                    "id": "tts-kokoro",
+                    "type": "tts",
+                    "model_spec": {"capabilities": {}},
+                }
+            ]
+        )
+    )
+
+    registered = []
+    registered_async = []
+
+    def register(model, async_model=None, aliases=None):
+        registered.append(model)
+        registered_async.append(async_model)
+
+    register_venice_models(register)
+
+    assert isinstance(registered[0], VeniceSpeech)
+    assert isinstance(registered_async[0], AsyncVeniceSpeech)
