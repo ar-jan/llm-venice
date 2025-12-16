@@ -10,7 +10,7 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License"
 ]
 dependencies = [
-    "llm>=0.27.1",
+    "llm>=0.28",
 ]
 
 [project.urls]
@@ -31,7 +31,7 @@ test = [
 ]
 dev = [
     "ruff>=0.14.8",
-    "ty>=0.0.1a32",
+    "pyright",
 ]
 
 [tool.pytest.ini_options]
@@ -56,3 +56,20 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 docstring-code-format = true
 line-ending = "lf"
+
+[tool.pyright]
+include = [
+    "llm_venice",
+    "tests",
+]
+exclude = [
+    "**/__pycache__",
+]
+defineConstant = { DEBUG = true }
+
+reportMissingImports = "error"
+
+pythonVersion = "3.12"
+pythonPlatform = "Linux"
+venvPath = "."
+venv = ".venv"
