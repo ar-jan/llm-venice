@@ -349,6 +349,7 @@ def _stream_speech_to_outputs(
     bytes_written = 0
     start_time = time.monotonic()
     last_update = start_time
+    write_stdout_enabled = write_stdout
 
     def maybe_update_progress(*, force: bool = False) -> None:
         nonlocal last_update
@@ -380,14 +381,16 @@ def _stream_speech_to_outputs(
                 if not chunk:
                     continue
                 bytes_written += len(chunk)
-                if write_stdout:
+                if file_handle is not None:
+                    file_handle.write(chunk)
+                if write_stdout_enabled:
                     try:
                         sys.stdout.buffer.write(chunk)
                         sys.stdout.buffer.flush()
                     except BrokenPipeError:
-                        break
-                if file_handle is not None:
-                    file_handle.write(chunk)
+                        if output_path is None:
+                            break
+                        write_stdout_enabled = False
                 maybe_update_progress()
     finally:
         if file_handle is not None:
