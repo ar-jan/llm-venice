@@ -857,8 +857,11 @@ def test_venice_image_logging_client_usage(mock_venice_api_key, monkeypatch):
 
     # Mock both httpx.post and logging_client
     mock_logging_client = Mock()
+    mock_client_context = Mock()
     mock_client_instance = Mock()
-    mock_logging_client.return_value = mock_client_instance
+    mock_client_context.__enter__ = Mock(return_value=mock_client_instance)
+    mock_client_context.__exit__ = Mock(return_value=None)
+    mock_logging_client.return_value = mock_client_context
 
     # Configure the mock response
     mock_response = Mock()

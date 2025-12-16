@@ -128,33 +128,57 @@ def generate_image_result(
 
     # Logging client option like LLM_OPENAI_SHOW_RESPONSES
     if os.environ.get("LLM_VENICE_SHOW_RESPONSES"):
-        client = logging_client()
-        r = client.post(ENDPOINT_IMAGE_GENERATE, headers=headers, json=payload, timeout=120)
+        with logging_client() as client:
+            r = client.post(ENDPOINT_IMAGE_GENERATE, headers=headers, json=payload, timeout=120)
+            try:
+                r.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                raise_api_error("Generating image", exc)
+
+            if r.headers.get("x-venice-is-content-violation") == "true":
+                return ImageGenerationResult(
+                    image_bytes=None, output_path=None, content_violation=True
+                )
+
+            response_json = None
+            if return_binary:
+                image_bytes = r.content
+            else:
+                data = r.json()
+                response_json = {
+                    "request": data["request"],
+                    "timing": data["timing"],
+                }
+                image_data = data["images"][0]
+                try:
+                    image_bytes = base64.b64decode(image_data)
+                except Exception as e:
+                    raise ValueError(f"Failed to decode base64 image data: {e}")
     else:
         r = httpx.post(ENDPOINT_IMAGE_GENERATE, headers=headers, json=payload, timeout=120)
 
-    try:
-        r.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        raise_api_error("Generating image", exc)
-
-    if r.headers.get("x-venice-is-content-violation") == "true":
-        return ImageGenerationResult(image_bytes=None, output_path=None, content_violation=True)
-
-    response_json = None
-    if return_binary:
-        image_bytes = r.content
-    else:
-        data = r.json()
-        response_json = {
-            "request": data["request"],
-            "timing": data["timing"],
-        }
-        image_data = data["images"][0]
         try:
-            image_bytes = base64.b64decode(image_data)
-        except Exception as e:
-            raise ValueError(f"Failed to decode base64 image data: {e}")
+            r.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise_api_error("Generating image", exc)
+
+        if r.headers.get("x-venice-is-content-violation") == "true":
+            return ImageGenerationResult(image_bytes=None, output_path=None, content_violation=True)
+
+        response_json = None
+        if return_binary:
+            image_bytes = r.content
+        else:
+            data = r.json()
+            response_json = {
+                "request": data["request"],
+                "timing": data["timing"],
+            }
+            image_data = data["images"][0]
+            try:
+                image_bytes = base64.b64decode(image_data)
+            except Exception as e:
+                raise ValueError(f"Failed to decode base64 image data: {e}")
 
     target_dir = resolved_output_dir or (llm.user_dir() / "images")
 

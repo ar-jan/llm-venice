@@ -409,16 +409,19 @@ def _post_speech_bytes(*, api_key: str, payload: dict) -> tuple[bytes, Optional[
     headers = get_auth_headers_with_content_type(api_key)
 
     if os.environ.get("LLM_VENICE_SHOW_RESPONSES"):
-        client = logging_client()
-        r = client.post(ENDPOINT_AUDIO_SPEECH, headers=headers, json=payload, timeout=120)
-    else:
-        r = httpx.post(ENDPOINT_AUDIO_SPEECH, headers=headers, json=payload, timeout=120)
+        with logging_client() as client:
+            r = client.post(ENDPOINT_AUDIO_SPEECH, headers=headers, json=payload, timeout=120)
+            try:
+                r.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                raise_api_error("Generating speech", exc)
+            return r.content, r.headers.get("Content-Type")
 
+    r = httpx.post(ENDPOINT_AUDIO_SPEECH, headers=headers, json=payload, timeout=120)
     try:
         r.raise_for_status()
     except httpx.HTTPStatusError as exc:
         raise_api_error("Generating speech", exc)
-
     return r.content, r.headers.get("Content-Type")
 
 
