@@ -190,19 +190,19 @@ To set up this plugin locally, first checkout the code. Then create a new virtua
 
 ```bash
 cd llm-venice
-python3 -m venv venv
-source venv/bin/activate
+uv venv
+source .venv/bin/activate
 ```
 
 Install the plugin with dependencies (including test and dev):
 
 ```bash
-pip install -e '.[test,dev]'
+uv pip install -e '.[test,dev]'
 ```
 
 Preferably also install and enable pre-commit hooks:
 ```bash
-pip install pre-commit
+uv pip install pre-commit
 pre-commit install
 ```
 
