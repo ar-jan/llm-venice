@@ -3,6 +3,7 @@
 import datetime
 import os
 import pathlib
+import sys
 from typing import Optional, Union
 
 import click
@@ -75,9 +76,15 @@ def get_unique_filepath(
 
 def validate_output_directory(
     output_dir: Optional[Union[pathlib.Path, str]],
+    *,
+    create_if_missing: bool = False,
 ) -> Optional[pathlib.Path]:
     """
-    Validate that a directory exists and is writable.
+    Validate that an output directory is writable.
+
+    If the directory does not exist, this validates that it can be created.
+    When running under an interactive click CLI, set create_if_missing=True to
+    prompt the user to create the directory.
 
     Args:
         output_dir: Directory path to validate, or None
@@ -86,7 +93,7 @@ def validate_output_directory(
         Resolved path if valid, None if input was None
 
     Raises:
-        ValueError: If directory is not writable
+        ValueError: If directory is not writable or cannot be created
     """
     if output_dir is None:
         return None
@@ -95,12 +102,48 @@ def validate_output_directory(
         # Treat empty string the same as no directory provided
         return None
 
-    resolved_dir = pathlib.Path(output_dir)
+    resolved_dir = pathlib.Path(output_dir).expanduser()
+    if resolved_dir.exists():
+        if not resolved_dir.is_dir() or not os.access(resolved_dir, os.W_OK):
+            raise ValueError(f"output_dir {resolved_dir} is not a writable directory")
+        return resolved_dir
+
+    def can_create_directory(path: pathlib.Path) -> bool:
+        parent = path
+        while not parent.exists():
+            if parent.parent == parent:
+                return False
+            parent = parent.parent
+
+        if not parent.is_dir():
+            return False
+
+        # On POSIX, directory creation requires write + execute.
+        return os.access(parent, os.W_OK | os.X_OK)
+
     if (
-        not resolved_dir.exists()
-        or not resolved_dir.is_dir()
-        or not os.access(resolved_dir, os.W_OK)
+        create_if_missing
+        and click.get_current_context(silent=True) is not None
+        and sys.stdin.isatty()
     ):
+        should_create = click.confirm(
+            f"Output directory {resolved_dir} does not exist. Create it?",
+            default=True,
+            err=True,
+        )
+        if not should_create:
+            raise ValueError(f"output_dir {resolved_dir} is not a writable directory")
+
+        try:
+            resolved_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ValueError(f"output_dir {resolved_dir} is not a writable directory") from exc
+
+        if not resolved_dir.is_dir() or not os.access(resolved_dir, os.W_OK):
+            raise ValueError(f"output_dir {resolved_dir} is not a writable directory")
+        return resolved_dir
+
+    if not can_create_directory(resolved_dir):
         raise ValueError(f"output_dir {resolved_dir} is not a writable directory")
 
     return resolved_dir

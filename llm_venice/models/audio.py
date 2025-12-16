@@ -449,6 +449,11 @@ class VeniceSpeech(llm.KeyModel):
             raise llm.NeedsKeyException("No key found for Venice")
 
         try:
+            options_dict = prompt.options.model_dump(by_alias=True)
+            validate_output_directory(
+                _clean_output_dir(options_dict.get("output_dir")),
+                create_if_missing=True,
+            )
             request = _prepare_speech_cli_request(
                 input_text=prompt.prompt,
                 options=prompt.options,
@@ -537,6 +542,11 @@ class AsyncVeniceSpeech(llm.AsyncKeyModel):
             raise llm.NeedsKeyException("No key found for Venice")
 
         try:
+            options_dict = prompt.options.model_dump(by_alias=True)
+            validate_output_directory(
+                _clean_output_dir(options_dict.get("output_dir")),
+                create_if_missing=True,
+            )
             request = _prepare_speech_cli_request(
                 input_text=prompt.prompt,
                 options=prompt.options,

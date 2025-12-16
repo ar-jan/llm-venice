@@ -207,6 +207,11 @@ class VeniceImage(llm.KeyModel):
             if api_key is None:
                 raise llm.NeedsKeyException("No key found for Venice")
             try:
+                options_dict = prompt.options.model_dump(by_alias=True)
+                validate_output_directory(
+                    options_dict.get("output_dir"),
+                    create_if_missing=True,
+                )
                 result = generate_image_result(
                     prompt=prompt.prompt,
                     options=prompt.options,
@@ -256,6 +261,11 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
             if api_key is None:
                 raise llm.NeedsKeyException("No key found for Venice")
             try:
+                options_dict = prompt.options.model_dump(by_alias=True)
+                validate_output_directory(
+                    options_dict.get("output_dir"),
+                    create_if_missing=True,
+                )
                 result = await asyncio.to_thread(
                     generate_image_result,
                     prompt=prompt.prompt,

@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 import io
 import pathlib
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, patch, call
 
 import pytest
 
@@ -38,7 +38,10 @@ def test_venice_speech_payload_includes_options(mock_venice_api_key, monkeypatch
             with patch("pathlib.Path.write_bytes") as mock_write:
                 list(model.execute(prompt, False, MagicMock(), None))
 
-                options.model_dump.assert_called_once_with(by_alias=True)
+                assert options.model_dump.call_args_list == [
+                    call(by_alias=True),
+                    call(by_alias=True),
+                ]
                 mock_post.assert_called_once()
 
                 payload = mock_post.call_args[1]["json"]
