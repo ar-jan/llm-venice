@@ -94,7 +94,7 @@ class _SpeechCLIRequest:
     use_streaming_download: bool
 
 
-def _clean_output_dir(
+def _normalize_output_dir(
     output_dir: Optional[Union[pathlib.Path, str]],
 ) -> Optional[Union[pathlib.Path, str]]:
     if isinstance(output_dir, str) and not output_dir.strip():
@@ -102,7 +102,7 @@ def _clean_output_dir(
     return output_dir
 
 
-def _clean_output_filename(output_filename: Optional[str]) -> Optional[str]:
+def _normalize_output_filename(output_filename: Optional[str]) -> Optional[str]:
     if isinstance(output_filename, str) and not output_filename.strip():
         return None
     return output_filename
@@ -116,12 +116,12 @@ def _resolve_speech_output_path(
     output_filename: Optional[str],
     overwrite_files: bool,
 ) -> pathlib.Path:
-    resolved_output_dir = validate_output_directory(_clean_output_dir(output_dir))
+    resolved_output_dir = validate_output_directory(_normalize_output_dir(output_dir))
     target_dir = resolved_output_dir or (llm.user_dir() / "audio")
-    cleaned_filename = _clean_output_filename(output_filename)
-    if not cleaned_filename:
-        cleaned_filename = generate_timestamp_filename("venice", model_name, response_format)
-    return get_unique_filepath(target_dir, cleaned_filename, overwrite_files)
+    normalized_filename = _normalize_output_filename(output_filename)
+    if not normalized_filename:
+        normalized_filename = generate_timestamp_filename("venice", model_name, response_format)
+    return get_unique_filepath(target_dir, normalized_filename, overwrite_files)
 
 
 def _build_speech_payload(*, input_text: str, options_dict: dict, model_name: str) -> dict:
@@ -177,8 +177,8 @@ def _prepare_speech_cli_request(
     progress = bool(options_dict.get("progress", False))
 
     requested_file_output = (
-        _clean_output_dir(options_dict.get("output_dir")) is not None
-        or _clean_output_filename(options_dict.get("output_filename")) is not None
+        _normalize_output_dir(options_dict.get("output_dir")) is not None
+        or _normalize_output_filename(options_dict.get("output_filename")) is not None
     )
     save_to_file = (not write_stdout) or requested_file_output
 
@@ -457,7 +457,7 @@ class VeniceSpeech(llm.KeyModel):
         try:
             options_dict = prompt.options.model_dump(by_alias=True)
             validate_output_directory(
-                _clean_output_dir(options_dict.get("output_dir")),
+                _normalize_output_dir(options_dict.get("output_dir")),
                 create_if_missing=True,
             )
             request = _prepare_speech_cli_request(
@@ -550,7 +550,7 @@ class AsyncVeniceSpeech(llm.AsyncKeyModel):
         try:
             options_dict = prompt.options.model_dump(by_alias=True)
             validate_output_directory(
-                _clean_output_dir(options_dict.get("output_dir")),
+                _normalize_output_dir(options_dict.get("output_dir")),
                 create_if_missing=True,
             )
             request = _prepare_speech_cli_request(
