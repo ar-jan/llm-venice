@@ -440,7 +440,7 @@ class VeniceSpeech(llm.KeyModel):
 
     def __init__(self, model_id, model_name=None):
         self.model_id = f"venice/{model_id}"
-        self.model_name = model_id
+        self.model_name = model_name or model_id
 
     def __str__(self):
         return f"Venice Speech: {self.model_id}"
@@ -531,7 +531,7 @@ class AsyncVeniceSpeech(llm.AsyncKeyModel):
 
     def __init__(self, model_id, model_name=None):
         self.model_id = f"venice/{model_id}"
-        self.model_name = model_id
+        self.model_name = model_name or model_id
 
     def __str__(self):
         return f"Venice Speech: {self.model_id}"
