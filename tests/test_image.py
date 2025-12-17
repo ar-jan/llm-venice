@@ -1,7 +1,7 @@
 import asyncio
 import base64
 import datetime
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, MagicMock, patch, call
 import pytest
 
 import httpx
@@ -51,9 +51,11 @@ def test_venice_image_format_in_payload(mock_venice_api_key):
                 with patch.object(model, "get_key", return_value=mock_venice_api_key):
                     list(model.execute(prompt, False, MagicMock(), None))
 
-                    # Verify model_dump was called with by_alias=True
-                    # This ensures the alias "format" is used instead of "image_format"
-                    options.model_dump.assert_called_once_with(by_alias=True)
+                    # Ensure the alias "format" is used instead of "image_format"
+                    assert options.model_dump.call_args_list == [
+                        call(by_alias=True),
+                        call(by_alias=True),
+                    ]
 
                     mock_post.assert_called_once()
                     call_args = mock_post.call_args
@@ -395,8 +397,8 @@ def test_non_writable_directory_raises_model_error(mock_venice_api_key, tmp_path
     non_writable_dir.chmod(0o755)
 
 
-def test_nonexistent_directory_raises_model_error(mock_venice_api_key, tmp_path):
-    """Test that nonexistent directory raises ModelError."""
+def test_nonexistent_directory_is_created_when_saving(mock_venice_api_key, tmp_path):
+    """Nonexistent output_dir should be created automatically when saving."""
     model = VeniceImage("test-model")
 
     # Point to a directory that doesn't exist
@@ -427,11 +429,14 @@ def test_nonexistent_directory_raises_model_error(mock_venice_api_key, tmp_path)
 
         response = MagicMock()
         with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            # Should raise ModelError before making API call
-            with pytest.raises(llm.ModelError, match="is not a writable directory"):
-                list(model.execute(prompt, False, response, None))
+            results = list(model.execute(prompt, False, response, None))
 
-        mock_post.assert_not_called()
+        mock_post.assert_called_once()
+
+    expected_output = nonexistent_dir / "test_image.png"
+    assert expected_output.exists()
+    assert expected_output.read_bytes() == mock_response.content
+    assert any(str(expected_output) in line for line in results)
 
 
 def test_file_path_instead_of_directory_raises_model_error(mock_venice_api_key, tmp_path):
@@ -852,8 +857,11 @@ def test_venice_image_logging_client_usage(mock_venice_api_key, monkeypatch):
 
     # Mock both httpx.post and logging_client
     mock_logging_client = Mock()
+    mock_client_context = Mock()
     mock_client_instance = Mock()
-    mock_logging_client.return_value = mock_client_instance
+    mock_client_context.__enter__ = Mock(return_value=mock_client_instance)
+    mock_client_context.__exit__ = Mock(return_value=None)
+    mock_logging_client.return_value = mock_client_context
 
     # Configure the mock response
     mock_response = Mock()
