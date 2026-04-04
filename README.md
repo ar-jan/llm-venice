@@ -117,7 +117,7 @@ It is recommended to use web search in combination with `--no-stream` so the sea
 
 **--character character_slug** to use a public character, for example:
 
-`llm -m venice/qwen3-235b --character alan-watts "What is the meaning of life?"`
+`llm -m venice/google.gemma-4-26b-a4b-it --character alan-watts "What is the meaning of life?"`
 
 ### Text-to-speech
 

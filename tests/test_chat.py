@@ -224,8 +224,8 @@ def test_cli_thinking_parameters(cli_runner, monkeypatch):
 def test_thinking_parameters_build_kwargs():
     """Test that thinking parameters are processed correctly in build_kwargs."""
     chat = VeniceChat(
-        model_id="venice/qwen3-235b",
-        model_name="qwen3-235b",
+        model_id="venice/test-thinking-model",
+        model_name="test-thinking-model",
         api_base="https://api.venice.ai/api/v1",
     )
 

@@ -51,6 +51,24 @@ def _create_test_png(path: Path, size: int = 512, color=(255, 0, 0, 255)) -> Pat
     return path
 
 
+def _get_available_venice_chat_model(*preferred_model_ids: str) -> str:
+    """Return a current Venice chat model id, preferring the provided ids."""
+
+    available_models = [
+        model.model_id for model in llm.get_models() if isinstance(model, VeniceChat)
+    ]
+    available_model_ids = set(available_models)
+
+    for model_id in preferred_model_ids:
+        if model_id in available_model_ids:
+            return model_id
+
+    if available_models:
+        return available_models[0]
+
+    pytest.skip("No Venice chat models are currently registered")
+
+
 class TestBasicChatCompletion:
     """Test basic chat completion functionality."""
 
@@ -257,13 +275,18 @@ class TestCharacterPersonas:
 
     def test_character_in_prompt(self, cli_runner, isolated_llm_dir):
         """Test using a character persona in a prompt."""
-        # Use a model with a character
+        model_id = _get_available_venice_chat_model(
+            "venice/qwen3-235b-a22b-instruct-2507",
+            "venice/google.gemma-4-26b-a4b-it",
+            "venice/qwen3-4b",
+        )
+
         result = cli_runner.invoke(
             cli,
             [
                 "prompt",
                 "-m",
-                "venice/qwen3-235b",
+                model_id,
                 "--character",
                 "alan-watts",
                 "What is consciousness?",
