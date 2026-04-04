@@ -51,6 +51,44 @@ def _create_test_png(path: Path, size: int = 512, color=(255, 0, 0, 255)) -> Pat
     return path
 
 
+def _get_available_venice_chat_model(*preferred_model_ids: str) -> str:
+    """Return a current Venice chat model id, preferring the provided ids."""
+
+    available_models = [
+        model.model_id for model in llm.get_models() if isinstance(model, VeniceChat)
+    ]
+    available_model_ids = set(available_models)
+
+    for model_id in preferred_model_ids:
+        if model_id in available_model_ids:
+            return model_id
+
+    if available_models:
+        return available_models[0]
+
+    pytest.skip("No Venice chat models are currently registered")
+
+
+def _get_available_venice_vision_model(*preferred_model_ids: str) -> str:
+    """Return a current Venice vision-capable model id, preferring the provided ids."""
+
+    available_models = [
+        model.model_id
+        for model in llm.get_models()
+        if isinstance(model, VeniceChat) and getattr(model, "vision", False)
+    ]
+    available_model_ids = set(available_models)
+
+    for model_id in preferred_model_ids:
+        if model_id in available_model_ids:
+            return model_id
+
+    if available_models:
+        return available_models[0]
+
+    pytest.skip("No Venice vision-capable chat models are currently registered")
+
+
 class TestBasicChatCompletion:
     """Test basic chat completion functionality."""
 
@@ -148,8 +186,8 @@ class TestNonOpenAIParameters:
     def test_min_p_parameter(self, isolated_llm_dir):
         """Test min_p parameter."""
         chat = VeniceChat(
-            model_id="venice/qwen3-4b",
-            model_name="qwen3-4b",
+            model_id="venice/minimax-m25",
+            model_name="minimax-m25",
             api_base="https://api.venice.ai/api/v1",
         )
 
@@ -160,8 +198,8 @@ class TestNonOpenAIParameters:
     def test_top_k_parameter(self, isolated_llm_dir):
         """Test top_k parameter."""
         chat = VeniceChat(
-            model_id="venice/qwen3-4b",
-            model_name="qwen3-4b",
+            model_id="venice/minimax-m25",
+            model_name="minimax-m25",
             api_base="https://api.venice.ai/api/v1",
         )
 
@@ -172,8 +210,8 @@ class TestNonOpenAIParameters:
     def test_repetition_penalty_parameter(self, isolated_llm_dir):
         """Test repetition_penalty parameter."""
         chat = VeniceChat(
-            model_id="venice/qwen3-4b",
-            model_name="qwen3-4b",
+            model_id="venice/minimax-m25",
+            model_name="minimax-m25",
             api_base="https://api.venice.ai/api/v1",
         )
 
@@ -222,12 +260,12 @@ class TestStructuredOutputs:
 
     def test_json_schema_output(self, isolated_llm_dir):
         """Test that JSON schema responses work correctly."""
-        # Use qwen3-4b which supports response schema
+        # Use zai-org-glm-4.6 which supports response schema
         # Get the model from the registry so it has the right capabilities
-        chat = llm.get_model("venice/qwen3-4b")
+        chat = llm.get_model("venice/zai-org-glm-4.6")
 
         if not chat.supports_schema:
-            pytest.skip("qwen3-4b does not support schema in current model spec")
+            pytest.skip("zai-org-glm-4.6 does not support schema in current model spec")
 
         # Create a simple schema
         schema = {
@@ -257,13 +295,18 @@ class TestCharacterPersonas:
 
     def test_character_in_prompt(self, cli_runner, isolated_llm_dir):
         """Test using a character persona in a prompt."""
-        # Use a model with a character
+        model_id = _get_available_venice_chat_model(
+            "venice/qwen3-235b-a22b-instruct-2507",
+            "venice/google.gemma-4-26b-a4b-it",
+            "venice/minimax-m25",
+        )
+
         result = cli_runner.invoke(
             cli,
             [
                 "prompt",
                 "-m",
-                "venice/qwen3-235b",
+                model_id,
                 "--character",
                 "alan-watts",
                 "What is consciousness?",
@@ -283,13 +326,18 @@ class TestVisionModels:
         The Venice API has validation checks on images that reject very small images.
         """
         image_path = _create_test_png(tmp_path / "vision_test.png", size=512)
+        model_id = _get_available_venice_vision_model(
+            "venice/mistral-small-2603",
+            "venice/google.gemma-4-26b-a4b-it",
+            "venice/qwen3-vl-235b-a22b",
+        )
 
         result = cli_runner.invoke(
             cli,
             [
                 "prompt",
                 "-m",
-                "venice/mistral-31-24b",
+                model_id,
                 "-a",
                 str(image_path),
                 "--no-stream",

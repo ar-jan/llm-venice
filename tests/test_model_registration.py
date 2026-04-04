@@ -15,7 +15,7 @@ def test_registers_from_cache_without_key(monkeypatch, tmp_path):
         json.dumps(
             [
                 {
-                    "id": "qwen3-4b",
+                    "id": "minimax-m25",
                     "type": "text",
                     "model_spec": {"capabilities": {}},
                 }
@@ -36,8 +36,8 @@ def test_registers_from_cache_without_key(monkeypatch, tmp_path):
 
     register_venice_models(register)
 
-    assert [m.model_id for m in registered] == ["venice/qwen3-4b"]
-    assert [m.model_id for m in registered_async] == ["venice/qwen3-4b"]
+    assert [m.model_id for m in registered] == ["venice/minimax-m25"]
+    assert [m.model_id for m in registered_async] == ["venice/minimax-m25"]
 
 
 def test_register_skips_without_cache_or_key(monkeypatch, tmp_path):

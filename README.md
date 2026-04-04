@@ -50,7 +50,7 @@ Run a prompt:
 
 Start an interactive chat session:
 
-`llm chat --model venice/mistral-31-24b`
+`llm chat --model venice/mistral-small-3-2-24b-instruct`
 
 #### Structured Outputs
 
@@ -58,7 +58,7 @@ Some models support structuring their output according to a JSON schema (supplie
 
 This works via llm's `--schema` options, for example:
 
-`llm -m venice/llama-3.2-3b --schema "name, age int, one_sentence_bio" "Invent an evil supervillain"`
+`llm -m venice/zai-org-glm-4.6 --schema "name, age int, one_sentence_bio" "Invent an evil supervillain"`
 
 Consult llm's [schemas tutorial](https://llm.datasette.io/en/stable/schemas.html) for more options.
 
@@ -77,7 +77,7 @@ You can use tools provided via llm plugins. LLM provides two built-in tools:
 # llm_version
 llm -m venice/mistral-31-24b --tool llm_version "What version of LLM is this?" --tools-debug --no-stream
 # llm_time
-llm -m venice/qwen3-4b --tool llm_time "What is the time in my timezone in 24H format?" --tools-debug --no-stream
+llm -m venice/minimax-m25 --tool llm_time "What is the time in my timezone in 24H format?" --tools-debug --no-stream
 ```
 
 You can also provide your own custom or one-off functions provided inline or in a file. Following LLM's [example](https://llm.datasette.io/en/stable/usage.html#usage-tools):
@@ -117,7 +117,7 @@ It is recommended to use web search in combination with `--no-stream` so the sea
 
 **--character character_slug** to use a public character, for example:
 
-`llm -m venice/qwen3-235b --character alan-watts "What is the meaning of life?"`
+`llm -m venice/google.gemma-4-26b-a4b-it --character alan-watts "What is the meaning of life?"`
 
 ### Text-to-speech
 
