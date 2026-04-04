@@ -393,6 +393,11 @@ def render_notices_for_output(notices: list[VeniceNotice]) -> str:
     return "\n".join(rendered) + "\n"
 
 
+def render_saved_paths_for_output(output_paths: list[pathlib.Path]) -> str:
+    """Render one or more saved image paths for llm model output."""
+    return "\n".join(f"Image saved to {saved_path}" for saved_path in output_paths)
+
+
 class VeniceImage(llm.KeyModel):
     """Venice AI image generation model."""
 
@@ -451,8 +456,7 @@ class VeniceImage(llm.KeyModel):
                 rendered_notices = render_notices_for_output(result.notices)
                 if rendered_notices:
                     yield rendered_notices
-                for saved_path in result.output_paths:
-                    yield f"Image saved to {saved_path}"
+                yield render_saved_paths_for_output(result.output_paths)
             except (OSError, ValueError) as exc:
                 raise llm.ModelError(f"Failed to write image file: {exc}") from exc
         except VeniceAPIError as exc:
@@ -518,8 +522,7 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
                 rendered_notices = render_notices_for_output(result.notices)
                 if rendered_notices:
                     yield rendered_notices
-                for saved_path in result.output_paths:
-                    yield f"Image saved to {saved_path}"
+                yield render_saved_paths_for_output(result.output_paths)
             except (OSError, ValueError) as exc:
                 raise llm.ModelError(f"Failed to write image file: {exc}") from exc
         except VeniceAPIError as exc:

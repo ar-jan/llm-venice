@@ -410,7 +410,7 @@ def test_venice_image_variants_save_all_images_and_expose_response_json(
     assert first_path.read_bytes() == first_image
     assert second_path.exists()
     assert second_path.read_bytes() == second_image
-    assert results == [f"Image saved to {first_path}", f"Image saved to {second_path}"]
+    assert results == [f"Image saved to {first_path}\nImage saved to {second_path}"]
     assert response.response_json["request"]["model"] == "test-model"
     assert response.response_json["timing"]["inference"] == 2.5
     assert response.response_json["is_blurred"] is False
