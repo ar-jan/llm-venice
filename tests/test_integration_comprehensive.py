@@ -166,8 +166,8 @@ class TestNonOpenAIParameters:
     def test_min_p_parameter(self, isolated_llm_dir):
         """Test min_p parameter."""
         chat = VeniceChat(
-            model_id="venice/qwen3-4b",
-            model_name="qwen3-4b",
+            model_id="venice/minimax-m25",
+            model_name="minimax-m25",
             api_base="https://api.venice.ai/api/v1",
         )
 
@@ -178,8 +178,8 @@ class TestNonOpenAIParameters:
     def test_top_k_parameter(self, isolated_llm_dir):
         """Test top_k parameter."""
         chat = VeniceChat(
-            model_id="venice/qwen3-4b",
-            model_name="qwen3-4b",
+            model_id="venice/minimax-m25",
+            model_name="minimax-m25",
             api_base="https://api.venice.ai/api/v1",
         )
 
@@ -190,8 +190,8 @@ class TestNonOpenAIParameters:
     def test_repetition_penalty_parameter(self, isolated_llm_dir):
         """Test repetition_penalty parameter."""
         chat = VeniceChat(
-            model_id="venice/qwen3-4b",
-            model_name="qwen3-4b",
+            model_id="venice/minimax-m25",
+            model_name="minimax-m25",
             api_base="https://api.venice.ai/api/v1",
         )
 
@@ -240,12 +240,12 @@ class TestStructuredOutputs:
 
     def test_json_schema_output(self, isolated_llm_dir):
         """Test that JSON schema responses work correctly."""
-        # Use qwen3-4b which supports response schema
+        # Use zai-org-glm-4.6 which supports response schema
         # Get the model from the registry so it has the right capabilities
-        chat = llm.get_model("venice/qwen3-4b")
+        chat = llm.get_model("venice/zai-org-glm-4.6")
 
         if not chat.supports_schema:
-            pytest.skip("qwen3-4b does not support schema in current model spec")
+            pytest.skip("zai-org-glm-4.6 does not support schema in current model spec")
 
         # Create a simple schema
         schema = {
@@ -278,7 +278,7 @@ class TestCharacterPersonas:
         model_id = _get_available_venice_chat_model(
             "venice/qwen3-235b-a22b-instruct-2507",
             "venice/google.gemma-4-26b-a4b-it",
-            "venice/qwen3-4b",
+            "venice/minimax-m25",
         )
 
         result = cli_runner.invoke(

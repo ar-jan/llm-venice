@@ -185,7 +185,7 @@ def test_cli_thinking_parameters(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/qwen3-4b",
+                "venice/minimax-m25",
                 "--strip-thinking-response",
                 "--no-log",
                 "Test prompt 1",
@@ -198,7 +198,7 @@ def test_cli_thinking_parameters(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/qwen3-4b",
+                "venice/minimax-m25",
                 "--disable-thinking",
                 "--no-log",
                 "Test prompt 2",
@@ -211,7 +211,7 @@ def test_cli_thinking_parameters(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/qwen3-4b",
+                "venice/minimax-m25",
                 "--strip-thinking-response",
                 "--disable-thinking",
                 "--no-log",
@@ -305,8 +305,8 @@ def test_thinking_parameters_build_kwargs():
 def test_venice_parameters_edge_cases():
     """Test edge cases and validation for venice_parameters."""
     chat = VeniceChat(
-        model_id="venice/qwen3-4b",
-        model_name="qwen3-4b",
+        model_id="venice/minimax-m25",
+        model_name="minimax-m25",
         api_base="https://api.venice.ai/api/v1",
     )
 
@@ -943,7 +943,7 @@ def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch):
     mock_response.usage = lambda: (10, 5, 15)
 
     # Ensure model supports web search to satisfy validation
-    model = llm.get_model("venice/qwen3-4b")
+    model = llm.get_model("venice/minimax-m25")
     model.supports_web_search = True  # type: ignore[invalid-argument-type]
 
     # Spy on process_venice_options to verify options are forwarded
@@ -966,7 +966,7 @@ def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/qwen3-4b",
+                "venice/minimax-m25",
                 "--web-citations",
                 "--web-search",
                 "on",
@@ -985,7 +985,7 @@ def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/qwen3-4b",
+                "venice/minimax-m25",
                 "--web-scraping",
                 "--no-log",
                 "Test with scraping",
@@ -1001,7 +1001,7 @@ def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/qwen3-4b",
+                "venice/minimax-m25",
                 "--include-search-results-in-stream",
                 "--web-search",
                 "on",
@@ -1020,7 +1020,7 @@ def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/qwen3-4b",
+                "venice/minimax-m25",
                 "--web-citations",
                 "--include-search-results-in-stream",
                 "--web-search",

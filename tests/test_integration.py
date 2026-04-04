@@ -50,15 +50,15 @@ def test_prompt_web_search(cli_runner, isolated_llm_dir):
 
 
 def test_thinking_parameters_with_real_api(isolated_llm_dir):
-    """Test that thinking parameters work correctly with the real Venice API using qwen3-4b model.
+    """Test that thinking parameters work correctly with the real Venice API using minimax-m25 model.
 
     This test requires a valid Venice API key to be set in the environment.
-    It uses qwen3-4b which is a small, fast model suitable for testing.
+    It uses minimax-m25 which is a small, fast model suitable for testing.
     """
-    # Use qwen3-4b model for testing
+    # Use minimax-m25 model for testing
     chat = VeniceChat(
-        model_id="venice/qwen3-4b",
-        model_name="qwen3-4b",
+        model_id="venice/minimax-m25",
+        model_name="minimax-m25",
         api_base="https://api.venice.ai/api/v1",
     )
 
