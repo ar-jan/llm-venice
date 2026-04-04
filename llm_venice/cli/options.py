@@ -1,5 +1,22 @@
 """Venice-specific CLI option processing."""
 
+import llm
+from llm_venice.models.image import VeniceImage
+
+
+def _normalize_web_search_option(model_id: str, web_search: str):
+    """Map CLI --web-search values to the current model's option type."""
+    try:
+        model = llm.get_model(model_id)
+    except KeyError:
+        return web_search
+
+    if not isinstance(model, VeniceImage):
+        return web_search
+    if web_search == "auto":
+        raise llm.ModelError(f"Model {model_id} does not support --web-search auto")
+    return web_search == "on"
+
 
 def process_venice_options(kwargs):
     """
@@ -29,7 +46,9 @@ def process_venice_options(kwargs):
         if no_venice_system_prompt:
             options.append(("include_venice_system_prompt", False))
         if web_search:
-            options.append(("enable_web_search", web_search))
+            options.append(
+                ("enable_web_search", _normalize_web_search_option(model_id, web_search))
+            )
         if web_scraping:
             options.append(("enable_web_scraping", True))
         if web_citations:

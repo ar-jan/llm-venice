@@ -84,6 +84,10 @@ class VeniceImageOptions(llm.Options):
         description="Embed prompt generation information in the image's EXIF metadata",
         default=False,
     )
+    enable_web_search: Optional[bool] = Field(
+        description="Enable web search for image generation on supported models",
+        default=None,
+    )
     output_dir: Optional[Union[pathlib.Path, str]] = Field(
         description="Directory to save generated images",
         default=None,
@@ -179,8 +183,10 @@ def generate_image_result(
     *,
     prompt: str,
     options: llm.Options,
+    model_id: str,
     model_name: str,
     api_key: str,
+    supports_web_search: bool = False,
     image_constraints: Optional[dict[str, Any]] = None,
 ) -> ImageGenerationResult:
     """
@@ -194,6 +200,10 @@ def generate_image_result(
     overwrite_files = options_dict.pop("overwrite_files", False)
     return_binary = options_dict.get("return_binary", False)
     image_format = options_dict.get("format")
+    web_search_requested = options_dict.get("enable_web_search")
+
+    if web_search_requested is True and not supports_web_search:
+        raise llm.ModelError(f"Model {model_id} does not support web search")
 
     resolved_output_dir = validate_output_directory(output_dir)
     notices = normalize_image_options_for_model(
@@ -331,6 +341,7 @@ class VeniceImage(llm.KeyModel):
     can_stream = False
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
+    supports_web_search = False
 
     def __init__(self, model_id, model_name=None, image_constraints=None):
         self.model_id = f"venice/{model_id}"
@@ -358,8 +369,10 @@ class VeniceImage(llm.KeyModel):
                 result = generate_image_result(
                     prompt=prompt.prompt,
                     options=prompt.options,
+                    model_id=self.model_id,
                     model_name=self.model_name,
                     api_key=api_key,
+                    supports_web_search=getattr(self, "supports_web_search", False),
                     image_constraints=self.image_constraints,
                 )
             except ValueError as exc:
@@ -393,6 +406,7 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
     can_stream = False
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
+    supports_web_search = False
 
     def __init__(self, model_id, model_name=None, image_constraints=None):
         self.model_id = f"venice/{model_id}"
@@ -421,8 +435,10 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
                     generate_image_result,
                     prompt=prompt.prompt,
                     options=prompt.options,
+                    model_id=self.model_id,
                     model_name=self.model_name,
                     api_key=api_key,
+                    supports_web_search=getattr(self, "supports_web_search", False),
                     image_constraints=self.image_constraints,
                 )
             except ValueError as exc:

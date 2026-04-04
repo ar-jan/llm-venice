@@ -157,6 +157,10 @@ Models that support them can also use API-native aspect-ratio and resolution pre
 
 `llm -m venice/nano-banana-2 "Painting of a traditional Dutch windmill" -o aspect_ratio 16:9 -o resolution 4K`
 
+Web-enabled image models can also search the web for fresher visual context:
+
+`llm -m venice/nano-banana-2 "Current spring fashion street photography" -o enable_web_search true`
+
 Besides the Venice API image generation parameters, you can specify the output directory and filename, and whether or not to overwrite existing files.
 
 You can check the available parameters for a model by filtering the model list with `--query`, and show the `--options`:

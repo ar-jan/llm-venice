@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from click.testing import CliRunner
 
 from llm_venice import AsyncVeniceImage, VeniceImage
+from llm_venice.cli.options import process_venice_options
 from llm_venice.models.image import ImageGenerationResult
 from llm_venice.notices import VeniceNotice
 from llm_venice.cli.notices import emit_cli_notices
@@ -97,6 +98,30 @@ def test_venice_image_aspect_ratio_and_resolution_in_payload(mock_venice_api_key
         assert payload["resolution"] == "1K"
 
 
+def test_venice_image_enable_web_search_in_payload(mock_venice_api_key):
+    """Test that enable_web_search is included as a top-level image payload field."""
+    model = VeniceImage("test-model")
+    model.supports_web_search = True
+
+    prompt = MagicMock()
+    prompt.prompt = "Test prompt"
+    prompt.options = VeniceImage.Options(enable_web_search=True, return_binary=True)
+
+    with patch("httpx.post") as mock_post:
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.headers = {}
+        mock_response.content = b"\x89PNG\r\n\x1a\n"
+        mock_post.return_value = mock_response
+
+        with patch("pathlib.Path.write_bytes"):
+            with patch.object(model, "get_key", return_value=mock_venice_api_key):
+                list(model.execute(prompt, False, MagicMock(), None))
+
+        payload = mock_post.call_args[1]["json"]
+        assert payload["enable_web_search"] is True
+
+
 def test_venice_image_omits_unset_dimensions_from_payload(mock_venice_api_key):
     """Test that unset width and height are omitted from the API payload."""
     model = VeniceImage("test-model")
@@ -162,6 +187,18 @@ def test_venice_image_content_violation_handling(mock_venice_api_key):
 
             # Verify the API was called
             mock_post.assert_called_once()
+
+
+def test_venice_image_web_search_capability_guard():
+    """Requesting image web search on unsupported models should raise ModelError."""
+    model = VeniceImage("test-model")
+    prompt = MagicMock()
+    prompt.prompt = "Test prompt"
+    prompt.options = VeniceImage.Options(enable_web_search=True)
+
+    with patch.object(model, "get_key", return_value="test-key"):
+        with pytest.raises(llm.ModelError, match="does not support web search"):
+            list(model.execute(prompt, False, MagicMock(), None))
 
 
 def test_venice_image_blurred_header_exposed_for_json_response(mock_venice_api_key, tmp_path):
@@ -927,6 +964,7 @@ def test_venice_image_options_defaults_and_validation():
     assert options.cfg_scale is None
     assert options.seed is None
     assert options.lora_strength is None
+    assert options.enable_web_search is None
     assert options.output_dir is None
     assert options.output_filename is None
 
@@ -972,6 +1010,45 @@ def test_venice_image_options_defaults_and_validation():
         VeniceImage.Options(lora_strength=-1)  # Below minimum
     with pytest.raises(ValidationError):
         VeniceImage.Options(lora_strength=101)  # Above maximum
+
+
+def test_process_venice_options_maps_web_search_for_image_models(monkeypatch):
+    """Image models should receive bool-valued enable_web_search options from CLI."""
+    image_model = VeniceImage("test-model")
+    monkeypatch.setattr("llm_venice.cli.options.llm.get_model", lambda _model_id: image_model)
+
+    kwargs = process_venice_options(
+        {
+            "model_id": "venice/test-model",
+            "web_search": "on",
+            "options": [],
+        }
+    )
+    assert ("enable_web_search", True) in kwargs["options"]
+
+    kwargs = process_venice_options(
+        {
+            "model_id": "venice/test-model",
+            "web_search": "off",
+            "options": [],
+        }
+    )
+    assert ("enable_web_search", False) in kwargs["options"]
+
+
+def test_process_venice_options_rejects_auto_for_image_models(monkeypatch):
+    """Image models only support on/off for the CLI web search shortcut."""
+    image_model = VeniceImage("test-model")
+    monkeypatch.setattr("llm_venice.cli.options.llm.get_model", lambda _model_id: image_model)
+
+    with pytest.raises(llm.ModelError, match="does not support --web-search auto"):
+        process_venice_options(
+            {
+                "model_id": "venice/test-model",
+                "web_search": "auto",
+                "options": [],
+            }
+        )
 
 
 def test_venice_image_drops_aspect_ratio_for_unsupported_model(mock_venice_api_key, tmp_path):

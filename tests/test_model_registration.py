@@ -101,7 +101,11 @@ def test_registers_image_async_model(monkeypatch, tmp_path):
                 {
                     "id": "qwen-image",
                     "type": "image",
-                    "model_spec": {"capabilities": {}, "constraints": constraints},
+                    "model_spec": {
+                        "capabilities": {},
+                        "constraints": constraints,
+                        "supportsWebSearch": True,
+                    },
                 }
             ]
         )
@@ -120,6 +124,8 @@ def test_registers_image_async_model(monkeypatch, tmp_path):
     assert isinstance(registered_async[0], AsyncVeniceImage)
     assert registered[0].image_constraints == constraints
     assert registered_async[0].image_constraints == constraints
+    assert registered[0].supports_web_search is True
+    assert registered_async[0].supports_web_search is True
 
 
 def test_registers_tts_async_model(monkeypatch, tmp_path):
