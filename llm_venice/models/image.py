@@ -11,7 +11,7 @@ from typing import Any, Literal, Optional, Union
 import httpx
 import llm
 from llm.utils import logging_client
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from llm_venice.constants import (
     ENDPOINT_IMAGE_GENERATE,
@@ -75,6 +75,12 @@ class VeniceImageOptions(llm.Options):
     return_binary: Optional[bool] = Field(
         description="Return raw binary instead of base64", default=False
     )
+    variants: Optional[int] = Field(
+        description="Number of images to generate (1-4). Only supported when return_binary is false.",
+        default=None,
+        ge=1,
+        le=4,
+    )
     image_format: Optional[Literal["png", "webp"]] = Field(
         description="The image format to return",
         default=DEFAULT_IMAGE_FORMAT,
@@ -99,11 +105,18 @@ class VeniceImageOptions(llm.Options):
         description="Option to overwrite existing output files", default=False
     )
 
+    @model_validator(mode="after")
+    def validate_variants_with_return_binary(self):
+        """Venice only supports multi-image responses in JSON mode."""
+        if self.return_binary and self.variants is not None:
+            raise ValueError("variants is only supported when return_binary is false")
+        return self
+
 
 @dataclass
 class ImageGenerationResult:
-    image_bytes: Optional[bytes]
-    output_path: Optional[pathlib.Path]
+    image_bytes_list: list[bytes] = dataclass_field(default_factory=list)
+    output_paths: list[pathlib.Path] = dataclass_field(default_factory=list)
     response_json: Optional[dict] = None
     content_violation: bool = False
     is_blurred: bool = False
@@ -125,6 +138,51 @@ def append_blurred_notice(notices: list[VeniceNotice], *, is_blurred: bool) -> N
             message="generated image was blurred because Safe Venice filtered adult material",
         )
     )
+
+
+def _decode_base64_images(data: dict[str, Any]) -> list[bytes]:
+    """Decode the Venice image array from a JSON response."""
+    images = data.get("images")
+    if not isinstance(images, list) or not images:
+        raise ValueError("Response did not include any images")
+
+    decoded_images = []
+    for image_data in images:
+        try:
+            decoded_images.append(base64.b64decode(image_data))
+        except Exception as e:
+            raise ValueError(f"Failed to decode base64 image data: {e}") from e
+    return decoded_images
+
+
+def _filename_with_index(filename: str, index: int) -> str:
+    """Append a 1-based index before the filename extension."""
+    path = pathlib.Path(filename)
+    return f"{path.stem}_{index}{path.suffix}"
+
+
+def _resolve_output_paths(
+    *,
+    directory: pathlib.Path,
+    output_filename: str,
+    overwrite_files: bool,
+    image_count: int,
+) -> list[pathlib.Path]:
+    """Resolve one or more image output paths while preserving current overwrite behavior."""
+    if image_count < 1:
+        raise ValueError("No output paths available to save image")
+
+    if image_count == 1:
+        return [get_unique_filepath(directory, output_filename, overwrite_files)]
+
+    return [
+        get_unique_filepath(
+            directory,
+            _filename_with_index(output_filename, index + 1),
+            overwrite_files,
+        )
+        for index in range(image_count)
+    ]
 
 
 def normalize_image_options_for_model(
@@ -192,7 +250,7 @@ def generate_image_result(
     """
     Generate an image via the Venice API without writing to disk.
 
-    Returns the image bytes, the resolved output path, and any response metadata.
+    Returns the generated image bytes, resolved output paths, and any response metadata.
     """
     options_dict = options.model_dump(by_alias=True)
     output_dir = options_dict.pop("output_dir", None)
@@ -200,10 +258,13 @@ def generate_image_result(
     overwrite_files = options_dict.pop("overwrite_files", False)
     return_binary = options_dict.get("return_binary", False)
     image_format = options_dict.get("format")
+    variants = options_dict.get("variants")
     web_search_requested = options_dict.get("enable_web_search")
 
     if web_search_requested is True and not supports_web_search:
         raise llm.ModelError(f"Model {model_id} does not support web search")
+    if return_binary and variants is not None:
+        raise ValueError("variants is only supported when return_binary is false")
 
     resolved_output_dir = validate_output_directory(output_dir)
     notices = normalize_image_options_for_model(
@@ -235,8 +296,6 @@ def generate_image_result(
 
             if content_violation:
                 return ImageGenerationResult(
-                    image_bytes=None,
-                    output_path=None,
                     content_violation=True,
                     is_blurred=is_blurred,
                     notices=notices,
@@ -244,7 +303,7 @@ def generate_image_result(
 
             response_json = None
             if return_binary:
-                image_bytes = r.content
+                image_bytes_list = [r.content]
                 if is_blurred:
                     response_json = {"is_blurred": True}
             else:
@@ -254,11 +313,7 @@ def generate_image_result(
                     "timing": data["timing"],
                     "is_blurred": is_blurred,
                 }
-                image_data = data["images"][0]
-                try:
-                    image_bytes = base64.b64decode(image_data)
-                except Exception as e:
-                    raise ValueError(f"Failed to decode base64 image data: {e}")
+                image_bytes_list = _decode_base64_images(data)
     else:
         r = httpx.post(ENDPOINT_IMAGE_GENERATE, headers=headers, json=payload, timeout=120)
 
@@ -273,8 +328,6 @@ def generate_image_result(
 
         if content_violation:
             return ImageGenerationResult(
-                image_bytes=None,
-                output_path=None,
                 content_violation=True,
                 is_blurred=is_blurred,
                 notices=notices,
@@ -282,7 +335,7 @@ def generate_image_result(
 
         response_json = None
         if return_binary:
-            image_bytes = r.content
+            image_bytes_list = [r.content]
             if is_blurred:
                 response_json = {"is_blurred": True}
         else:
@@ -292,11 +345,7 @@ def generate_image_result(
                 "timing": data["timing"],
                 "is_blurred": is_blurred,
             }
-            image_data = data["images"][0]
-            try:
-                image_bytes = base64.b64decode(image_data)
-            except Exception as e:
-                raise ValueError(f"Failed to decode base64 image data: {e}")
+            image_bytes_list = _decode_base64_images(data)
 
     target_dir = resolved_output_dir or (llm.user_dir() / "images")
 
@@ -304,11 +353,16 @@ def generate_image_result(
         extension = image_format or DEFAULT_IMAGE_FORMAT
         output_filename = generate_timestamp_filename("venice", model_name, extension)
 
-    output_filepath = get_unique_filepath(target_dir, output_filename, overwrite_files)
+    output_filepaths = _resolve_output_paths(
+        directory=target_dir,
+        output_filename=output_filename,
+        overwrite_files=overwrite_files,
+        image_count=len(image_bytes_list),
+    )
 
     return ImageGenerationResult(
-        image_bytes=image_bytes,
-        output_path=output_filepath,
+        image_bytes_list=image_bytes_list,
+        output_paths=output_filepaths,
         response_json=response_json,
         content_violation=False,
         is_blurred=is_blurred,
@@ -316,15 +370,19 @@ def generate_image_result(
     )
 
 
-def save_image_result(result: ImageGenerationResult) -> pathlib.Path:
+def save_image_result(result: ImageGenerationResult) -> list[pathlib.Path]:
     """Persist an ImageGenerationResult to disk."""
-    if result.output_path is None:
+    if not result.output_paths:
         raise ValueError("No output path available to save image")
-    result.output_path.parent.mkdir(parents=True, exist_ok=True)
-    if result.image_bytes is None:
+    if not result.image_bytes_list:
         raise ValueError("No image bytes available to save")
-    result.output_path.write_bytes(result.image_bytes)
-    return result.output_path
+    if len(result.output_paths) != len(result.image_bytes_list):
+        raise ValueError("Image result paths do not match the number of generated images")
+
+    for output_path, image_bytes in zip(result.output_paths, result.image_bytes_list):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(image_bytes)
+    return result.output_paths
 
 
 def render_notices_for_output(notices: list[VeniceNotice]) -> str:
@@ -389,11 +447,12 @@ class VeniceImage(llm.KeyModel):
                 response.response_json = result.response_json
 
             try:
-                saved_path = save_image_result(result)
+                save_image_result(result)
                 rendered_notices = render_notices_for_output(result.notices)
                 if rendered_notices:
                     yield rendered_notices
-                yield f"Image saved to {saved_path}"
+                for saved_path in result.output_paths:
+                    yield f"Image saved to {saved_path}"
             except (OSError, ValueError) as exc:
                 raise llm.ModelError(f"Failed to write image file: {exc}") from exc
         except VeniceAPIError as exc:
@@ -455,11 +514,12 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
                 response.response_json = result.response_json
 
             try:
-                saved_path = await asyncio.to_thread(save_image_result, result)
+                await asyncio.to_thread(save_image_result, result)
                 rendered_notices = render_notices_for_output(result.notices)
                 if rendered_notices:
                     yield rendered_notices
-                yield f"Image saved to {saved_path}"
+                for saved_path in result.output_paths:
+                    yield f"Image saved to {saved_path}"
             except (OSError, ValueError) as exc:
                 raise llm.ModelError(f"Failed to write image file: {exc}") from exc
         except VeniceAPIError as exc:

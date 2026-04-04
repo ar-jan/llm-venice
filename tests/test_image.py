@@ -122,6 +122,35 @@ def test_venice_image_enable_web_search_in_payload(mock_venice_api_key):
         assert payload["enable_web_search"] is True
 
 
+def test_venice_image_variants_in_payload(mock_venice_api_key):
+    """Test that variants is included for JSON image responses."""
+    model = VeniceImage("test-model")
+
+    prompt = MagicMock()
+    prompt.prompt = "Test prompt"
+    prompt.options = VeniceImage.Options(return_binary=False, variants=3)
+
+    base64_encoded = base64.b64encode(b"\x89PNG\r\n\x1a\n").decode("utf-8")
+
+    with patch("httpx.post") as mock_post:
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.headers = {}
+        mock_response.json.return_value = {
+            "images": [base64_encoded, base64_encoded, base64_encoded],
+            "request": {"model": "test-model"},
+            "timing": {},
+        }
+        mock_post.return_value = mock_response
+
+        with patch("pathlib.Path.write_bytes"):
+            with patch.object(model, "get_key", return_value=mock_venice_api_key):
+                list(model.execute(prompt, False, MagicMock(), None))
+
+        payload = mock_post.call_args[1]["json"]
+        assert payload["variants"] == 3
+
+
 def test_venice_image_omits_unset_dimensions_from_payload(mock_venice_api_key):
     """Test that unset width and height are omitted from the API payload."""
     model = VeniceImage("test-model")
@@ -337,6 +366,54 @@ def test_venice_image_return_binary_vs_json_parsing(mock_venice_api_key, tmp_pat
                     assert response.response_json["request"]["seed"] == 12345
                     assert response.response_json["timing"]["inference"] == 2.5
                     assert response.response_json["is_blurred"] is False
+
+
+def test_venice_image_variants_save_all_images_and_expose_response_json(
+    mock_venice_api_key, tmp_path
+):
+    """JSON image responses with variants should save every returned image."""
+    model = VeniceImage("test-model")
+
+    prompt = MagicMock()
+    prompt.prompt = "Test variants"
+    prompt.options = VeniceImage.Options(
+        return_binary=False,
+        variants=2,
+        output_dir=tmp_path,
+        output_filename="variant.png",
+    )
+
+    first_image = b"\x89PNG\r\n\x1a\nfirst"
+    second_image = b"\x89PNG\r\n\x1a\nsecond"
+    first_encoded = base64.b64encode(first_image).decode("utf-8")
+    second_encoded = base64.b64encode(second_image).decode("utf-8")
+
+    with patch("httpx.post") as mock_post:
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.headers = {}
+        mock_response.json.return_value = {
+            "images": [first_encoded, second_encoded],
+            "request": {"model": "test-model"},
+            "timing": {"inference": 2.5},
+        }
+        mock_post.return_value = mock_response
+
+        response = MagicMock()
+        with patch.object(model, "get_key", return_value=mock_venice_api_key):
+            results = list(model.execute(prompt, False, response, None))
+
+    first_path = tmp_path / "variant_1.png"
+    second_path = tmp_path / "variant_2.png"
+
+    assert first_path.exists()
+    assert first_path.read_bytes() == first_image
+    assert second_path.exists()
+    assert second_path.read_bytes() == second_image
+    assert results == [f"Image saved to {first_path}", f"Image saved to {second_path}"]
+    assert response.response_json["request"]["model"] == "test-model"
+    assert response.response_json["timing"]["inference"] == 2.5
+    assert response.response_json["is_blurred"] is False
 
 
 def test_venice_image_default_output_directory_creation(mock_venice_api_key, tmp_path):
@@ -955,6 +1032,7 @@ def test_venice_image_options_defaults_and_validation():
     assert options.image_format == "png"
     assert options.hide_watermark is True
     assert options.return_binary is False
+    assert options.variants is None
     assert options.safe_mode is False
     assert options.overwrite_files is False
     assert options.embed_exif_metadata is False
@@ -1010,6 +1088,12 @@ def test_venice_image_options_defaults_and_validation():
         VeniceImage.Options(lora_strength=-1)  # Below minimum
     with pytest.raises(ValidationError):
         VeniceImage.Options(lora_strength=101)  # Above maximum
+    with pytest.raises(ValidationError):
+        VeniceImage.Options(variants=0)  # Below minimum
+    with pytest.raises(ValidationError):
+        VeniceImage.Options(variants=5)  # Above maximum
+    with pytest.raises(ValidationError):
+        VeniceImage.Options(return_binary=True, variants=2)
 
 
 def test_process_venice_options_maps_web_search_for_image_models(monkeypatch):
@@ -1114,8 +1198,6 @@ def test_venice_image_drops_resolution_for_unsupported_model(mock_venice_api_key
 def test_image_generation_result_exposes_structured_notices():
     """ImageGenerationResult should retain structured notices."""
     result = ImageGenerationResult(
-        image_bytes=None,
-        output_path=None,
         notices=[
             VeniceNotice(
                 level="info",
@@ -1313,8 +1395,8 @@ def test_async_venice_image_generate_and_save(monkeypatch, tmp_path, mock_venice
         prompt.options = VeniceImage.Options(return_binary=True)
 
         fake_result = ImageGenerationResult(
-            image_bytes=b"binary",
-            output_path=tmp_path / "async.png",
+            image_bytes_list=[b"binary"],
+            output_paths=[tmp_path / "async.png"],
             response_json={"request": {"model": "test-model"}},
             content_violation=False,
         )
@@ -1327,7 +1409,7 @@ def test_async_venice_image_generate_and_save(monkeypatch, tmp_path, mock_venice
             "llm_venice.models.image.generate_image_result", lambda **_: fake_result
         )
         monkeypatch.setattr(
-            "llm_venice.models.image.save_image_result", lambda result: result.output_path
+            "llm_venice.models.image.save_image_result", lambda result: result.output_paths
         )
         monkeypatch.setattr(model, "get_key", lambda key=None: mock_venice_api_key)
 
@@ -1337,7 +1419,7 @@ def test_async_venice_image_generate_and_save(monkeypatch, tmp_path, mock_venice
             chunks.append(chunk)
 
         assert response.response_json == fake_result.response_json
-        assert chunks == [f"Image saved to {fake_result.output_path}"]
+        assert chunks == [f"Image saved to {fake_result.output_paths[0]}"]
 
     asyncio.run(run())
 
@@ -1353,8 +1435,6 @@ def test_async_venice_image_content_violation(monkeypatch, mock_venice_api_key):
         prompt.options = VeniceImage.Options()
 
         fake_result = ImageGenerationResult(
-            image_bytes=None,
-            output_path=None,
             response_json=None,
             content_violation=True,
         )
@@ -1418,8 +1498,8 @@ def test_async_venice_image_wraps_write_errors_in_model_error(
         prompt.options = VeniceImage.Options()
 
         fake_result = ImageGenerationResult(
-            image_bytes=b"binary",
-            output_path=tmp_path / "async.png",
+            image_bytes_list=[b"binary"],
+            output_paths=[tmp_path / "async.png"],
             response_json=None,
             content_violation=False,
         )
