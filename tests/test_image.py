@@ -930,7 +930,7 @@ def test_venice_image_drops_aspect_ratio_for_unsupported_model(mock_venice_api_k
         payload = mock_post.call_args[1]["json"]
         assert "aspect_ratio" not in payload
         assert (
-            results[0] == "Info: dropped unsupported options for model 'test-model': aspect_ratio"
+            results[0] == "Info: dropped unsupported options for model 'test-model': aspect_ratio\n"
         )
         assert results[1].startswith("Image saved to ")
 
@@ -959,7 +959,9 @@ def test_venice_image_drops_resolution_for_unsupported_model(mock_venice_api_key
 
         payload = mock_post.call_args[1]["json"]
         assert "resolution" not in payload
-        assert results[0] == "Info: dropped unsupported options for model 'test-model': resolution"
+        assert (
+            results[0] == "Info: dropped unsupported options for model 'test-model': resolution\n"
+        )
         assert results[1].startswith("Image saved to ")
 
 

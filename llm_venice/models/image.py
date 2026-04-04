@@ -282,6 +282,14 @@ def save_image_result(result: ImageGenerationResult) -> pathlib.Path:
     return result.output_path
 
 
+def render_notices_for_output(notices: list[VeniceNotice]) -> str:
+    """Render notices for llm model output, separated from following text."""
+    rendered = render_notices(notices)
+    if not rendered:
+        return ""
+    return "\n".join(rendered) + "\n"
+
+
 class VeniceImage(llm.KeyModel):
     """Venice AI image generation model."""
 
@@ -323,7 +331,9 @@ class VeniceImage(llm.KeyModel):
                 raise llm.ModelError(str(exc)) from exc
 
             if result.content_violation:
-                yield from render_notices(result.notices)
+                rendered_notices = render_notices_for_output(result.notices)
+                if rendered_notices:
+                    yield rendered_notices
                 yield "Response marked as content violation; no image was returned."
                 return
 
@@ -332,7 +342,9 @@ class VeniceImage(llm.KeyModel):
 
             try:
                 saved_path = save_image_result(result)
-                yield from render_notices(result.notices)
+                rendered_notices = render_notices_for_output(result.notices)
+                if rendered_notices:
+                    yield rendered_notices
                 yield f"Image saved to {saved_path}"
             except (OSError, ValueError) as exc:
                 raise llm.ModelError(f"Failed to write image file: {exc}") from exc
@@ -382,8 +394,9 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
                 raise llm.ModelError(str(exc)) from exc
 
             if result.content_violation:
-                for notice_text in render_notices(result.notices):
-                    yield notice_text
+                rendered_notices = render_notices_for_output(result.notices)
+                if rendered_notices:
+                    yield rendered_notices
                 yield "Response marked as content violation; no image was returned."
                 return
 
@@ -392,8 +405,9 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
 
             try:
                 saved_path = await asyncio.to_thread(save_image_result, result)
-                for notice_text in render_notices(result.notices):
-                    yield notice_text
+                rendered_notices = render_notices_for_output(result.notices)
+                if rendered_notices:
+                    yield rendered_notices
                 yield f"Image saved to {saved_path}"
             except (OSError, ValueError) as exc:
                 raise llm.ModelError(f"Failed to write image file: {exc}") from exc
