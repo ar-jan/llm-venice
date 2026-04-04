@@ -102,7 +102,25 @@ class ImageGenerationResult:
     output_path: Optional[pathlib.Path]
     response_json: Optional[dict] = None
     content_violation: bool = False
+    is_blurred: bool = False
     notices: list[VeniceNotice] = dataclass_field(default_factory=list)
+
+
+def _is_true_response_header(headers: httpx.Headers, header_name: str) -> bool:
+    """Return True when a Venice boolean response header is explicitly enabled."""
+    return headers.get(header_name, "").lower() == "true"
+
+
+def append_blurred_notice(notices: list[VeniceNotice], *, is_blurred: bool) -> None:
+    """Record a warning when Venice returns a blurred image."""
+    if not is_blurred:
+        return
+    notices.append(
+        VeniceNotice(
+            level="warning",
+            message="generated image was blurred because Safe Venice filtered adult material",
+        )
+    )
 
 
 def normalize_image_options_for_model(
@@ -201,22 +219,30 @@ def generate_image_result(
             except httpx.HTTPStatusError as exc:
                 raise_api_error("Generating image", exc)
 
-            if r.headers.get("x-venice-is-content-violation") == "true":
+            content_violation = _is_true_response_header(r.headers, "x-venice-is-content-violation")
+            is_blurred = _is_true_response_header(r.headers, "x-venice-is-blurred")
+            append_blurred_notice(notices, is_blurred=is_blurred)
+
+            if content_violation:
                 return ImageGenerationResult(
                     image_bytes=None,
                     output_path=None,
                     content_violation=True,
+                    is_blurred=is_blurred,
                     notices=notices,
                 )
 
             response_json = None
             if return_binary:
                 image_bytes = r.content
+                if is_blurred:
+                    response_json = {"is_blurred": True}
             else:
                 data = r.json()
                 response_json = {
                     "request": data["request"],
                     "timing": data["timing"],
+                    "is_blurred": is_blurred,
                 }
                 image_data = data["images"][0]
                 try:
@@ -231,22 +257,30 @@ def generate_image_result(
         except httpx.HTTPStatusError as exc:
             raise_api_error("Generating image", exc)
 
-        if r.headers.get("x-venice-is-content-violation") == "true":
+        content_violation = _is_true_response_header(r.headers, "x-venice-is-content-violation")
+        is_blurred = _is_true_response_header(r.headers, "x-venice-is-blurred")
+        append_blurred_notice(notices, is_blurred=is_blurred)
+
+        if content_violation:
             return ImageGenerationResult(
                 image_bytes=None,
                 output_path=None,
                 content_violation=True,
+                is_blurred=is_blurred,
                 notices=notices,
             )
 
         response_json = None
         if return_binary:
             image_bytes = r.content
+            if is_blurred:
+                response_json = {"is_blurred": True}
         else:
             data = r.json()
             response_json = {
                 "request": data["request"],
                 "timing": data["timing"],
+                "is_blurred": is_blurred,
             }
             image_data = data["images"][0]
             try:
@@ -267,6 +301,7 @@ def generate_image_result(
         output_path=output_filepath,
         response_json=response_json,
         content_violation=False,
+        is_blurred=is_blurred,
         notices=notices,
     )
 
