@@ -69,6 +69,26 @@ def _get_available_venice_chat_model(*preferred_model_ids: str) -> str:
     pytest.skip("No Venice chat models are currently registered")
 
 
+def _get_available_venice_vision_model(*preferred_model_ids: str) -> str:
+    """Return a current Venice vision-capable model id, preferring the provided ids."""
+
+    available_models = [
+        model.model_id
+        for model in llm.get_models()
+        if isinstance(model, VeniceChat) and getattr(model, "vision", False)
+    ]
+    available_model_ids = set(available_models)
+
+    for model_id in preferred_model_ids:
+        if model_id in available_model_ids:
+            return model_id
+
+    if available_models:
+        return available_models[0]
+
+    pytest.skip("No Venice vision-capable chat models are currently registered")
+
+
 class TestBasicChatCompletion:
     """Test basic chat completion functionality."""
 
@@ -306,13 +326,18 @@ class TestVisionModels:
         The Venice API has validation checks on images that reject very small images.
         """
         image_path = _create_test_png(tmp_path / "vision_test.png", size=512)
+        model_id = _get_available_venice_vision_model(
+            "venice/mistral-small-2603",
+            "venice/google.gemma-4-26b-a4b-it",
+            "venice/qwen3-vl-235b-a22b",
+        )
 
         result = cli_runner.invoke(
             cli,
             [
                 "prompt",
                 "-m",
-                "venice/mistral-31-24b",
+                model_id,
                 "-a",
                 str(image_path),
                 "--no-stream",
