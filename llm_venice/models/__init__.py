@@ -40,6 +40,10 @@ def register_venice_models(register):
         model_spec = model.get("model_spec", {})
         capabilities = model_spec.get("capabilities", {})
         constraints = model_spec.get("constraints")
+        supports_web_search = model_spec.get(
+            "supportsWebSearch",
+            capabilities.get("supportsWebSearch", False),
+        )
 
         if model.get("type") == "text":
             model_instance = VeniceChat(
@@ -61,22 +65,25 @@ def register_venice_models(register):
                 supports_tools=capabilities.get("supportsFunctionCalling", False),
             )
             # Venice-specific capabilities added as instance attributes
-            supports_web_search = capabilities.get("supportsWebSearch", False)
             model_instance.supports_web_search = supports_web_search
             async_model_instance.supports_web_search = supports_web_search
             register(model_instance, async_model=async_model_instance)
         elif model.get("type") == "image":
+            model_instance = VeniceImage(
+                model_id=model_id,
+                model_name=model_id,
+                image_constraints=constraints,
+            )
+            async_model_instance = AsyncVeniceImage(
+                model_id=model_id,
+                model_name=model_id,
+                image_constraints=constraints,
+            )
+            model_instance.supports_web_search = supports_web_search
+            async_model_instance.supports_web_search = supports_web_search
             register(
-                VeniceImage(
-                    model_id=model_id,
-                    model_name=model_id,
-                    image_constraints=constraints,
-                ),
-                async_model=AsyncVeniceImage(
-                    model_id=model_id,
-                    model_name=model_id,
-                    image_constraints=constraints,
-                ),
+                model_instance,
+                async_model=async_model_instance,
             )
         elif model.get("type") == "tts":
             register(

@@ -157,7 +157,13 @@ Models that support them can also use API-native aspect-ratio and resolution pre
 
 `llm -m venice/nano-banana-2 "Painting of a traditional Dutch windmill" -o aspect_ratio 16:9 -o resolution 4K`
 
+Web-enabled image models can also search the web for fresher visual context:
+
+`llm -m venice/nano-banana-2 "Current spring fashion street photography" -o enable_web_search true`
+
 Besides the Venice API image generation parameters, you can specify the output directory and filename, and whether or not to overwrite existing files.
+
+When `return_binary` is `false`, you can also request up to four image variants with `-o variants 4`. Multiple returned images are saved as suffixed filenames such as `image_1.png`, `image_2.png`.
 
 You can check the available parameters for a model by filtering the model list with `--query`, and show the `--options`:
 
@@ -192,7 +198,7 @@ You can call the library helpers directly from Python (minimally tested):
 - `list_characters()` → dict, `persist_characters(data)` writes to `venice_characters.json`
 - API keys: `list_api_keys()`, `get_rate_limits()`, `get_rate_limits_log()`, `create_api_key()`, `delete_api_key()`
 - `perform_image_upscale()` → `UpscaleResult` with bytes and a resolved output path; persist with `write_upscaled_image(result)`
-- `generate_image_result()` → `ImageGenerationResult` with bytes/metadata/output path and structured `notices` for image generation; persist with `save_image_result(result)`
+- `generate_image_result()` → `ImageGenerationResult` with image byte lists/metadata/output paths and structured `notices` for image generation; persist with `save_image_result(result)`
 - `generate_speech_result()` → `SpeechGenerationResult` with bytes/metadata/output path for TTS generation; persist with `save_speech_result(result)`
 - `stream_speech_result()` (context manager) yields `SpeechStreamResult` with an iterator of audio chunks and a resolved output path
 
