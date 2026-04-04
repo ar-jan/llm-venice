@@ -5,7 +5,7 @@ import base64
 import os
 import pathlib
 from dataclasses import dataclass
-from typing import Literal, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 import httpx
 import llm
@@ -15,7 +15,6 @@ from pydantic import ConfigDict, Field
 from llm_venice.constants import (
     ENDPOINT_IMAGE_GENERATE,
     DEFAULT_IMAGE_FORMAT,
-    DEFAULT_IMAGE_SIZE,
     DEFAULT_IMAGE_HIDE_WATERMARK,
     DEFAULT_IMAGE_SAFE_MODE,
 )
@@ -41,10 +40,16 @@ class VeniceImageOptions(llm.Options):
         description="Style preset to use for generation", default=None
     )
     height: Optional[int] = Field(
-        description="Height of generated image", default=DEFAULT_IMAGE_SIZE, ge=64, le=1280
+        description="Height of generated image", default=None, ge=64, le=1280
     )
     width: Optional[int] = Field(
-        description="Width of generated image", default=DEFAULT_IMAGE_SIZE, ge=64, le=1280
+        description="Width of generated image", default=None, ge=64, le=1280
+    )
+    aspect_ratio: Optional[str] = Field(
+        description="Aspect ratio to use for generation", default=None
+    )
+    resolution: Optional[str] = Field(
+        description="Resolution preset to use for generation", default=None
     )
     steps: Optional[int] = Field(description="Number of inference steps", default=None, ge=7, le=50)
     cfg_scale: Optional[float] = Field(
@@ -97,12 +102,48 @@ class ImageGenerationResult:
     content_violation: bool = False
 
 
+def validate_image_constraints(
+    *,
+    model_name: str,
+    options_dict: dict[str, Any],
+    image_constraints: Optional[dict[str, Any]] = None,
+) -> None:
+    """Validate image options against cached model constraints when available."""
+    if not image_constraints:
+        return
+
+    aspect_ratio = options_dict.get("aspect_ratio")
+    supported_aspect_ratios = image_constraints.get("aspectRatios")
+    if aspect_ratio is not None and supported_aspect_ratios is not None:
+        if not supported_aspect_ratios:
+            raise ValueError(f"Model '{model_name}' does not support aspect_ratio")
+        if aspect_ratio not in supported_aspect_ratios:
+            allowed = ", ".join(supported_aspect_ratios)
+            raise ValueError(
+                f"Invalid aspect_ratio '{aspect_ratio}' for model '{model_name}'. "
+                f"Supported values: {allowed}"
+            )
+
+    resolution = options_dict.get("resolution")
+    supported_resolutions = image_constraints.get("resolutions")
+    if resolution is not None and supported_resolutions is not None:
+        if not supported_resolutions:
+            raise ValueError(f"Model '{model_name}' does not support resolution")
+        if resolution not in supported_resolutions:
+            allowed = ", ".join(supported_resolutions)
+            raise ValueError(
+                f"Invalid resolution '{resolution}' for model '{model_name}'. "
+                f"Supported values: {allowed}"
+            )
+
+
 def generate_image_result(
     *,
     prompt: str,
     options: llm.Options,
     model_name: str,
     api_key: str,
+    image_constraints: Optional[dict[str, Any]] = None,
 ) -> ImageGenerationResult:
     """
     Generate an image via the Venice API without writing to disk.
@@ -117,6 +158,11 @@ def generate_image_result(
     image_format = options_dict.get("format")
 
     resolved_output_dir = validate_output_directory(output_dir)
+    validate_image_constraints(
+        model_name=model_name,
+        options_dict=options_dict,
+        image_constraints=image_constraints,
+    )
 
     payload = {
         "model": model_name,
@@ -214,9 +260,10 @@ class VeniceImage(llm.KeyModel):
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
 
-    def __init__(self, model_id, model_name=None):
+    def __init__(self, model_id, model_name=None, image_constraints=None):
         self.model_id = f"venice/{model_id}"
         self.model_name = model_id
+        self.image_constraints = image_constraints
 
     def __str__(self):
         return f"Venice Image: {self.model_id}"
@@ -241,6 +288,7 @@ class VeniceImage(llm.KeyModel):
                     options=prompt.options,
                     model_name=self.model_name,
                     api_key=api_key,
+                    image_constraints=self.image_constraints,
                 )
             except ValueError as exc:
                 raise llm.ModelError(str(exc)) from exc
@@ -268,9 +316,10 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
 
-    def __init__(self, model_id, model_name=None):
+    def __init__(self, model_id, model_name=None, image_constraints=None):
         self.model_id = f"venice/{model_id}"
         self.model_name = model_id
+        self.image_constraints = image_constraints
 
     def __str__(self):
         return f"Venice Image: {self.model_id}"
@@ -296,6 +345,7 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
                     options=prompt.options,
                     model_name=self.model_name,
                     api_key=api_key,
+                    image_constraints=self.image_constraints,
                 )
             except ValueError as exc:
                 raise llm.ModelError(str(exc)) from exc

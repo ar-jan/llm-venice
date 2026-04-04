@@ -65,6 +65,62 @@ def test_venice_image_format_in_payload(mock_venice_api_key):
                     assert payload["format"] == format_value
 
 
+def test_venice_image_aspect_ratio_and_resolution_in_payload(mock_venice_api_key):
+    """Test that aspect_ratio and resolution are included in the API payload."""
+    model = VeniceImage("test-model")
+
+    prompt = MagicMock()
+    prompt.prompt = "Test prompt"
+    prompt.options = VeniceImage.Options(
+        aspect_ratio="16:9",
+        resolution="1K",
+        return_binary=True,
+    )
+
+    with patch("httpx.post") as mock_post:
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.headers = {}
+        mock_response.content = b"\x89PNG\r\n\x1a\n"
+        mock_post.return_value = mock_response
+
+        with patch("pathlib.Path.write_bytes"):
+            with patch.object(model, "get_key", return_value=mock_venice_api_key):
+                list(model.execute(prompt, False, MagicMock(), None))
+
+        payload = mock_post.call_args[1]["json"]
+        assert payload["aspect_ratio"] == "16:9"
+        assert payload["resolution"] == "1K"
+
+
+def test_venice_image_omits_unset_dimensions_from_payload(mock_venice_api_key):
+    """Test that unset width and height are omitted from the API payload."""
+    model = VeniceImage("test-model")
+
+    prompt = MagicMock()
+    prompt.prompt = "Test prompt"
+    prompt.options = VeniceImage.Options(
+        aspect_ratio="16:9",
+        resolution="1K",
+        return_binary=True,
+    )
+
+    with patch("httpx.post") as mock_post:
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.headers = {}
+        mock_response.content = b"\x89PNG\r\n\x1a\n"
+        mock_post.return_value = mock_response
+
+        with patch("pathlib.Path.write_bytes"):
+            with patch.object(model, "get_key", return_value=mock_venice_api_key):
+                list(model.execute(prompt, False, MagicMock(), None))
+
+        payload = mock_post.call_args[1]["json"]
+        assert "width" not in payload
+        assert "height" not in payload
+
+
 def test_venice_image_content_violation_handling(mock_venice_api_key):
     """Test that content violation responses are detected and reported."""
     # Create a VeniceImage model instance
@@ -782,8 +838,10 @@ def test_venice_image_options_defaults_and_validation():
 
     # Test default values
     options = VeniceImage.Options()
-    assert options.height == 1024
-    assert options.width == 1024
+    assert options.height is None
+    assert options.width is None
+    assert options.aspect_ratio is None
+    assert options.resolution is None
     assert options.image_format == "png"
     assert options.hide_watermark is True
     assert options.return_binary is False
@@ -803,6 +861,8 @@ def test_venice_image_options_defaults_and_validation():
     dumped = options.model_dump(by_alias=True)
     assert "format" in dumped
     assert dumped["format"] == "png"
+    assert dumped["width"] is None
+    assert dumped["height"] is None
 
     # Test validation - height bounds
     with pytest.raises(ValidationError):
@@ -839,6 +899,44 @@ def test_venice_image_options_defaults_and_validation():
         VeniceImage.Options(lora_strength=-1)  # Below minimum
     with pytest.raises(ValidationError):
         VeniceImage.Options(lora_strength=101)  # Above maximum
+
+
+def test_venice_image_rejects_unsupported_aspect_ratio(mock_venice_api_key):
+    """Test aspect_ratio validation against cached model constraints."""
+    model = VeniceImage(
+        "test-model",
+        image_constraints={"aspectRatios": ["1:1", "16:9"]},
+    )
+
+    prompt = MagicMock()
+    prompt.prompt = "Test prompt"
+    prompt.options = VeniceImage.Options(aspect_ratio="9:16", return_binary=True)
+
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        with pytest.raises(
+            llm.ModelError,
+            match="Invalid aspect_ratio '9:16' for model 'test-model'",
+        ):
+            list(model.execute(prompt, False, MagicMock(), None))
+
+
+def test_venice_image_rejects_unsupported_resolution(mock_venice_api_key):
+    """Test resolution validation against cached model constraints."""
+    model = VeniceImage(
+        "test-model",
+        image_constraints={"resolutions": ["1K", "2K"]},
+    )
+
+    prompt = MagicMock()
+    prompt.prompt = "Test prompt"
+    prompt.options = VeniceImage.Options(resolution="4K", return_binary=True)
+
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        with pytest.raises(
+            llm.ModelError,
+            match="Invalid resolution '4K' for model 'test-model'",
+        ):
+            list(model.execute(prompt, False, MagicMock(), None))
 
 
 def test_venice_image_logging_client_usage(mock_venice_api_key, monkeypatch):

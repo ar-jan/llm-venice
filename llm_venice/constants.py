@@ -4,7 +4,6 @@ VENICE_API_BASE = "https://api.venice.ai/api/v1"
 
 # Image generation defaults
 DEFAULT_IMAGE_FORMAT = "png"
-DEFAULT_IMAGE_SIZE = 1024
 DEFAULT_IMAGE_HIDE_WATERMARK = True
 DEFAULT_IMAGE_SAFE_MODE = False
 

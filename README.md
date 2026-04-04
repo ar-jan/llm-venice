@@ -153,6 +153,10 @@ Generated images are stored in the LLM user directory by default. Example:
 
 `llm -m venice/qwen-image "Painting of a traditional Dutch windmill" -o style_preset "Watercolor"`
 
+Models that support them can also use API-native aspect-ratio and resolution presets:
+
+`llm -m venice/nano-banana-2 "Painting of a traditional Dutch windmill" -o aspect_ratio 16:9 -o resolution 4K`
+
 Besides the Venice API image generation parameters, you can specify the output directory and filename, and whether or not to overwrite existing files.
 
 You can check the available parameters for a model by filtering the model list with `--query`, and show the `--options`:

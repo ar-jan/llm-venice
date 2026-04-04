@@ -37,7 +37,9 @@ def register_venice_models(register):
 
     for model in models:
         model_id = model["id"]
-        capabilities = model.get("model_spec", {}).get("capabilities", {})
+        model_spec = model.get("model_spec", {})
+        capabilities = model_spec.get("capabilities", {})
+        constraints = model_spec.get("constraints")
 
         if model.get("type") == "text":
             model_instance = VeniceChat(
@@ -65,8 +67,16 @@ def register_venice_models(register):
             register(model_instance, async_model=async_model_instance)
         elif model.get("type") == "image":
             register(
-                VeniceImage(model_id=model_id, model_name=model_id),
-                async_model=AsyncVeniceImage(model_id=model_id, model_name=model_id),
+                VeniceImage(
+                    model_id=model_id,
+                    model_name=model_id,
+                    image_constraints=constraints,
+                ),
+                async_model=AsyncVeniceImage(
+                    model_id=model_id,
+                    model_name=model_id,
+                    image_constraints=constraints,
+                ),
             )
         elif model.get("type") == "tts":
             register(
