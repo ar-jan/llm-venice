@@ -25,6 +25,7 @@ from llm_venice.models.image import (
     ImageGenerationResult,
     save_image_result,
 )
+from llm_venice.notices import VeniceNotice
 from llm_venice.api.upscale import UpscaleResult, perform_image_upscale, write_upscaled_image
 from llm_venice.api.refresh import fetch_models, persist_models
 from llm_venice.api.characters import list_characters, persist_characters
@@ -80,6 +81,7 @@ __all__ = [
     "ImageGenerationResult",
     "generate_image_result",
     "save_image_result",
+    "VeniceNotice",
     "UpscaleResult",
     "perform_image_upscale",
     "write_upscaled_image",

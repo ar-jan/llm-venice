@@ -5,7 +5,8 @@ import base64
 import os
 import pathlib
 from dataclasses import dataclass
-from typing import Literal, Optional, Union
+from dataclasses import field as dataclass_field
+from typing import Any, Literal, Optional, Union
 
 import httpx
 import llm
@@ -15,7 +16,6 @@ from pydantic import ConfigDict, Field
 from llm_venice.constants import (
     ENDPOINT_IMAGE_GENERATE,
     DEFAULT_IMAGE_FORMAT,
-    DEFAULT_IMAGE_SIZE,
     DEFAULT_IMAGE_HIDE_WATERMARK,
     DEFAULT_IMAGE_SAFE_MODE,
 )
@@ -26,6 +26,7 @@ from llm_venice.utils import (
 )
 from llm_venice.api.client import get_auth_headers_with_content_type
 from llm_venice.api.errors import VeniceAPIError, raise_api_error
+from llm_venice.notices import VeniceNotice, render_notices
 
 
 class VeniceImageOptions(llm.Options):
@@ -41,10 +42,16 @@ class VeniceImageOptions(llm.Options):
         description="Style preset to use for generation", default=None
     )
     height: Optional[int] = Field(
-        description="Height of generated image", default=DEFAULT_IMAGE_SIZE, ge=64, le=1280
+        description="Height of generated image", default=None, ge=64, le=1280
     )
     width: Optional[int] = Field(
-        description="Width of generated image", default=DEFAULT_IMAGE_SIZE, ge=64, le=1280
+        description="Width of generated image", default=None, ge=64, le=1280
+    )
+    aspect_ratio: Optional[str] = Field(
+        description="Aspect ratio to use for generation", default=None
+    )
+    resolution: Optional[str] = Field(
+        description="Resolution preset to use for generation", default=None
     )
     steps: Optional[int] = Field(description="Number of inference steps", default=None, ge=7, le=50)
     cfg_scale: Optional[float] = Field(
@@ -95,6 +102,59 @@ class ImageGenerationResult:
     output_path: Optional[pathlib.Path]
     response_json: Optional[dict] = None
     content_violation: bool = False
+    notices: list[VeniceNotice] = dataclass_field(default_factory=list)
+
+
+def normalize_image_options_for_model(
+    *,
+    model_name: str,
+    options_dict: dict[str, Any],
+    image_constraints: Optional[dict[str, Any]] = None,
+) -> list[VeniceNotice]:
+    """Drop unsupported options and validate supported values when constraints are available."""
+    if not image_constraints:
+        return []
+
+    dropped_options = []
+
+    aspect_ratio = options_dict.get("aspect_ratio")
+    supported_aspect_ratios = image_constraints.get("aspectRatios")
+    if aspect_ratio is not None:
+        if not supported_aspect_ratios:
+            options_dict.pop("aspect_ratio", None)
+            dropped_options.append("aspect_ratio")
+        elif supported_aspect_ratios is not None:
+            if aspect_ratio not in supported_aspect_ratios:
+                allowed = ", ".join(supported_aspect_ratios)
+                raise ValueError(
+                    f"Invalid aspect_ratio '{aspect_ratio}' for model '{model_name}'. "
+                    f"Supported values: {allowed}"
+                )
+
+    resolution = options_dict.get("resolution")
+    supported_resolutions = image_constraints.get("resolutions")
+    if resolution is not None:
+        if not supported_resolutions:
+            options_dict.pop("resolution", None)
+            dropped_options.append("resolution")
+        elif supported_resolutions is not None:
+            if resolution not in supported_resolutions:
+                allowed = ", ".join(supported_resolutions)
+                raise ValueError(
+                    f"Invalid resolution '{resolution}' for model '{model_name}'. "
+                    f"Supported values: {allowed}"
+                )
+
+    if not dropped_options:
+        return []
+
+    dropped = ", ".join(dropped_options)
+    return [
+        VeniceNotice(
+            level="info",
+            message=f"dropped unsupported options for model '{model_name}': {dropped}",
+        )
+    ]
 
 
 def generate_image_result(
@@ -103,6 +163,7 @@ def generate_image_result(
     options: llm.Options,
     model_name: str,
     api_key: str,
+    image_constraints: Optional[dict[str, Any]] = None,
 ) -> ImageGenerationResult:
     """
     Generate an image via the Venice API without writing to disk.
@@ -117,6 +178,11 @@ def generate_image_result(
     image_format = options_dict.get("format")
 
     resolved_output_dir = validate_output_directory(output_dir)
+    notices = normalize_image_options_for_model(
+        model_name=model_name,
+        options_dict=options_dict,
+        image_constraints=image_constraints,
+    )
 
     payload = {
         "model": model_name,
@@ -137,7 +203,10 @@ def generate_image_result(
 
             if r.headers.get("x-venice-is-content-violation") == "true":
                 return ImageGenerationResult(
-                    image_bytes=None, output_path=None, content_violation=True
+                    image_bytes=None,
+                    output_path=None,
+                    content_violation=True,
+                    notices=notices,
                 )
 
             response_json = None
@@ -163,7 +232,12 @@ def generate_image_result(
             raise_api_error("Generating image", exc)
 
         if r.headers.get("x-venice-is-content-violation") == "true":
-            return ImageGenerationResult(image_bytes=None, output_path=None, content_violation=True)
+            return ImageGenerationResult(
+                image_bytes=None,
+                output_path=None,
+                content_violation=True,
+                notices=notices,
+            )
 
         response_json = None
         if return_binary:
@@ -193,6 +267,7 @@ def generate_image_result(
         output_path=output_filepath,
         response_json=response_json,
         content_violation=False,
+        notices=notices,
     )
 
 
@@ -207,6 +282,14 @@ def save_image_result(result: ImageGenerationResult) -> pathlib.Path:
     return result.output_path
 
 
+def render_notices_for_output(notices: list[VeniceNotice]) -> str:
+    """Render notices for llm model output, separated from following text."""
+    rendered = render_notices(notices)
+    if not rendered:
+        return ""
+    return "\n".join(rendered) + "\n"
+
+
 class VeniceImage(llm.KeyModel):
     """Venice AI image generation model."""
 
@@ -214,9 +297,10 @@ class VeniceImage(llm.KeyModel):
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
 
-    def __init__(self, model_id, model_name=None):
+    def __init__(self, model_id, model_name=None, image_constraints=None):
         self.model_id = f"venice/{model_id}"
         self.model_name = model_id
+        self.image_constraints = image_constraints
 
     def __str__(self):
         return f"Venice Image: {self.model_id}"
@@ -241,11 +325,15 @@ class VeniceImage(llm.KeyModel):
                     options=prompt.options,
                     model_name=self.model_name,
                     api_key=api_key,
+                    image_constraints=self.image_constraints,
                 )
             except ValueError as exc:
                 raise llm.ModelError(str(exc)) from exc
 
             if result.content_violation:
+                rendered_notices = render_notices_for_output(result.notices)
+                if rendered_notices:
+                    yield rendered_notices
                 yield "Response marked as content violation; no image was returned."
                 return
 
@@ -254,6 +342,9 @@ class VeniceImage(llm.KeyModel):
 
             try:
                 saved_path = save_image_result(result)
+                rendered_notices = render_notices_for_output(result.notices)
+                if rendered_notices:
+                    yield rendered_notices
                 yield f"Image saved to {saved_path}"
             except (OSError, ValueError) as exc:
                 raise llm.ModelError(f"Failed to write image file: {exc}") from exc
@@ -268,9 +359,10 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
 
-    def __init__(self, model_id, model_name=None):
+    def __init__(self, model_id, model_name=None, image_constraints=None):
         self.model_id = f"venice/{model_id}"
         self.model_name = model_id
+        self.image_constraints = image_constraints
 
     def __str__(self):
         return f"Venice Image: {self.model_id}"
@@ -296,11 +388,15 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
                     options=prompt.options,
                     model_name=self.model_name,
                     api_key=api_key,
+                    image_constraints=self.image_constraints,
                 )
             except ValueError as exc:
                 raise llm.ModelError(str(exc)) from exc
 
             if result.content_violation:
+                rendered_notices = render_notices_for_output(result.notices)
+                if rendered_notices:
+                    yield rendered_notices
                 yield "Response marked as content violation; no image was returned."
                 return
 
@@ -309,6 +405,9 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
 
             try:
                 saved_path = await asyncio.to_thread(save_image_result, result)
+                rendered_notices = render_notices_for_output(result.notices)
+                if rendered_notices:
+                    yield rendered_notices
                 yield f"Image saved to {saved_path}"
             except (OSError, ValueError) as exc:
                 raise llm.ModelError(f"Failed to write image file: {exc}") from exc

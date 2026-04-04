@@ -153,6 +153,10 @@ Generated images are stored in the LLM user directory by default. Example:
 
 `llm -m venice/qwen-image "Painting of a traditional Dutch windmill" -o style_preset "Watercolor"`
 
+Models that support them can also use API-native aspect-ratio and resolution presets:
+
+`llm -m venice/nano-banana-2 "Painting of a traditional Dutch windmill" -o aspect_ratio 16:9 -o resolution 4K`
+
 Besides the Venice API image generation parameters, you can specify the output directory and filename, and whether or not to overwrite existing files.
 
 You can check the available parameters for a model by filtering the model list with `--query`, and show the `--options`:
@@ -188,7 +192,7 @@ You can call the library helpers directly from Python (minimally tested):
 - `list_characters()` → dict, `persist_characters(data)` writes to `venice_characters.json`
 - API keys: `list_api_keys()`, `get_rate_limits()`, `get_rate_limits_log()`, `create_api_key()`, `delete_api_key()`
 - `perform_image_upscale()` → `UpscaleResult` with bytes and a resolved output path; persist with `write_upscaled_image(result)`
-- `generate_image_result()` → `ImageGenerationResult` with bytes/metadata/output path for image generation; persist with `save_image_result(result)`
+- `generate_image_result()` → `ImageGenerationResult` with bytes/metadata/output path and structured `notices` for image generation; persist with `save_image_result(result)`
 - `generate_speech_result()` → `SpeechGenerationResult` with bytes/metadata/output path for TTS generation; persist with `save_speech_result(result)`
 - `stream_speech_result()` (context manager) yields `SpeechStreamResult` with an iterator of audio chunks and a resolved output path
 

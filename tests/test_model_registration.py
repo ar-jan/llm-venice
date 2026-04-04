@@ -89,13 +89,19 @@ def test_fetch_models_missing_key_raises_needs_key(monkeypatch):
 def test_registers_image_async_model(monkeypatch, tmp_path):
     """Ensure image models register both sync and async variants."""
     monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
+    constraints = {
+        "aspectRatios": ["1:1", "16:9"],
+        "defaultAspectRatio": "1:1",
+        "resolutions": ["1K", "2K"],
+        "defaultResolution": "1K",
+    }
     (tmp_path / "venice_models.json").write_text(
         json.dumps(
             [
                 {
                     "id": "qwen-image",
                     "type": "image",
-                    "model_spec": {"capabilities": {}},
+                    "model_spec": {"capabilities": {}, "constraints": constraints},
                 }
             ]
         )
@@ -112,6 +118,8 @@ def test_registers_image_async_model(monkeypatch, tmp_path):
 
     assert isinstance(registered[0], VeniceImage)
     assert isinstance(registered_async[0], AsyncVeniceImage)
+    assert registered[0].image_constraints == constraints
+    assert registered_async[0].image_constraints == constraints
 
 
 def test_registers_tts_async_model(monkeypatch, tmp_path):
