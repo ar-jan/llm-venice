@@ -27,7 +27,7 @@ def test_venice_image_format_in_payload(mock_venice_api_key):
     prompt.prompt = "Test prompt"
 
     # Test with different format options
-    for format_value in ["png", "webp"]:
+    for format_value in ["png", "jpeg", "webp"]:
         # Setup options that include the format
         options = Mock()
         options.model_dump.return_value = {

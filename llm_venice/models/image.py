@@ -81,7 +81,7 @@ class VeniceImageOptions(llm.Options):
         ge=1,
         le=4,
     )
-    image_format: Optional[Literal["png", "webp"]] = Field(
+    image_format: Optional[Literal["png", "jpeg", "webp"]] = Field(
         description="The image format to return",
         default=DEFAULT_IMAGE_FORMAT,
         alias="format",
