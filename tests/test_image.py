@@ -4,12 +4,16 @@ import datetime
 from unittest.mock import Mock, MagicMock, patch, call
 import pytest
 
+import click
 import httpx
 import llm
 from pydantic import ValidationError
+from click.testing import CliRunner
 
 from llm_venice import AsyncVeniceImage, VeniceImage
 from llm_venice.models.image import ImageGenerationResult
+from llm_venice.notices import VeniceNotice
+from llm_venice.cli.notices import emit_cli_notices
 
 
 def test_venice_image_format_in_payload(mock_venice_api_key):
@@ -901,8 +905,109 @@ def test_venice_image_options_defaults_and_validation():
         VeniceImage.Options(lora_strength=101)  # Above maximum
 
 
-def test_venice_image_rejects_unsupported_aspect_ratio(mock_venice_api_key):
-    """Test aspect_ratio validation against cached model constraints."""
+def test_venice_image_drops_aspect_ratio_for_unsupported_model(mock_venice_api_key, tmp_path):
+    """Test aspect_ratio is dropped with an info message when unsupported."""
+    model = VeniceImage(
+        "test-model",
+        image_constraints={"resolutions": ["1K", "2K"]},
+    )
+
+    prompt = MagicMock()
+    prompt.prompt = "Test prompt"
+    prompt.options = VeniceImage.Options(aspect_ratio="9:16", return_binary=True)
+
+    with patch("httpx.post") as mock_post:
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.headers = {}
+        mock_response.content = b"\x89PNG\r\n\x1a\n"
+        mock_post.return_value = mock_response
+
+        with patch.object(model, "get_key", return_value=mock_venice_api_key):
+            with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
+                results = list(model.execute(prompt, False, MagicMock(), None))
+
+        payload = mock_post.call_args[1]["json"]
+        assert "aspect_ratio" not in payload
+        assert (
+            results[0] == "Info: dropped unsupported options for model 'test-model': aspect_ratio"
+        )
+        assert results[1].startswith("Image saved to ")
+
+
+def test_venice_image_drops_resolution_for_unsupported_model(mock_venice_api_key, tmp_path):
+    """Test resolution is dropped with an info message when unsupported."""
+    model = VeniceImage(
+        "test-model",
+        image_constraints={"aspectRatios": ["1:1", "16:9"]},
+    )
+
+    prompt = MagicMock()
+    prompt.prompt = "Test prompt"
+    prompt.options = VeniceImage.Options(resolution="4K", return_binary=True)
+
+    with patch("httpx.post") as mock_post:
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.headers = {}
+        mock_response.content = b"\x89PNG\r\n\x1a\n"
+        mock_post.return_value = mock_response
+
+        with patch.object(model, "get_key", return_value=mock_venice_api_key):
+            with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
+                results = list(model.execute(prompt, False, MagicMock(), None))
+
+        payload = mock_post.call_args[1]["json"]
+        assert "resolution" not in payload
+        assert results[0] == "Info: dropped unsupported options for model 'test-model': resolution"
+        assert results[1].startswith("Image saved to ")
+
+
+def test_image_generation_result_exposes_structured_notices():
+    """ImageGenerationResult should retain structured notices."""
+    result = ImageGenerationResult(
+        image_bytes=None,
+        output_path=None,
+        notices=[
+            VeniceNotice(
+                level="info",
+                message="dropped unsupported options for model 'test-model': aspect_ratio",
+            )
+        ],
+    )
+
+    assert result.notices == [
+        VeniceNotice(
+            level="info",
+            message="dropped unsupported options for model 'test-model': aspect_ratio",
+        )
+    ]
+
+
+def test_emit_cli_notices_surfaces_rendered_messages():
+    """CLI notice helper should emit rendered messages to stderr."""
+
+    @click.command()
+    def cli():
+        emit_cli_notices(
+            [
+                VeniceNotice(
+                    level="info",
+                    message="dropped unsupported options for model 'test-model': aspect_ratio",
+                )
+            ]
+        )
+
+    result = CliRunner().invoke(cli)
+
+    assert result.exit_code == 0
+    assert (
+        result.stderr == "Info: dropped unsupported options for model 'test-model': aspect_ratio\n"
+    )
+
+
+def test_venice_image_rejects_invalid_aspect_ratio_for_supported_model(mock_venice_api_key):
+    """Test invalid aspect_ratio values are still rejected for supporting models."""
     model = VeniceImage(
         "test-model",
         image_constraints={"aspectRatios": ["1:1", "16:9"]},
@@ -920,8 +1025,8 @@ def test_venice_image_rejects_unsupported_aspect_ratio(mock_venice_api_key):
             list(model.execute(prompt, False, MagicMock(), None))
 
 
-def test_venice_image_rejects_unsupported_resolution(mock_venice_api_key):
-    """Test resolution validation against cached model constraints."""
+def test_venice_image_rejects_invalid_resolution_for_supported_model(mock_venice_api_key):
+    """Test invalid resolution values are still rejected for supporting models."""
     model = VeniceImage(
         "test-model",
         image_constraints={"resolutions": ["1K", "2K"]},

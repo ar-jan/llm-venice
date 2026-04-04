@@ -192,7 +192,7 @@ You can call the library helpers directly from Python (minimally tested):
 - `list_characters()` → dict, `persist_characters(data)` writes to `venice_characters.json`
 - API keys: `list_api_keys()`, `get_rate_limits()`, `get_rate_limits_log()`, `create_api_key()`, `delete_api_key()`
 - `perform_image_upscale()` → `UpscaleResult` with bytes and a resolved output path; persist with `write_upscaled_image(result)`
-- `generate_image_result()` → `ImageGenerationResult` with bytes/metadata/output path for image generation; persist with `save_image_result(result)`
+- `generate_image_result()` → `ImageGenerationResult` with bytes/metadata/output path and structured `notices` for image generation; persist with `save_image_result(result)`
 - `generate_speech_result()` → `SpeechGenerationResult` with bytes/metadata/output path for TTS generation; persist with `save_speech_result(result)`
 - `stream_speech_result()` (context manager) yields `SpeechStreamResult` with an iterator of audio chunks and a resolved output path
 
