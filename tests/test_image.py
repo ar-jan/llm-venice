@@ -164,6 +164,74 @@ def test_venice_image_content_violation_handling(mock_venice_api_key):
             mock_post.assert_called_once()
 
 
+def test_venice_image_blurred_header_exposed_for_json_response(mock_venice_api_key, tmp_path):
+    """Blurred image responses should be surfaced via response_json metadata."""
+    model = VeniceImage("test-model")
+
+    prompt = MagicMock()
+    prompt.prompt = "Test prompt with adult content"
+    prompt.options = VeniceImage.Options(return_binary=False)
+
+    raw_binary_content = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+    base64_encoded = base64.b64encode(raw_binary_content).decode("utf-8")
+
+    with patch("httpx.post") as mock_post:
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.headers = {"x-venice-is-blurred": "true"}
+        mock_response.json.return_value = {
+            "images": [base64_encoded],
+            "request": {"model": "test-model"},
+            "timing": {"inference": 2.5},
+        }
+        mock_post.return_value = mock_response
+
+        response = MagicMock()
+        with patch.object(model, "get_key", return_value=mock_venice_api_key):
+            with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
+                with patch("pathlib.Path.write_bytes"):
+                    results = list(model.execute(prompt, False, response, None))
+
+        assert len(results) == 2
+        assert (
+            results[0]
+            == "Warning: generated image was blurred because Safe Venice filtered adult material\n"
+        )
+        assert results[1].startswith("Image saved to ")
+        assert response.response_json["request"]["model"] == "test-model"
+        assert response.response_json["timing"]["inference"] == 2.5
+        assert response.response_json["is_blurred"] is True
+
+
+def test_venice_image_blurred_header_exposed_for_binary_response(mock_venice_api_key, tmp_path):
+    """Blurred binary image responses should still expose blur metadata."""
+    model = VeniceImage("test-model")
+
+    prompt = MagicMock()
+    prompt.prompt = "Test prompt with adult content"
+    prompt.options = VeniceImage.Options(return_binary=True)
+
+    with patch("httpx.post") as mock_post:
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.headers = {"x-venice-is-blurred": "true"}
+        mock_response.content = b"\x89PNG\r\n\x1a\n"
+        mock_post.return_value = mock_response
+
+        response = MagicMock()
+        with patch.object(model, "get_key", return_value=mock_venice_api_key):
+            with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
+                with patch("pathlib.Path.write_bytes"):
+                    results = list(model.execute(prompt, False, response, None))
+
+        assert (
+            results[0]
+            == "Warning: generated image was blurred because Safe Venice filtered adult material\n"
+        )
+        assert results[1].startswith("Image saved to ")
+        assert response.response_json == {"is_blurred": True}
+
+
 def test_venice_image_return_binary_vs_json_parsing(mock_venice_api_key, tmp_path):
     """Test return_binary=True uses raw content vs base64 JSON decoding."""
     model = VeniceImage("test-model")
@@ -231,6 +299,7 @@ def test_venice_image_return_binary_vs_json_parsing(mock_venice_api_key, tmp_pat
                     # Verify response metadata was stored
                     assert response.response_json["request"]["seed"] == 12345
                     assert response.response_json["timing"]["inference"] == 2.5
+                    assert response.response_json["is_blurred"] is False
 
 
 def test_venice_image_default_output_directory_creation(mock_venice_api_key, tmp_path):
@@ -1005,6 +1074,31 @@ def test_emit_cli_notices_surfaces_rendered_messages():
     assert result.exit_code == 0
     assert (
         result.stderr == "Info: dropped unsupported options for model 'test-model': aspect_ratio\n"
+    )
+
+
+def test_emit_cli_notices_surfaces_blurred_warning():
+    """CLI notice helper should surface the blurred-image warning."""
+
+    @click.command()
+    def cli():
+        emit_cli_notices(
+            [
+                VeniceNotice(
+                    level="warning",
+                    message=(
+                        "generated image was blurred because Safe Venice filtered adult material"
+                    ),
+                )
+            ]
+        )
+
+    result = CliRunner().invoke(cli)
+
+    assert result.exit_code == 0
+    assert (
+        result.stderr
+        == "Warning: generated image was blurred because Safe Venice filtered adult material\n"
     )
 
 
