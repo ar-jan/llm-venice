@@ -13,6 +13,20 @@ from typing import Dict
 class VeniceChatOptions(Chat.Options):
     """Options for Venice chat models."""
 
+    # Explicitly redeclare inherited fields for pyright compatibility
+    temperature: Optional[float] = Field(
+        description=(
+            "What sampling temperature to use, between 0 and 2. Higher values like "
+            "0.8 will make the output more random, while lower values like 0.2 will "
+            "make it more focused and deterministic."
+        ),
+        ge=0,
+        le=2,
+        default=None,
+    )
+    max_tokens: Optional[int] = Field(
+        description="Maximum number of tokens to generate.", default=None
+    )
     # Non-standard generation parameters (top-level in extra_body)
     min_p: Optional[float] = Field(
         description=(
