@@ -54,6 +54,7 @@ def register_venice_models(register):
                 vision=capabilities.get("supportsVision", False),
                 supports_schema=capabilities.get("supportsResponseSchema", False),
                 supports_tools=capabilities.get("supportsFunctionCalling", False),
+                supports_web_search=supports_web_search,
             )
             async_model_instance = AsyncVeniceChat(
                 model_id=f"venice/{model_id}",
@@ -63,24 +64,22 @@ def register_venice_models(register):
                 vision=capabilities.get("supportsVision", False),
                 supports_schema=capabilities.get("supportsResponseSchema", False),
                 supports_tools=capabilities.get("supportsFunctionCalling", False),
+                supports_web_search=supports_web_search,
             )
-            # Venice-specific capabilities added as instance attributes
-            model_instance.supports_web_search = supports_web_search
-            async_model_instance.supports_web_search = supports_web_search
             register(model_instance, async_model=async_model_instance)
         elif model.get("type") == "image":
             model_instance = VeniceImage(
                 model_id=model_id,
                 model_name=model_id,
                 image_constraints=constraints,
+                supports_web_search=supports_web_search,
             )
             async_model_instance = AsyncVeniceImage(
                 model_id=model_id,
                 model_name=model_id,
                 image_constraints=constraints,
+                supports_web_search=supports_web_search,
             )
-            model_instance.supports_web_search = supports_web_search
-            async_model_instance.supports_web_search = supports_web_search
             register(
                 model_instance,
                 async_model=async_model_instance,

@@ -406,10 +406,13 @@ class VeniceImage(llm.KeyModel):
     key_env_var = "LLM_VENICE_KEY"
     supports_web_search = False
 
-    def __init__(self, model_id, model_name=None, image_constraints=None):
+    def __init__(
+        self, model_id, model_name=None, image_constraints=None, supports_web_search=False
+    ):
         self.model_id = f"venice/{model_id}"
         self.model_name = model_id
         self.image_constraints = image_constraints
+        self.supports_web_search = supports_web_search
 
     def __str__(self):
         return f"Venice Image: {self.model_id}"
@@ -435,7 +438,7 @@ class VeniceImage(llm.KeyModel):
                     model_id=self.model_id,
                     model_name=self.model_name,
                     api_key=api_key,
-                    supports_web_search=getattr(self, "supports_web_search", False),
+                    supports_web_search=self.supports_web_search,
                     image_constraints=self.image_constraints,
                 )
             except ValueError as exc:
@@ -471,10 +474,13 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
     key_env_var = "LLM_VENICE_KEY"
     supports_web_search = False
 
-    def __init__(self, model_id, model_name=None, image_constraints=None):
+    def __init__(
+        self, model_id, model_name=None, image_constraints=None, supports_web_search=False
+    ):
         self.model_id = f"venice/{model_id}"
         self.model_name = model_id
         self.image_constraints = image_constraints
+        self.supports_web_search = supports_web_search
 
     def __str__(self):
         return f"Venice Image: {self.model_id}"
@@ -501,7 +507,7 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
                     model_id=self.model_id,
                     model_name=self.model_name,
                     api_key=api_key,
-                    supports_web_search=getattr(self, "supports_web_search", False),
+                    supports_web_search=self.supports_web_search,
                     image_constraints=self.image_constraints,
                 )
             except ValueError as exc:

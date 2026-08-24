@@ -100,8 +100,7 @@ def test_venice_image_aspect_ratio_and_resolution_in_payload(mock_venice_api_key
 
 def test_venice_image_enable_web_search_in_payload(mock_venice_api_key):
     """Test that enable_web_search is included as a top-level image payload field."""
-    model = VeniceImage("test-model")
-    model.supports_web_search = True
+    model = VeniceImage("test-model", supports_web_search=True)
 
     prompt = MagicMock()
     prompt.prompt = "Test prompt"

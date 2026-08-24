@@ -82,20 +82,19 @@ def test_venice_chat_build_kwargs_json_schema():
 
 def test_async_venice_chat_parity_with_sync_build_kwargs():
     """Ensure async Venice chat builds identical kwargs to the sync model."""
+    # Enable web search to exercise Venice-specific validation paths
     sync_chat = VeniceChat(
         model_id="venice/test-model",
         model_name="test-model",
         api_base="https://api.venice.ai/api/v1",
+        supports_web_search=True,
     )
     async_chat = AsyncVeniceChat(
         model_id="venice/test-model",
         model_name="test-model",
         api_base="https://api.venice.ai/api/v1",
+        supports_web_search=True,
     )
-
-    # Enable web search to exercise Venice-specific validation paths
-    sync_chat.supports_web_search = True
-    async_chat.supports_web_search = True
 
     options = VeniceChatOptions(
         min_p=0.05,
@@ -695,6 +694,37 @@ def test_new_parameters_cli_usage(cli_runner, monkeypatch, hermetic_venice_model
         assert result.exit_code == 0, f"Command failed with: {result.output}"
 
 
+def test_cli_web_search_capability_enforced_via_catalog(
+    cli_runner, monkeypatch, hermetic_venice_model
+):
+    """Web search flags must be rejected through the real CLI model-resolution path.
+
+    Regression test: registers the hermetic model WITHOUT web search support and
+    does not mock VeniceChat.prompt, so build_kwargs runs and the capability guard
+    fires. This guards against the dead-code pattern where a capability was set on
+    a throwaway llm.get_model() instance that the CLI never used.
+    """
+    from llm import cli as llm_cli
+
+    model_id = hermetic_venice_model()  # no supportsWebSearch capability
+    monkeypatch.setenv("LLM_VENICE_KEY", "test-venice-key")
+
+    result = cli_runner.invoke(
+        llm_cli.cli,
+        [
+            "prompt",
+            "-m",
+            model_id,
+            "--web-search",
+            "on",
+            "--no-log",
+            "Test prompt",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "does not support web search" in result.output
+
+
 def test_new_parameters_request_shape_client_call(monkeypatch):
     """Spy on the OpenAI client call to ensure request shape is correct.
 
@@ -782,8 +812,8 @@ def test_web_search_capability_guard():
         model_id="venice/test-model",
         model_name="test-model",
         api_base="https://api.venice.ai/api/v1",
+        supports_web_search=False,
     )
-    chat.supports_web_search = False
 
     # Create prompt with web search enabled
     options = VeniceChatOptions(enable_web_search="on")
