@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from typing import Any, Literal, Optional, Union
 
-import httpx
+import httpx2
 import llm
 from llm.utils import logging_client
 from pydantic import ConfigDict, Field, model_validator
@@ -123,7 +123,7 @@ class ImageGenerationResult:
     notices: list[VeniceNotice] = dataclass_field(default_factory=list)
 
 
-def _is_true_response_header(headers: httpx.Headers, header_name: str) -> bool:
+def _is_true_response_header(headers: httpx2.Headers, header_name: str) -> bool:
     """Return True when a Venice boolean response header is explicitly enabled."""
     return headers.get(header_name, "").lower() == "true"
 
@@ -287,7 +287,7 @@ def generate_image_result(
             r = client.post(ENDPOINT_IMAGE_GENERATE, headers=headers, json=payload, timeout=120)
             try:
                 r.raise_for_status()
-            except httpx.HTTPStatusError as exc:
+            except httpx2.HTTPStatusError as exc:
                 raise_api_error("Generating image", exc)
 
             content_violation = _is_true_response_header(r.headers, "x-venice-is-content-violation")
@@ -315,11 +315,11 @@ def generate_image_result(
                 }
                 image_bytes_list = _decode_base64_images(data)
     else:
-        r = httpx.post(ENDPOINT_IMAGE_GENERATE, headers=headers, json=payload, timeout=120)
+        r = httpx2.post(ENDPOINT_IMAGE_GENERATE, headers=headers, json=payload, timeout=120)
 
         try:
             r.raise_for_status()
-        except httpx.HTTPStatusError as exc:
+        except httpx2.HTTPStatusError as exc:
             raise_api_error("Generating image", exc)
 
         content_violation = _is_true_response_header(r.headers, "x-venice-is-content-violation")

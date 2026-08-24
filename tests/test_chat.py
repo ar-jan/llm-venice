@@ -171,14 +171,15 @@ def test_venice_chat_options_invalid_values_raise_validation_errors():
 def test_cli_thinking_parameters(cli_runner, monkeypatch, hermetic_venice_model):
     """Test that CLI properly accepts thinking parameters."""
     from llm import cli as llm_cli
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
 
     model_id = hermetic_venice_model()
     monkeypatch.setenv("LLM_VENICE_KEY", "test-venice-key")
-    mock_response = MagicMock()
-    mock_response.text = lambda: "Mock response"
-    mock_response.usage = lambda: (10, 5, 15)
-    with patch.object(VeniceChat, "prompt", return_value=mock_response):
+    with patch.object(
+        VeniceChat,
+        "execute",
+        side_effect=lambda *args, **kwargs: iter(["Mock response"]),
+    ):
         # CLI accepts --strip-thinking-response
         result = cli_runner.invoke(
             llm_cli.cli,
@@ -591,17 +592,16 @@ def test_new_parameters_no_extra_body_pollution():
 
 def test_new_parameters_cli_usage(cli_runner, monkeypatch, hermetic_venice_model):
     """Test that new parameters work via CLI and don't cause runtime errors."""
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
 
     model_id = hermetic_venice_model()
     monkeypatch.setenv("LLM_VENICE_KEY", "test-venice-key")
 
-    # Mock the prompt method to capture what kwargs it receives
-    mock_response = MagicMock()
-    mock_response.text = lambda: "Mock response"
-    mock_response.usage = lambda: (10, 5, 15)
-
-    with patch.object(VeniceChat, "prompt", return_value=mock_response):
+    with patch.object(
+        VeniceChat,
+        "execute",
+        side_effect=lambda *args, **kwargs: iter(["Mock response"]),
+    ):
         from llm import cli as llm_cli
 
         # Test min_p parameter
@@ -966,14 +966,11 @@ def test_cli_web_search_citation_parameters_registration(
 def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch, hermetic_venice_model):
     """Test that CLI properly accepts web search citation parameters."""
     from llm import cli as llm_cli
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
 
     # Register the hermetic model with web search support to satisfy validation
     model_id = hermetic_venice_model(capabilities={"supportsWebSearch": True})
     monkeypatch.setenv("LLM_VENICE_KEY", "test-venice-key")
-    mock_response = MagicMock()
-    mock_response.text = lambda: "Mock response with citations"
-    mock_response.usage = lambda: (10, 5, 15)
 
     # Spy on process_venice_options to verify options are forwarded
     from llm_venice.cli import command_hooks
@@ -988,7 +985,11 @@ def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch, herme
 
     monkeypatch.setattr(command_hooks, "process_venice_options", spy_process)
 
-    with patch.object(VeniceChat, "prompt", return_value=mock_response):
+    with patch.object(
+        VeniceChat,
+        "execute",
+        side_effect=lambda *args, **kwargs: iter(["Mock response with citations"]),
+    ):
         # Test --web-citations
         result = cli_runner.invoke(
             llm_cli.cli,

@@ -2,7 +2,7 @@
 
 from typing import Optional, Tuple
 
-import httpx
+import httpx2
 
 
 class VeniceAPIError(RuntimeError):
@@ -54,8 +54,8 @@ def _format_error_message(
     return message
 
 
-def _extract_error_parts(response: httpx.Response) -> Tuple[Optional[str], Optional[str]]:
-    """Extract a useful error code/detail tuple from an httpx.Response."""
+def _extract_error_parts(response: httpx2.Response) -> Tuple[Optional[str], Optional[str]]:
+    """Extract a useful error code/detail tuple from an httpx2.Response."""
     try:
         payload = response.json()
     except ValueError:
@@ -77,7 +77,7 @@ def _extract_error_parts(response: httpx.Response) -> Tuple[Optional[str], Optio
     return error_code, detail
 
 
-def raise_api_error(action: str, error: httpx.HTTPStatusError):
+def raise_api_error(action: str, error: httpx2.HTTPStatusError):
     """Normalize HTTPStatusError into a VeniceAPIError for callers."""
     response = error.response
     status = response.status_code if response is not None else "unknown status"

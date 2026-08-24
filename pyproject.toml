@@ -10,7 +10,8 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License"
 ]
 dependencies = [
-    "llm>=0.28",
+    "httpx2",
+    "llm>=0.33",
 ]
 
 [project.urls]
@@ -24,9 +25,9 @@ venice = "llm_venice"
 
 [project.optional-dependencies]
 test = [
+    "httpx2-pytest>=1.0.1",
     "jsonschema",
     "pytest",
-    "pytest-httpx",
     "sqlite_utils",
 ]
 dev = [

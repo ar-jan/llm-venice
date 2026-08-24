@@ -2,7 +2,7 @@
 
 from typing import Dict, Optional
 
-import httpx
+import httpx2
 
 from llm_venice.api.errors import raise_api_error
 from llm_venice.constants import (
@@ -22,10 +22,10 @@ def list_api_keys(headers: Dict[str, str]) -> dict:
     Returns:
         JSON response with API keys
     """
-    response = httpx.get(ENDPOINT_API_KEYS, headers=headers)
+    response = httpx2.get(ENDPOINT_API_KEYS, headers=headers)
     try:
         response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         raise_api_error("Listing API keys", exc)
     return response.json()
 
@@ -40,10 +40,10 @@ def get_rate_limits(headers: Dict[str, str]) -> dict:
     Returns:
         JSON response with rate limits
     """
-    response = httpx.get(ENDPOINT_API_KEYS_RATE_LIMITS, headers=headers)
+    response = httpx2.get(ENDPOINT_API_KEYS_RATE_LIMITS, headers=headers)
     try:
         response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         raise_api_error("Retrieving rate limits", exc)
     return response.json()
 
@@ -58,10 +58,10 @@ def get_rate_limits_log(headers: Dict[str, str]) -> dict:
     Returns:
         JSON response with rate limit logs
     """
-    response = httpx.get(ENDPOINT_API_KEYS_RATE_LIMITS_LOG, headers=headers)
+    response = httpx2.get(ENDPOINT_API_KEYS_RATE_LIMITS_LOG, headers=headers)
     try:
         response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         raise_api_error("Retrieving rate limit logs", exc)
     return response.json()
 
@@ -97,10 +97,10 @@ def create_api_key(
             "usd": limits_usd,
         },
     }
-    response = httpx.post(ENDPOINT_API_KEYS, headers=headers, json=payload)
+    response = httpx2.post(ENDPOINT_API_KEYS, headers=headers, json=payload)
     try:
         response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         raise_api_error("Creating API key", exc)
     return response.json()
 
@@ -117,9 +117,9 @@ def delete_api_key(headers: Dict[str, str], api_key_id: str) -> dict:
         JSON response confirming deletion
     """
     params = {"id": api_key_id}
-    response = httpx.delete(ENDPOINT_API_KEYS, headers=headers, params=params)
+    response = httpx2.delete(ENDPOINT_API_KEYS, headers=headers, params=params)
     try:
         response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         raise_api_error("Deleting API key", exc)
     return response.json()

@@ -1,6 +1,6 @@
 import json
 
-import httpx
+import httpx2
 import llm
 import pytest
 from llm_venice import AsyncVeniceImage, AsyncVeniceSpeech, VeniceImage, VeniceSpeech
@@ -100,9 +100,9 @@ def test_register_skips_on_request_error_without_cache(monkeypatch, tmp_path):
     monkeypatch.setattr(llm, "get_key", lambda *_, **__: "test-key")
 
     def fetch_failure(_key):
-        raise httpx.RequestError(
+        raise httpx2.RequestError(
             "Network down",
-            request=httpx.Request("GET", "https://api.venice.ai/api/v1/models"),
+            request=httpx2.Request("GET", "https://api.venice.ai/api/v1/models"),
         )
 
     monkeypatch.setattr("llm_venice.models.fetch_models", fetch_failure)

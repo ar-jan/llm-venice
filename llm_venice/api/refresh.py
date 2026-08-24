@@ -4,7 +4,7 @@ import json
 from typing import Optional
 import pathlib
 
-import httpx
+import httpx2
 import llm
 
 from llm_venice.constants import ENDPOINT_MODELS
@@ -25,14 +25,14 @@ def fetch_models(key: Optional[str] = None):
     """
     headers = get_auth_headers(key)
 
-    models_response = httpx.get(
+    models_response = httpx2.get(
         ENDPOINT_MODELS,
         headers=headers,
         params={"type": "all"},
     )
     try:
         models_response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         raise_api_error("Fetching model list", exc)
     models = models_response.json()["data"]
 

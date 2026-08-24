@@ -27,7 +27,7 @@ def test_venice_speech_payload_includes_options(mock_venice_api_key, monkeypatch
     }
     prompt.options = options
 
-    with patch("httpx.post") as mock_post:
+    with patch("httpx2.post") as mock_post:
         mock_response = Mock()
         mock_response.raise_for_status.return_value = None
         mock_response.content = b"fake-audio-bytes"
@@ -56,7 +56,7 @@ def test_venice_speech_payload_includes_options(mock_venice_api_key, monkeypatch
 
 
 def test_venice_speech_streaming_writes_file(mock_venice_api_key, monkeypatch, tmp_path):
-    """stream=True should download audio via httpx.stream and write a file."""
+    """stream=True should download audio via httpx2.stream and write a file."""
     monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
 
     model = VeniceSpeech("tts-kokoro")
@@ -77,8 +77,8 @@ def test_venice_speech_streaming_writes_file(mock_venice_api_key, monkeypatch, t
     def stream_side_effect(*args, **kwargs):
         return fake_stream(*args, **kwargs)
 
-    with patch("httpx.stream", side_effect=stream_side_effect) as mock_stream:
-        with patch("httpx.post") as mock_post:
+    with patch("httpx2.stream", side_effect=stream_side_effect) as mock_stream:
+        with patch("httpx2.post") as mock_post:
             with patch.object(model, "get_key", return_value=mock_venice_api_key):
                 response = MagicMock()
                 results = list(model.execute(prompt, True, response, None))
@@ -120,8 +120,8 @@ def test_venice_speech_stdout_writes_bytes(mock_venice_api_key, monkeypatch, tmp
 
     dummy_stdout = DummyStdout()
 
-    with patch("httpx.stream", side_effect=lambda *a, **k: fake_stream(*a, **k)) as mock_stream:
-        with patch("httpx.post") as mock_post:
+    with patch("httpx2.stream", side_effect=lambda *a, **k: fake_stream(*a, **k)) as mock_stream:
+        with patch("httpx2.post") as mock_post:
             with patch("sys.stdout", dummy_stdout):
                 with patch.object(model, "get_key", return_value=mock_venice_api_key):
                     response = MagicMock()
@@ -182,8 +182,8 @@ def test_venice_speech_stdout_broken_pipe_still_saves_file(
 
     dummy_stdout = DummyStdout()
 
-    with patch("httpx.stream", side_effect=lambda *a, **k: fake_stream(*a, **k)) as mock_stream:
-        with patch("httpx.post") as mock_post:
+    with patch("httpx2.stream", side_effect=lambda *a, **k: fake_stream(*a, **k)) as mock_stream:
+        with patch("httpx2.post") as mock_post:
             with patch("sys.stdout", dummy_stdout):
                 with patch.object(model, "get_key", return_value=mock_venice_api_key):
                     response = MagicMock()

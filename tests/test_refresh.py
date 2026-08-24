@@ -1,4 +1,4 @@
-import httpx
+import httpx2
 import pytest
 from llm.cli import cli
 
@@ -27,7 +27,7 @@ def test_refresh_http_error_cli(cli_runner, httpx_mock, mock_venice_api_key):
 def test_refresh_network_error_cli(cli_runner, httpx_mock, mock_venice_api_key):
     """CLI should present network errors cleanly when refresh fails."""
     httpx_mock.add_exception(
-        httpx.TimeoutException("Request timed out"),
+        httpx2.TimeoutException("Request timed out"),
         method="GET",
         url="https://api.venice.ai/api/v1/models?type=all",
     )
