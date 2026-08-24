@@ -12,7 +12,6 @@ from pathlib import Path
 import llm
 from llm.cli import cli
 import pytest
-import sqlite_utils
 
 from llm_venice import VeniceChat
 
@@ -364,18 +363,16 @@ class TestWebSearch:
                 "--web-search",
                 "on",
                 "--no-stream",
+                "--json",
                 "What is Venice AI VVV token?",
             ],
         )
 
         assert result.exit_code == 0
 
-        # Check for citations in the database
-        logs_db_path = llm.user_dir() / "logs.db"
-        db = sqlite_utils.Database(logs_db_path)
-        last_response = list(db["responses"].rows)[-1]
-
-        response_json = json.loads(last_response["response_json"])
+        logged_responses = json.loads(result.output)
+        assert len(logged_responses) == 1
+        response_json = logged_responses[0]["response_json"]
         assert "venice_parameters" in response_json
         assert "web_search_citations" in response_json["venice_parameters"]
 

@@ -4,7 +4,7 @@ import json
 import pathlib
 from typing import Optional
 
-import httpx
+import httpx2
 import llm
 
 from llm_venice.api.client import get_auth_headers
@@ -32,14 +32,14 @@ def list_characters(
     headers = get_auth_headers(key)
     params = {k: v for k, v in {"isWebEnabled": web_enabled, "isAdult": adult}.items() if v}
 
-    response = httpx.get(
+    response = httpx2.get(
         ENDPOINT_CHARACTERS,
         headers=headers,
         params=params,
     )
     try:
         response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         raise_api_error("Listing characters", exc)
     return response.json()
 

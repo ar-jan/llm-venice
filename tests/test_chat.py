@@ -82,20 +82,19 @@ def test_venice_chat_build_kwargs_json_schema():
 
 def test_async_venice_chat_parity_with_sync_build_kwargs():
     """Ensure async Venice chat builds identical kwargs to the sync model."""
+    # Enable web search to exercise Venice-specific validation paths
     sync_chat = VeniceChat(
         model_id="venice/test-model",
         model_name="test-model",
         api_base="https://api.venice.ai/api/v1",
+        supports_web_search=True,
     )
     async_chat = AsyncVeniceChat(
         model_id="venice/test-model",
         model_name="test-model",
         api_base="https://api.venice.ai/api/v1",
+        supports_web_search=True,
     )
-
-    # Enable web search to exercise Venice-specific validation paths
-    sync_chat.supports_web_search = True
-    async_chat.supports_web_search = True
 
     options = VeniceChatOptions(
         min_p=0.05,
@@ -169,23 +168,25 @@ def test_venice_chat_options_invalid_values_raise_validation_errors():
     assert "enable_web_search must be one of" in str(exc_info.value)
 
 
-def test_cli_thinking_parameters(cli_runner, monkeypatch):
+def test_cli_thinking_parameters(cli_runner, monkeypatch, hermetic_venice_model):
     """Test that CLI properly accepts thinking parameters."""
     from llm import cli as llm_cli
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
 
+    model_id = hermetic_venice_model()
     monkeypatch.setenv("LLM_VENICE_KEY", "test-venice-key")
-    mock_response = MagicMock()
-    mock_response.text = lambda: "Mock response"
-    mock_response.usage = lambda: (10, 5, 15)
-    with patch.object(VeniceChat, "prompt", return_value=mock_response):
+    with patch.object(
+        VeniceChat,
+        "execute",
+        side_effect=lambda *args, **kwargs: iter(["Mock response"]),
+    ):
         # CLI accepts --strip-thinking-response
         result = cli_runner.invoke(
             llm_cli.cli,
             [
                 "prompt",
                 "-m",
-                "venice/minimax-m25",
+                model_id,
                 "--strip-thinking-response",
                 "--no-log",
                 "Test prompt 1",
@@ -198,7 +199,7 @@ def test_cli_thinking_parameters(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/minimax-m25",
+                model_id,
                 "--disable-thinking",
                 "--no-log",
                 "Test prompt 2",
@@ -211,7 +212,7 @@ def test_cli_thinking_parameters(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/minimax-m25",
+                model_id,
                 "--strip-thinking-response",
                 "--disable-thinking",
                 "--no-log",
@@ -589,18 +590,18 @@ def test_new_parameters_no_extra_body_pollution():
     assert "extra_body" not in kwargs
 
 
-def test_new_parameters_cli_usage(cli_runner, monkeypatch):
+def test_new_parameters_cli_usage(cli_runner, monkeypatch, hermetic_venice_model):
     """Test that new parameters work via CLI and don't cause runtime errors."""
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
 
+    model_id = hermetic_venice_model()
     monkeypatch.setenv("LLM_VENICE_KEY", "test-venice-key")
 
-    # Mock the prompt method to capture what kwargs it receives
-    mock_response = MagicMock()
-    mock_response.text = lambda: "Mock response"
-    mock_response.usage = lambda: (10, 5, 15)
-
-    with patch.object(VeniceChat, "prompt", return_value=mock_response):
+    with patch.object(
+        VeniceChat,
+        "execute",
+        side_effect=lambda *args, **kwargs: iter(["Mock response"]),
+    ):
         from llm import cli as llm_cli
 
         # Test min_p parameter
@@ -609,7 +610,7 @@ def test_new_parameters_cli_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/venice-uncensored",
+                model_id,
                 "-o",
                 "min_p",
                 "0.05",
@@ -625,7 +626,7 @@ def test_new_parameters_cli_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/venice-uncensored",
+                model_id,
                 "-o",
                 "top_k",
                 "40",
@@ -641,7 +642,7 @@ def test_new_parameters_cli_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/venice-uncensored",
+                model_id,
                 "-o",
                 "repetition_penalty",
                 "1.2",
@@ -657,7 +658,7 @@ def test_new_parameters_cli_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/venice-uncensored",
+                model_id,
                 "-o",
                 "stop_token_ids",
                 "[151643, 151645]",
@@ -673,7 +674,7 @@ def test_new_parameters_cli_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/venice-uncensored",
+                model_id,
                 "-o",
                 "min_p",
                 "0.05",
@@ -691,6 +692,37 @@ def test_new_parameters_cli_usage(cli_runner, monkeypatch):
             ],
         )
         assert result.exit_code == 0, f"Command failed with: {result.output}"
+
+
+def test_cli_web_search_capability_enforced_via_catalog(
+    cli_runner, monkeypatch, hermetic_venice_model
+):
+    """Web search flags must be rejected through the real CLI model-resolution path.
+
+    Regression test: registers the hermetic model WITHOUT web search support and
+    does not mock VeniceChat.prompt, so build_kwargs runs and the capability guard
+    fires. This guards against the dead-code pattern where a capability was set on
+    a throwaway llm.get_model() instance that the CLI never used.
+    """
+    from llm import cli as llm_cli
+
+    model_id = hermetic_venice_model()  # no supportsWebSearch capability
+    monkeypatch.setenv("LLM_VENICE_KEY", "test-venice-key")
+
+    result = cli_runner.invoke(
+        llm_cli.cli,
+        [
+            "prompt",
+            "-m",
+            model_id,
+            "--web-search",
+            "on",
+            "--no-log",
+            "Test prompt",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "does not support web search" in result.output
 
 
 def test_new_parameters_request_shape_client_call(monkeypatch):
@@ -780,8 +812,8 @@ def test_web_search_capability_guard():
         model_id="venice/test-model",
         model_name="test-model",
         api_base="https://api.venice.ai/api/v1",
+        supports_web_search=False,
     )
-    chat.supports_web_search = False
 
     # Create prompt with web search enabled
     options = VeniceChatOptions(enable_web_search="on")
@@ -931,20 +963,14 @@ def test_cli_web_search_citation_parameters_registration(
     assert "--include-search-results-in-stream" in result.output
 
 
-def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch):
+def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch, hermetic_venice_model):
     """Test that CLI properly accepts web search citation parameters."""
     from llm import cli as llm_cli
-    import llm
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
 
+    # Register the hermetic model with web search support to satisfy validation
+    model_id = hermetic_venice_model(capabilities={"supportsWebSearch": True})
     monkeypatch.setenv("LLM_VENICE_KEY", "test-venice-key")
-    mock_response = MagicMock()
-    mock_response.text = lambda: "Mock response with citations"
-    mock_response.usage = lambda: (10, 5, 15)
-
-    # Ensure model supports web search to satisfy validation
-    model = llm.get_model("venice/minimax-m25")
-    model.supports_web_search = True  # type: ignore[invalid-argument-type]
 
     # Spy on process_venice_options to verify options are forwarded
     from llm_venice.cli import command_hooks
@@ -959,14 +985,18 @@ def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch):
 
     monkeypatch.setattr(command_hooks, "process_venice_options", spy_process)
 
-    with patch.object(VeniceChat, "prompt", return_value=mock_response):
+    with patch.object(
+        VeniceChat,
+        "execute",
+        side_effect=lambda *args, **kwargs: iter(["Mock response with citations"]),
+    ):
         # Test --web-citations
         result = cli_runner.invoke(
             llm_cli.cli,
             [
                 "prompt",
                 "-m",
-                "venice/minimax-m25",
+                model_id,
                 "--web-citations",
                 "--web-search",
                 "on",
@@ -985,7 +1015,7 @@ def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/minimax-m25",
+                model_id,
                 "--web-scraping",
                 "--no-log",
                 "Test with scraping",
@@ -1001,7 +1031,7 @@ def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/minimax-m25",
+                model_id,
                 "--include-search-results-in-stream",
                 "--web-search",
                 "on",
@@ -1020,7 +1050,7 @@ def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/minimax-m25",
+                model_id,
                 "--web-citations",
                 "--include-search-results-in-stream",
                 "--web-search",

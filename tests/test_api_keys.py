@@ -1,4 +1,4 @@
-import httpx
+import httpx2
 import json
 import pathlib
 
@@ -55,7 +55,7 @@ def test_list_api_keys_http_error(cli_runner, httpx_mock, mock_venice_api_key):
 )
 def test_api_keys_network_error_cli(cli_runner, httpx_mock, mock_venice_api_key, args, method, url):
     """CLI should surface network errors without traceback."""
-    httpx_mock.add_exception(httpx.TimeoutException("Request timed out"), method=method, url=url)
+    httpx_mock.add_exception(httpx2.TimeoutException("Request timed out"), method=method, url=url)
 
     result = cli_runner.invoke(cli, args)
 

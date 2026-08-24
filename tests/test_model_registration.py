@@ -1,6 +1,6 @@
 import json
 
-import httpx
+import httpx2
 import llm
 import pytest
 from llm_venice import AsyncVeniceImage, AsyncVeniceSpeech, VeniceImage, VeniceSpeech
@@ -40,6 +40,45 @@ def test_registers_from_cache_without_key(monkeypatch, tmp_path):
     assert [m.model_id for m in registered_async] == ["venice/minimax-m25"]
 
 
+def test_registers_text_model_web_search_capability(monkeypatch, tmp_path):
+    """Ensure supportsWebSearch from the catalog reaches text model instances."""
+    monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
+    (tmp_path / "venice_models.json").write_text(
+        json.dumps(
+            [
+                {
+                    "id": "search-model",
+                    "type": "text",
+                    "model_spec": {"capabilities": {"supportsWebSearch": True}},
+                },
+                {
+                    "id": "plain-model",
+                    "type": "text",
+                    "model_spec": {"capabilities": {}},
+                },
+            ]
+        )
+    )
+    monkeypatch.setattr(llm, "get_key", lambda *_, **__: None)
+
+    registered = []
+    registered_async = []
+
+    def register(model, async_model=None, aliases=None):
+        registered.append(model)
+        if async_model:
+            registered_async.append(async_model)
+
+    register_venice_models(register)
+
+    by_id = {m.model_id: m for m in registered}
+    async_by_id = {m.model_id: m for m in registered_async}
+    assert by_id["venice/search-model"].supports_web_search is True
+    assert async_by_id["venice/search-model"].supports_web_search is True
+    assert by_id["venice/plain-model"].supports_web_search is False
+    assert async_by_id["venice/plain-model"].supports_web_search is False
+
+
 def test_register_skips_without_cache_or_key(monkeypatch, tmp_path):
     """Skip registration when cache is missing and no key is available."""
     monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
@@ -61,9 +100,9 @@ def test_register_skips_on_request_error_without_cache(monkeypatch, tmp_path):
     monkeypatch.setattr(llm, "get_key", lambda *_, **__: "test-key")
 
     def fetch_failure(_key):
-        raise httpx.RequestError(
+        raise httpx2.RequestError(
             "Network down",
-            request=httpx.Request("GET", "https://api.venice.ai/api/v1/models"),
+            request=httpx2.Request("GET", "https://api.venice.ai/api/v1/models"),
         )
 
     monkeypatch.setattr("llm_venice.models.fetch_models", fetch_failure)

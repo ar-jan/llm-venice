@@ -13,6 +13,20 @@ from typing import Dict
 class VeniceChatOptions(Chat.Options):
     """Options for Venice chat models."""
 
+    # Explicitly redeclare inherited fields for pyright compatibility
+    temperature: Optional[float] = Field(
+        description=(
+            "What sampling temperature to use, between 0 and 2. Higher values like "
+            "0.8 will make the output more random, while lower values like 0.2 will "
+            "make it more focused and deterministic."
+        ),
+        ge=0,
+        le=2,
+        default=None,
+    )
+    max_tokens: Optional[int] = Field(
+        description="Maximum number of tokens to generate.", default=None
+    )
     # Non-standard generation parameters (top-level in extra_body)
     min_p: Optional[float] = Field(
         description=(
@@ -181,6 +195,10 @@ class VeniceChat(Chat):
     key_env_var = "LLM_VENICE_KEY"
     supports_web_search = False
 
+    def __init__(self, *args, supports_web_search: bool = False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.supports_web_search = supports_web_search
+
     def __str__(self):  # type: ignore[invalid-argument-type]
         return f"Venice Chat: {self.model_id}"
 
@@ -189,9 +207,7 @@ class VeniceChat(Chat):
 
     def build_kwargs(self, prompt, stream):
         base_kwargs = super().build_kwargs(prompt, stream)
-        return _build_venice_kwargs(
-            self.model_id, getattr(self, "supports_web_search", False), base_kwargs
-        )
+        return _build_venice_kwargs(self.model_id, self.supports_web_search, base_kwargs)
 
 
 class AsyncVeniceChat(AsyncChat):
@@ -201,6 +217,10 @@ class AsyncVeniceChat(AsyncChat):
     key_env_var = "LLM_VENICE_KEY"
     supports_web_search = False
 
+    def __init__(self, *args, supports_web_search: bool = False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.supports_web_search = supports_web_search
+
     def __str__(self):  # type: ignore[invalid-argument-type]
         return f"Venice Chat: {self.model_id}"
 
@@ -209,6 +229,4 @@ class AsyncVeniceChat(AsyncChat):
 
     def build_kwargs(self, prompt, stream):
         base_kwargs = super().build_kwargs(prompt, stream)
-        return _build_venice_kwargs(
-            self.model_id, getattr(self, "supports_web_search", False), base_kwargs
-        )
+        return _build_venice_kwargs(self.model_id, self.supports_web_search, base_kwargs)

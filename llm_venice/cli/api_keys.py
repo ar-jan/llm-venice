@@ -3,7 +3,7 @@
 import json
 
 import click
-import httpx
+import httpx2
 
 from llm_venice.api import keys as api_keys
 from llm_venice.api.errors import VeniceAPIError
@@ -37,7 +37,7 @@ def create_api_keys_group():
         """List all API keys."""
         try:
             response = api_keys.list_api_keys(ctx.obj["headers"])
-        except (VeniceAPIError, httpx.RequestError) as e:
+        except (VeniceAPIError, httpx2.RequestError) as e:
             handle_cli_error(e)
         else:
             click.echo(json.dumps(response, indent=2))
@@ -48,7 +48,7 @@ def create_api_keys_group():
         """Show current rate limits for your API key"""
         try:
             response = api_keys.get_rate_limits(ctx.obj["headers"])
-        except (VeniceAPIError, httpx.RequestError) as e:
+        except (VeniceAPIError, httpx2.RequestError) as e:
             handle_cli_error(e)
         else:
             click.echo(json.dumps(response, indent=2))
@@ -59,7 +59,7 @@ def create_api_keys_group():
         """Show the last 50 rate limit logs for the account"""
         try:
             response = api_keys.get_rate_limits_log(ctx.obj["headers"])
-        except (VeniceAPIError, httpx.RequestError) as e:
+        except (VeniceAPIError, httpx2.RequestError) as e:
             handle_cli_error(e)
         else:
             click.echo(json.dumps(response, indent=2))
@@ -110,7 +110,7 @@ def create_api_keys_group():
                 limits_vcu,
                 limits_usd,
             )
-        except (VeniceAPIError, httpx.RequestError) as e:
+        except (VeniceAPIError, httpx2.RequestError) as e:
             handle_cli_error(e)
         else:
             click.echo(json.dumps(response, indent=2))
@@ -122,7 +122,7 @@ def create_api_keys_group():
         """Delete an API key by ID."""
         try:
             response = api_keys.delete_api_key(ctx.obj["headers"], api_key_id)
-        except (VeniceAPIError, httpx.RequestError) as e:
+        except (VeniceAPIError, httpx2.RequestError) as e:
             handle_cli_error(e)
         else:
             click.echo(json.dumps(response, indent=2))

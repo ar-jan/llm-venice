@@ -9,7 +9,7 @@ import sys
 import time
 from typing import AsyncGenerator, Iterable, Iterator, Literal, Optional, Union
 
-import httpx
+import httpx2
 import llm
 from llm.utils import logging_client
 from pydantic import Field
@@ -285,7 +285,7 @@ def _stream_speech_request(*, api_key: str, payload: dict, headers: dict):
             ) as r:
                 yield r
     else:
-        with httpx.stream(
+        with httpx2.stream(
             "POST",
             ENDPOINT_AUDIO_SPEECH,
             headers=headers,
@@ -332,7 +332,7 @@ def _stream_speech_bytes(
     with _stream_speech_request(api_key=api_key, payload=payload, headers=headers) as r:
         try:
             r.raise_for_status()
-        except httpx.HTTPStatusError as exc:
+        except httpx2.HTTPStatusError as exc:
             raise_api_error("Generating speech", exc)
         yield r.headers.get("Content-Type"), r.iter_bytes()
 
@@ -413,14 +413,14 @@ def _post_speech_bytes(*, api_key: str, payload: dict) -> tuple[bytes, Optional[
             r = client.post(ENDPOINT_AUDIO_SPEECH, headers=headers, json=payload, timeout=120)
             try:
                 r.raise_for_status()
-            except httpx.HTTPStatusError as exc:
+            except httpx2.HTTPStatusError as exc:
                 raise_api_error("Generating speech", exc)
             return r.content, r.headers.get("Content-Type")
 
-    r = httpx.post(ENDPOINT_AUDIO_SPEECH, headers=headers, json=payload, timeout=120)
+    r = httpx2.post(ENDPOINT_AUDIO_SPEECH, headers=headers, json=payload, timeout=120)
     try:
         r.raise_for_status()
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         raise_api_error("Generating speech", exc)
     return r.content, r.headers.get("Content-Type")
 

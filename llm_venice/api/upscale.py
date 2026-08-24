@@ -4,7 +4,7 @@ import pathlib
 from dataclasses import dataclass
 from typing import Optional, Union
 
-import httpx
+import httpx2
 
 from llm_venice.constants import ENDPOINT_IMAGE_UPSCALE
 from llm_venice.api.client import get_auth_headers
@@ -55,10 +55,10 @@ def perform_image_upscale(
     # Remove None values from data in order to use API defaults
     data = {k: v for k, v in data.items() if v is not None}
 
-    r = httpx.post(ENDPOINT_IMAGE_UPSCALE, headers=headers, files=files, data=data, timeout=120)
+    r = httpx2.post(ENDPOINT_IMAGE_UPSCALE, headers=headers, files=files, data=data, timeout=120)
     try:
         r.raise_for_status()
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         raise_api_error("Upscaling image", exc)
 
     image_bytes = r.content
