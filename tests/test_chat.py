@@ -169,11 +169,12 @@ def test_venice_chat_options_invalid_values_raise_validation_errors():
     assert "enable_web_search must be one of" in str(exc_info.value)
 
 
-def test_cli_thinking_parameters(cli_runner, monkeypatch):
+def test_cli_thinking_parameters(cli_runner, monkeypatch, hermetic_venice_model):
     """Test that CLI properly accepts thinking parameters."""
     from llm import cli as llm_cli
     from unittest.mock import patch, MagicMock
 
+    model_id = hermetic_venice_model()
     monkeypatch.setenv("LLM_VENICE_KEY", "test-venice-key")
     mock_response = MagicMock()
     mock_response.text = lambda: "Mock response"
@@ -185,7 +186,7 @@ def test_cli_thinking_parameters(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/minimax-m25",
+                model_id,
                 "--strip-thinking-response",
                 "--no-log",
                 "Test prompt 1",
@@ -198,7 +199,7 @@ def test_cli_thinking_parameters(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/minimax-m25",
+                model_id,
                 "--disable-thinking",
                 "--no-log",
                 "Test prompt 2",
@@ -211,7 +212,7 @@ def test_cli_thinking_parameters(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/minimax-m25",
+                model_id,
                 "--strip-thinking-response",
                 "--disable-thinking",
                 "--no-log",
@@ -589,10 +590,11 @@ def test_new_parameters_no_extra_body_pollution():
     assert "extra_body" not in kwargs
 
 
-def test_new_parameters_cli_usage(cli_runner, monkeypatch):
+def test_new_parameters_cli_usage(cli_runner, monkeypatch, hermetic_venice_model):
     """Test that new parameters work via CLI and don't cause runtime errors."""
     from unittest.mock import patch, MagicMock
 
+    model_id = hermetic_venice_model()
     monkeypatch.setenv("LLM_VENICE_KEY", "test-venice-key")
 
     # Mock the prompt method to capture what kwargs it receives
@@ -609,7 +611,7 @@ def test_new_parameters_cli_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/venice-uncensored",
+                model_id,
                 "-o",
                 "min_p",
                 "0.05",
@@ -625,7 +627,7 @@ def test_new_parameters_cli_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/venice-uncensored",
+                model_id,
                 "-o",
                 "top_k",
                 "40",
@@ -641,7 +643,7 @@ def test_new_parameters_cli_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/venice-uncensored",
+                model_id,
                 "-o",
                 "repetition_penalty",
                 "1.2",
@@ -657,7 +659,7 @@ def test_new_parameters_cli_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/venice-uncensored",
+                model_id,
                 "-o",
                 "stop_token_ids",
                 "[151643, 151645]",
@@ -673,7 +675,7 @@ def test_new_parameters_cli_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/venice-uncensored",
+                model_id,
                 "-o",
                 "min_p",
                 "0.05",
@@ -931,20 +933,17 @@ def test_cli_web_search_citation_parameters_registration(
     assert "--include-search-results-in-stream" in result.output
 
 
-def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch):
+def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch, hermetic_venice_model):
     """Test that CLI properly accepts web search citation parameters."""
     from llm import cli as llm_cli
-    import llm
     from unittest.mock import patch, MagicMock
 
+    # Register the hermetic model with web search support to satisfy validation
+    model_id = hermetic_venice_model(capabilities={"supportsWebSearch": True})
     monkeypatch.setenv("LLM_VENICE_KEY", "test-venice-key")
     mock_response = MagicMock()
     mock_response.text = lambda: "Mock response with citations"
     mock_response.usage = lambda: (10, 5, 15)
-
-    # Ensure model supports web search to satisfy validation
-    model = llm.get_model("venice/minimax-m25")
-    model.supports_web_search = True  # type: ignore[invalid-argument-type]
 
     # Spy on process_venice_options to verify options are forwarded
     from llm_venice.cli import command_hooks
@@ -966,7 +965,7 @@ def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/minimax-m25",
+                model_id,
                 "--web-citations",
                 "--web-search",
                 "on",
@@ -985,7 +984,7 @@ def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/minimax-m25",
+                model_id,
                 "--web-scraping",
                 "--no-log",
                 "Test with scraping",
@@ -1001,7 +1000,7 @@ def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/minimax-m25",
+                model_id,
                 "--include-search-results-in-stream",
                 "--web-search",
                 "on",
@@ -1020,7 +1019,7 @@ def test_cli_web_search_citation_parameters_usage(cli_runner, monkeypatch):
             [
                 "prompt",
                 "-m",
-                "venice/minimax-m25",
+                model_id,
                 "--web-citations",
                 "--include-search-results-in-stream",
                 "--web-search",

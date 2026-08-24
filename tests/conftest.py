@@ -1,5 +1,6 @@
 """Shared fixtures for llm-venice tests"""
 
+import json
 import shutil
 from unittest.mock import patch
 
@@ -42,6 +43,40 @@ def cli_runner():
         CliRunner: A Click test runner configured for isolated testing
     """
     return CliRunner()
+
+
+@pytest.fixture
+def hermetic_venice_model(tmp_path, monkeypatch):
+    """Provide a hermetic Venice model catalog for CLI tests.
+
+    Points LLM_USER_PATH at a temporary directory containing a minimal
+    venice_models.json with a single fake text model, so CLI tests do not
+    depend on the live Venice model catalog (model IDs are deprecated
+    upstream over time, which has repeatedly broken CLI tests).
+
+    Returns:
+        A factory callable: ``hermetic_venice_model(capabilities={...})``
+        writes the catalog and returns the model ID (``venice/test-model``).
+        Calling it with no arguments uses empty capabilities.
+    """
+
+    def make_model(capabilities=None):
+        model_id = "test-model"
+        (tmp_path / "venice_models.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "id": model_id,
+                        "type": "text",
+                        "model_spec": {"capabilities": capabilities or {}},
+                    }
+                ]
+            )
+        )
+        monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
+        return f"venice/{model_id}"
+
+    return make_model
 
 
 @pytest.fixture(scope="session")
