@@ -3,7 +3,6 @@ import json
 import llm
 from llm.cli import cli
 import pytest
-import sqlite_utils
 
 from llm_venice import VeniceChat
 
@@ -26,6 +25,7 @@ def test_prompt_web_search(cli_runner, isolated_llm_dir):
             "--web-search",
             "on",
             "--no-stream",
+            "--json",
             "What is VVV by Venice AI?",
         ],
     )
@@ -37,10 +37,9 @@ def test_prompt_web_search(cli_runner, isolated_llm_dir):
     logs_db_path = llm.user_dir() / "logs.db"
     assert logs_db_path.parent == isolated_llm_dir  # Verify we're using the temp dir
 
-    db = sqlite_utils.Database(logs_db_path)
-    last_response = list(db["responses"].rows)[-1]
-
-    response_json = json.loads(last_response["response_json"])
+    logged_responses = json.loads(result.output)
+    assert len(logged_responses) == 1
+    response_json = logged_responses[0]["response_json"]
     assert "venice_parameters" in response_json
     assert "web_search_citations" in response_json["venice_parameters"]
 
