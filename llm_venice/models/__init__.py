@@ -1,6 +1,7 @@
 """Venice model implementations."""
 
-import json
+import pathlib
+import sys
 
 import httpx2
 import llm
@@ -9,8 +10,59 @@ from llm_venice.models.chat import AsyncVeniceChat, VeniceChat
 from llm_venice.models.audio import AsyncVeniceSpeech, VeniceSpeech
 from llm_venice.models.image import AsyncVeniceImage, VeniceImage
 from llm_venice.constants import VENICE_API_BASE
-from llm_venice.api.refresh import fetch_models, persist_models
+from llm_venice.api.refresh import default_models_path, fetch_models, load_models, persist_models
 from llm_venice.api.errors import VeniceAPIError
+from llm_venice.notices import VeniceNotice, render_notice
+
+# Model registration can run several times per process (once per model lookup),
+# so remember which warnings were already shown.
+_emitted_warnings: set[str] = set()
+
+
+def _warn_once(message: str) -> None:
+    if message in _emitted_warnings:
+        return
+    _emitted_warnings.add(message)
+    # Stay click-free here: library modules must not depend on the CLI layer.
+    print(render_notice(VeniceNotice("warning", message)), file=sys.stderr)
+
+
+def _load_or_fetch_models(venice_models_path: pathlib.Path):
+    """
+    Return the Venice model list, or None if it is unavailable.
+
+    Uses the cached file when it is readable. A missing or unreadable cache is
+    (re)built from the API when a key is available. Never raises: a broken
+    cache or network failure must not break unrelated llm commands.
+    """
+    cache_error = None
+    if venice_models_path.exists():
+        try:
+            return load_models(venice_models_path)
+        except (OSError, ValueError) as exc:
+            cache_error = exc
+
+    key = llm.get_key("", "venice", "LLM_VENICE_KEY")
+    models = None
+    if key:
+        try:
+            models = fetch_models(key)
+        except (httpx2.RequestError, ValueError, VeniceAPIError):
+            models = None
+
+    if models is None:
+        if cache_error is not None:
+            _warn_once(
+                f"ignoring unreadable Venice model cache {venice_models_path} "
+                f"({cache_error}); run 'llm venice refresh' to rebuild it"
+            )
+        return None
+
+    try:
+        persist_models(models, venice_models_path)
+    except OSError as exc:
+        _warn_once(f"could not write Venice model cache {venice_models_path}: {exc}")
+    return models
 
 
 def register_venice_models(register):
@@ -20,25 +72,16 @@ def register_venice_models(register):
     Args:
         register: The LLM registration function
     """
-    venice_models_path = llm.user_dir() / "venice_models.json"
-    models = None
-
-    if venice_models_path.exists():
-        models = json.loads(venice_models_path.read_text())
-    else:
-        key = llm.get_key("", "venice", "LLM_VENICE_KEY")
-        if not key:
-            return
-        try:
-            models = fetch_models(key)
-        except (httpx2.RequestError, ValueError, VeniceAPIError):
-            return
-        persist_models(models, venice_models_path)
+    models = _load_or_fetch_models(default_models_path())
+    if not models:
+        return
 
     for model in models:
+        if not isinstance(model, dict) or not isinstance(model.get("id"), str):
+            continue
         model_id = model["id"]
-        model_spec = model.get("model_spec", {})
-        capabilities = model_spec.get("capabilities", {})
+        model_spec = model.get("model_spec") or {}
+        capabilities = model_spec.get("capabilities") or {}
         constraints = model_spec.get("constraints")
         supports_web_search = model_spec.get(
             "supportsWebSearch",
