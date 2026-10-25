@@ -300,10 +300,12 @@ def test_malformed_entries_are_skipped(monkeypatch, tmp_path):
         {"id": "list-spec", "type": "text", "model_spec": ["broken"]},
         {"id": "string-capabilities", "type": "text", "model_spec": {"capabilities": "broken"}},
         {"id": "list-capabilities", "type": "text", "model_spec": {"capabilities": ["broken"]}},
+        {"id": "string-constraints", "type": "image", "model_spec": {"constraints": "broken"}},
+        {"id": "list-constraints", "type": "image", "model_spec": {"constraints": ["broken"]}},
     ],
 )
 def test_malformed_nested_fields_are_skipped(monkeypatch, tmp_path, bad_entry):
-    """Non-dict model_spec and capabilities values are skipped, not read."""
+    """Non-dict model_spec, capabilities and constraints values are skipped, not read."""
     monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
     (tmp_path / "venice_models.json").write_text(
         json.dumps(

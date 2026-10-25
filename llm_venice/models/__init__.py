@@ -87,6 +87,8 @@ def register_venice_models(register):
         if not isinstance(capabilities, dict):
             continue
         constraints = model_spec.get("constraints")
+        if constraints is not None and not isinstance(constraints, dict):
+            continue
         supports_web_search = model_spec.get(
             "supportsWebSearch",
             capabilities.get("supportsWebSearch", False),
