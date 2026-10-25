@@ -6,9 +6,9 @@ from llm_venice.api.errors import VeniceAPIError
 from llm_venice.api.refresh import fetch_models
 
 
-def test_refresh_http_error_cli(cli_runner, httpx_mock, mock_venice_api_key):
+def test_refresh_http_error_cli(cli_runner, httpx2_mock, mock_venice_api_key):
     """CLI should present HTTP errors cleanly when refresh fails."""
-    httpx_mock.add_response(
+    httpx2_mock.add_response(
         method="GET",
         url="https://api.venice.ai/api/v1/models?type=all",
         status_code=502,
@@ -24,9 +24,9 @@ def test_refresh_http_error_cli(cli_runner, httpx_mock, mock_venice_api_key):
     assert "Traceback" not in output
 
 
-def test_refresh_network_error_cli(cli_runner, httpx_mock, mock_venice_api_key):
+def test_refresh_network_error_cli(cli_runner, httpx2_mock, mock_venice_api_key):
     """CLI should present network errors cleanly when refresh fails."""
-    httpx_mock.add_exception(
+    httpx2_mock.add_exception(
         httpx2.TimeoutException("Request timed out"),
         method="GET",
         url="https://api.venice.ai/api/v1/models?type=all",
@@ -40,9 +40,9 @@ def test_refresh_network_error_cli(cli_runner, httpx_mock, mock_venice_api_key):
     assert "Traceback" not in output
 
 
-def test_fetch_models_http_error_programmatic(httpx_mock, mock_venice_api_key):
+def test_fetch_models_http_error_programmatic(httpx2_mock, mock_venice_api_key):
     """Programmatic refresh should raise VeniceAPIError."""
-    httpx_mock.add_response(
+    httpx2_mock.add_response(
         method="GET",
         url="https://api.venice.ai/api/v1/models?type=all",
         status_code=401,
@@ -80,9 +80,9 @@ def test_persist_models_is_atomic(tmp_path, monkeypatch):
     assert [p.name for p in tmp_path.iterdir()] == ["venice_models.json"]
 
 
-def test_fetch_models_malformed_payload_raises_value_error(httpx_mock, mock_venice_api_key):
+def test_fetch_models_malformed_payload_raises_value_error(httpx2_mock, mock_venice_api_key):
     """A response without a model list should raise ValueError, not KeyError."""
-    httpx_mock.add_response(
+    httpx2_mock.add_response(
         method="GET",
         url="https://api.venice.ai/api/v1/models?type=all",
         json={"unexpected": True},

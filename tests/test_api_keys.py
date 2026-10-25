@@ -10,9 +10,9 @@ from llm_venice.api.errors import VeniceAPIError
 from llm_venice.api.keys import list_api_keys
 
 
-def test_list_api_keys_http_error(cli_runner, httpx_mock, mock_venice_api_key):
+def test_list_api_keys_http_error(cli_runner, httpx2_mock, mock_venice_api_key):
     """Handle unexpected HTTP errors without a traceback."""
-    httpx_mock.add_response(
+    httpx2_mock.add_response(
         method="GET",
         url="https://api.venice.ai/api/v1/api_keys",
         status_code=401,
@@ -53,9 +53,11 @@ def test_list_api_keys_http_error(cli_runner, httpx_mock, mock_venice_api_key):
         ),
     ],
 )
-def test_api_keys_network_error_cli(cli_runner, httpx_mock, mock_venice_api_key, args, method, url):
+def test_api_keys_network_error_cli(
+    cli_runner, httpx2_mock, mock_venice_api_key, args, method, url
+):
     """CLI should surface network errors without traceback."""
-    httpx_mock.add_exception(httpx2.TimeoutException("Request timed out"), method=method, url=url)
+    httpx2_mock.add_exception(httpx2.TimeoutException("Request timed out"), method=method, url=url)
 
     result = cli_runner.invoke(cli, args)
 
@@ -65,9 +67,9 @@ def test_api_keys_network_error_cli(cli_runner, httpx_mock, mock_venice_api_key,
     assert "Traceback" not in output
 
 
-def test_list_api_keys_http_error_programmatic(httpx_mock, mock_venice_api_key):
+def test_list_api_keys_http_error_programmatic(httpx2_mock, mock_venice_api_key):
     """Programmatic consumers should get a friendly VeniceAPIError."""
-    httpx_mock.add_response(
+    httpx2_mock.add_response(
         method="GET",
         url="https://api.venice.ai/api/v1/api_keys",
         status_code=403,
@@ -83,9 +85,9 @@ def test_list_api_keys_http_error_programmatic(httpx_mock, mock_venice_api_key):
     assert "admin" not in message.lower()
 
 
-def test_list_api_keys_maps_error_code(httpx_mock, mock_venice_api_key):
+def test_list_api_keys_maps_error_code(httpx2_mock, mock_venice_api_key):
     """Ensure error code is surfaced for 401 responses."""
-    httpx_mock.add_response(
+    httpx2_mock.add_response(
         method="GET",
         url="https://api.venice.ai/api/v1/api_keys",
         status_code=401,

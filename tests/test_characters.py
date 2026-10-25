@@ -6,9 +6,9 @@ from llm_venice.api.characters import list_characters
 from llm_venice.api.errors import VeniceAPIError
 
 
-def test_characters_http_error_cli(cli_runner, httpx_mock, mock_venice_api_key):
+def test_characters_http_error_cli(cli_runner, httpx2_mock, mock_venice_api_key):
     """CLI should surface HTTP errors without traceback."""
-    httpx_mock.add_response(
+    httpx2_mock.add_response(
         method="GET",
         url="https://api.venice.ai/api/v1/characters",
         status_code=500,
@@ -24,9 +24,9 @@ def test_characters_http_error_cli(cli_runner, httpx_mock, mock_venice_api_key):
     assert "Traceback" not in output
 
 
-def test_characters_network_error_cli(cli_runner, httpx_mock, mock_venice_api_key):
+def test_characters_network_error_cli(cli_runner, httpx2_mock, mock_venice_api_key):
     """CLI should surface network errors without traceback."""
-    httpx_mock.add_exception(
+    httpx2_mock.add_exception(
         httpx2.TimeoutException("Request timed out"),
         method="GET",
         url="https://api.venice.ai/api/v1/characters",
@@ -40,9 +40,9 @@ def test_characters_network_error_cli(cli_runner, httpx_mock, mock_venice_api_ke
     assert "Traceback" not in output
 
 
-def test_characters_http_error_programmatic(httpx_mock, mock_venice_api_key):
+def test_characters_http_error_programmatic(httpx2_mock, mock_venice_api_key):
     """Programmatic consumers should receive VeniceAPIError."""
-    httpx_mock.add_response(
+    httpx2_mock.add_response(
         method="GET",
         url="https://api.venice.ai/api/v1/characters",
         status_code=404,
