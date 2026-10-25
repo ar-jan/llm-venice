@@ -80,6 +80,137 @@ def test_venice_chat_build_kwargs_json_schema():
     assert "test" in json_schema["schema"]["properties"]
 
 
+def test_build_kwargs_recursively_sets_additional_properties():
+    """Nested objects, arrays of objects and $defs all get additionalProperties: false."""
+    import copy
+
+    chat = VeniceChat(
+        model_id="venice/test-model",
+        model_name="test-model",
+        api_base="https://api.venice.ai/api/v1",
+    )
+    test_schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "address": {
+                "type": "object",
+                "properties": {"street": {"type": "string"}},
+            },
+            "tags": {
+                "type": "array",
+                "items": {"type": "object", "properties": {"id": {"type": "integer"}}},
+            },
+            "items": {"type": "array", "items": {"$ref": "#/$defs/item"}},
+        },
+        "$defs": {"item": {"type": "object", "properties": {"sku": {"type": "string"}}}},
+    }
+    original_schema = copy.deepcopy(test_schema)
+
+    prompt = Prompt(prompt="Generate a test object", model=chat, schema=test_schema)
+    kwargs = chat.build_kwargs(prompt, stream=False)
+
+    schema = kwargs["response_format"]["json_schema"]["schema"]
+    assert schema["additionalProperties"] is False
+    assert schema["properties"]["address"]["additionalProperties"] is False
+    assert schema["properties"]["tags"]["items"]["additionalProperties"] is False
+    assert schema["$defs"]["item"]["additionalProperties"] is False
+
+    # The caller's schema is never mutated
+    assert test_schema == original_schema
+
+
+def test_build_kwargs_leaves_object_without_properties_closed():
+    """An object schema with no declared properties is closed too."""
+    chat = VeniceChat(
+        model_id="venice/test-model",
+        model_name="test-model",
+        api_base="https://api.venice.ai/api/v1",
+    )
+    prompt = Prompt(
+        prompt="Generate a test object",
+        model=chat,
+        schema={"type": "object", "properties": {"meta": {"type": "object"}}},
+    )
+
+    kwargs = chat.build_kwargs(prompt, stream=False)
+
+    schema = kwargs["response_format"]["json_schema"]["schema"]
+    assert schema["properties"]["meta"]["additionalProperties"] is False
+
+
+def test_web_search_off_on_model_without_web_search():
+    """`enable_web_search` of 'off' must not trigger the capability guard."""
+    chat = VeniceChat(
+        model_id="venice/test-model",
+        model_name="test-model",
+        api_base="https://api.venice.ai/api/v1",
+        supports_web_search=False,
+    )
+    options = VeniceChatOptions(enable_web_search="off")
+    prompt = Prompt(prompt="Test", model=chat, options=options)
+
+    kwargs = chat.build_kwargs(prompt, stream=False)
+
+    assert kwargs["extra_body"]["venice_parameters"]["enable_web_search"] == "off"
+
+
+def test_web_search_off_still_rejects_citations():
+    """Citations still require 'on' or 'auto', so 'off' is rejected."""
+    import llm
+
+    chat = VeniceChat(
+        model_id="venice/test-model",
+        model_name="test-model",
+        api_base="https://api.venice.ai/api/v1",
+        supports_web_search=True,
+    )
+    options = VeniceChatOptions(enable_web_search="off", enable_web_citations=True)
+    prompt = Prompt(prompt="Test", model=chat, options=options)
+
+    with pytest.raises(llm.ModelError, match="enable_web_search must be set to 'on' or 'auto'"):
+        chat.build_kwargs(prompt, stream=False)
+
+
+def test_reasoning_effort_and_prompt_cache_reach_request():
+    """B10 options are sent at the top level of the request body."""
+    chat = VeniceChat(
+        model_id="venice/test-model",
+        model_name="test-model",
+        api_base="https://api.venice.ai/api/v1",
+    )
+    options = VeniceChatOptions(
+        reasoning_effort="high",
+        prompt_cache_key="session-123",
+        prompt_cache_retention="24h",
+    )
+    prompt = Prompt(prompt="Test", model=chat, options=options)
+
+    kwargs = chat.build_kwargs(prompt, stream=False)
+
+    assert kwargs["reasoning_effort"] == "high"
+    assert kwargs["prompt_cache_key"] == "session-123"
+    assert kwargs["prompt_cache_retention"] == "24h"
+    assert "extra_body" not in kwargs
+
+
+def test_models_list_options_includes_chat_request_options(cli_runner, hermetic_venice_model):
+    """`llm models --options` advertises the B10 options."""
+    from llm import cli as llm_cli
+
+    hermetic_venice_model()
+
+    result = cli_runner.invoke(llm_cli.cli, ["models", "--options", "-q", "venice"])
+
+    assert result.exit_code == 0, result.output
+    assert "reasoning_effort: str" in result.output
+    assert "Reasoning effort for models that support it" in result.output
+    assert "prompt_cache_key: str" in result.output
+    assert "Key used to group related requests for prompt caching." in result.output
+    assert "prompt_cache_retention: str" in result.output
+    assert "Prompt cache retention: 'default', 'extended' or '24h'." in result.output
+
+
 def test_async_venice_chat_parity_with_sync_build_kwargs():
     """Ensure async Venice chat builds identical kwargs to the sync model."""
     # Enable web search to exercise Venice-specific validation paths
