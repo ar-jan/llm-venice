@@ -120,6 +120,88 @@ def test_build_kwargs_recursively_sets_additional_properties():
     assert test_schema == original_schema
 
 
+@pytest.mark.parametrize(
+    "schema, paths",
+    [
+        (
+            {
+                "anyOf": [
+                    {"type": "object", "properties": {"a": {"type": "string"}}},
+                    {"type": "string"},
+                ]
+            },
+            [("anyOf", 0)],
+        ),
+        (
+            {
+                "oneOf": [
+                    {"type": "object", "properties": {"a": {"type": "string"}}},
+                    {"type": "integer"},
+                ]
+            },
+            [("oneOf", 0)],
+        ),
+        (
+            {
+                "allOf": [
+                    {"type": "object", "properties": {"a": {"type": "string"}}},
+                    {"type": "object", "properties": {"b": {"type": "integer"}}},
+                ]
+            },
+            [("allOf", 0), ("allOf", 1)],
+        ),
+        (
+            {
+                "type": "array",
+                "prefixItems": [
+                    {"type": "object", "properties": {"a": {"type": "string"}}},
+                    {"type": "object", "properties": {"b": {"type": "integer"}}},
+                ],
+            },
+            [("prefixItems", 0), ("prefixItems", 1)],
+        ),
+        (
+            {
+                "if": {"type": "object", "properties": {"kind": {"type": "string"}}},
+                "then": {"type": "object", "properties": {"a": {"type": "string"}}},
+                "else": {"type": "object", "properties": {"b": {"type": "string"}}},
+            },
+            [("if",), ("then",), ("else",)],
+        ),
+        (
+            {"type": ["object", "null"], "properties": {"a": {"type": "string"}}},
+            [()],
+        ),
+        (
+            {"properties": {"a": {"type": "string"}}},
+            [()],
+        ),
+    ],
+)
+def test_build_kwargs_closes_every_object_schema(schema, paths):
+    """Combinators, conditionals, prefixItems and implicit objects are closed."""
+    import copy
+
+    chat = VeniceChat(
+        model_id="venice/test-model",
+        model_name="test-model",
+        api_base="https://api.venice.ai/api/v1",
+    )
+    original_schema = copy.deepcopy(schema)
+    prompt = Prompt(prompt="Generate a test object", model=chat, schema=schema)
+
+    kwargs = chat.build_kwargs(prompt, stream=False)
+
+    strict_schema = kwargs["response_format"]["json_schema"]["schema"]
+    for path in paths:
+        node = strict_schema
+        for key in path:
+            node = node[key]
+        assert node["additionalProperties"] is False, f"{path} was not closed"
+
+    assert schema == original_schema
+
+
 def test_build_kwargs_leaves_object_without_properties_closed():
     """An object schema with no declared properties is closed too."""
     chat = VeniceChat(
