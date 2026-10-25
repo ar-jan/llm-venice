@@ -223,9 +223,18 @@ class TestVeniceSystemPrompt:
     """Test Venice system prompt control."""
 
     def test_disable_venice_system_prompt(self, cli_runner, isolated_llm_dir):
-        """Test --no-venice-system-prompt flag."""
+        """Test the -o include_venice_system_prompt option."""
         result = cli_runner.invoke(
-            cli, ["prompt", "-m", "venice/llama-3.2-3b", "--no-venice-system-prompt", "Say hello."]
+            cli,
+            [
+                "prompt",
+                "-m",
+                "venice/llama-3.2-3b",
+                "-o",
+                "include_venice_system_prompt",
+                "0",
+                "Say hello.",
+            ],
         )
         assert result.exit_code == 0
         assert len(result.output) > 0
@@ -306,7 +315,8 @@ class TestCharacterPersonas:
                 "prompt",
                 "-m",
                 model_id,
-                "--character",
+                "-o",
+                "character_slug",
                 "alan-watts",
                 "What is consciousness?",
             ],
@@ -360,7 +370,8 @@ class TestWebSearch:
                 "prompt",
                 "-m",
                 "venice/llama-3.3-70b",
-                "--web-search",
+                "-o",
+                "enable_web_search",
                 "on",
                 "--no-stream",
                 "--json",
