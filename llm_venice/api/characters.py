@@ -1,6 +1,5 @@
 """Character retrieval for Venice API."""
 
-import json
 import pathlib
 from typing import Optional
 
@@ -10,6 +9,7 @@ import llm
 from llm_venice.api.client import get_auth_headers
 from llm_venice.api.errors import raise_api_error
 from llm_venice.constants import ENDPOINT_CHARACTERS
+from llm_venice.utils import write_json_atomic
 
 
 def list_characters(
@@ -56,5 +56,5 @@ def persist_characters(characters: dict, path: Optional[pathlib.Path] = None) ->
         The written path.
     """
     target_path = llm.user_dir() / "venice_characters.json" if path is None else path
-    target_path.write_text(json.dumps(characters, indent=4))
+    write_json_atomic(target_path, characters)
     return target_path

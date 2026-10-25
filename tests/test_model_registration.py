@@ -193,3 +193,152 @@ def test_registers_tts_async_model(monkeypatch, tmp_path):
 
     assert isinstance(registered[0], VeniceSpeech)
     assert isinstance(registered_async[0], AsyncVeniceSpeech)
+
+
+@pytest.fixture
+def clear_registration_warnings(monkeypatch):
+    """Reset the warn-once cache so each test observes its own warnings."""
+    monkeypatch.setattr("llm_venice.models._emitted_warnings", set())
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '[{"id": broken',  # truncated / invalid JSON
+        '{"data": []}',  # valid JSON, wrong shape
+        "",  # empty file
+    ],
+)
+def test_corrupt_cache_without_key_warns_and_skips(
+    monkeypatch, tmp_path, capsys, clear_registration_warnings, content
+):
+    """A corrupt cache must not crash plugin loading."""
+    monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
+    (tmp_path / "venice_models.json").write_text(content)
+    monkeypatch.setattr(llm, "get_key", lambda *_, **__: None)
+
+    registered = []
+    register_venice_models(lambda model, async_model=None, aliases=None: registered.append(model))
+    # A second registration pass in the same process must not repeat the warning
+    register_venice_models(lambda model, async_model=None, aliases=None: registered.append(model))
+
+    assert registered == []
+    err = capsys.readouterr().err
+    assert err.count("Warning: ignoring unreadable Venice model cache") == 1
+    assert "llm venice refresh" in err
+
+
+def test_corrupt_cache_is_rebuilt_when_key_available(
+    monkeypatch, tmp_path, capsys, clear_registration_warnings
+):
+    """With a key, a corrupt cache is refetched and replaced without warning."""
+    monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
+    cache = tmp_path / "venice_models.json"
+    cache.write_text('[{"id": broken')
+    monkeypatch.setattr(llm, "get_key", lambda *_, **__: "test-key")
+    fresh = [{"id": "fresh-model", "type": "text", "model_spec": {"capabilities": {}}}]
+    monkeypatch.setattr("llm_venice.models.fetch_models", lambda _key: fresh)
+
+    registered = []
+    register_venice_models(lambda model, async_model=None, aliases=None: registered.append(model))
+
+    assert [m.model_id for m in registered] == ["venice/fresh-model"]
+    assert json.loads(cache.read_text()) == fresh
+    assert capsys.readouterr().err == ""
+
+
+def test_corrupt_cache_and_failed_fetch_warns(
+    monkeypatch, tmp_path, capsys, clear_registration_warnings
+):
+    """If rebuilding fails too, warn and keep the broken file for inspection."""
+    monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
+    cache = tmp_path / "venice_models.json"
+    cache.write_text("not json")
+    monkeypatch.setattr(llm, "get_key", lambda *_, **__: "test-key")
+
+    def fetch_failure(_key):
+        raise httpx2.RequestError(
+            "Network down",
+            request=httpx2.Request("GET", "https://api.venice.ai/api/v1/models"),
+        )
+
+    monkeypatch.setattr("llm_venice.models.fetch_models", fetch_failure)
+
+    registered = []
+    register_venice_models(lambda model, async_model=None, aliases=None: registered.append(model))
+
+    assert registered == []
+    assert cache.read_text() == "not json"
+    assert "ignoring unreadable Venice model cache" in capsys.readouterr().err
+
+
+def test_malformed_entries_are_skipped(monkeypatch, tmp_path):
+    """Individual malformed entries are skipped; valid ones still register."""
+    monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
+    (tmp_path / "venice_models.json").write_text(
+        json.dumps(
+            [
+                "not-a-dict",
+                {"type": "text"},  # missing id
+                {"id": "null-spec", "type": "text", "model_spec": None},
+                {"id": "ok", "type": "text", "model_spec": {"capabilities": None}},
+            ]
+        )
+    )
+    monkeypatch.setattr(llm, "get_key", lambda *_, **__: None)
+
+    registered = []
+    register_venice_models(lambda model, async_model=None, aliases=None: registered.append(model))
+
+    assert [m.model_id for m in registered] == ["venice/null-spec", "venice/ok"]
+
+
+@pytest.mark.parametrize(
+    "bad_entry",
+    [
+        {"id": "string-spec", "type": "text", "model_spec": "broken"},
+        {"id": "list-spec", "type": "text", "model_spec": ["broken"]},
+        {"id": "string-capabilities", "type": "text", "model_spec": {"capabilities": "broken"}},
+        {"id": "list-capabilities", "type": "text", "model_spec": {"capabilities": ["broken"]}},
+        {"id": "string-constraints", "type": "image", "model_spec": {"constraints": "broken"}},
+        {"id": "list-constraints", "type": "image", "model_spec": {"constraints": ["broken"]}},
+    ],
+)
+def test_malformed_nested_fields_are_skipped(monkeypatch, tmp_path, bad_entry):
+    """Non-dict model_spec, capabilities and constraints values are skipped, not read."""
+    monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
+    (tmp_path / "venice_models.json").write_text(
+        json.dumps(
+            [
+                bad_entry,
+                {"id": "ok", "type": "text", "model_spec": {"capabilities": {}}},
+            ]
+        )
+    )
+    monkeypatch.setattr(llm, "get_key", lambda *_, **__: None)
+
+    registered = []
+    register_venice_models(lambda model, async_model=None, aliases=None: registered.append(model))
+
+    assert [m.model_id for m in registered] == ["venice/ok"]
+
+
+def test_persist_failure_still_registers(
+    monkeypatch, tmp_path, capsys, clear_registration_warnings
+):
+    """Failing to write the cache should not prevent registration."""
+    monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
+    monkeypatch.setattr(llm, "get_key", lambda *_, **__: "test-key")
+    fresh = [{"id": "m", "type": "text", "model_spec": {}}]
+    monkeypatch.setattr("llm_venice.models.fetch_models", lambda _key: fresh)
+
+    def persist_failure(*_args, **_kwargs):
+        raise PermissionError("read-only")
+
+    monkeypatch.setattr("llm_venice.models.persist_models", persist_failure)
+
+    registered = []
+    register_venice_models(lambda model, async_model=None, aliases=None: registered.append(model))
+
+    assert [m.model_id for m in registered] == ["venice/m"]
+    assert "could not write Venice model cache" in capsys.readouterr().err

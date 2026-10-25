@@ -1,10 +1,12 @@
 """Utility functions for the LLM Venice plugin."""
 
 import datetime
+import json
 import os
 import pathlib
 import sys
-from typing import Optional, Union
+import tempfile
+from typing import Any, Optional, Union
 
 import click
 import llm
@@ -29,6 +31,30 @@ def get_venice_key(explicit_key: Optional[str] = None, *, click_exceptions: bool
             raise click.ClickException(message)
         raise NeedsKeyException(message)
     return key
+
+
+def write_json_atomic(path: pathlib.Path, data: Any) -> None:
+    """
+    Write data as JSON to path atomically.
+
+    The data is written to a temporary file in the same directory, which then
+    replaces the target. Readers never observe a partially written file, even if
+    the process is interrupted mid-write.
+    """
+    path = pathlib.Path(path)
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
+            json.dump(data, tmp_file, indent=4)
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+        os.replace(tmp_name, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def generate_timestamp_filename(prefix: str, model_name: str, extension: str) -> str:

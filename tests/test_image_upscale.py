@@ -55,10 +55,10 @@ def test_upscale_command(
     assert b"4" in request_body
 
 
-def test_upscale_error_handling(httpx_mock, mock_venice_api_key, temp_image_file):
+def test_upscale_error_handling(httpx2_mock, mock_venice_api_key, temp_image_file):
     """Test error handling in the upscale function"""
     # Mock an error response from the API
-    httpx_mock.add_response(
+    httpx2_mock.add_response(
         method="POST",
         url="https://api.venice.ai/api/v1/image/upscale",
         status_code=400,
@@ -250,12 +250,12 @@ def test_upscale_cli_file_not_found(mock_venice_api_key, cli_runner):
     assert "does not exist" in result.output or "No such file" in result.output
 
 
-def test_upscale_network_timeout(httpx_mock, temp_image_file, mock_venice_api_key):
+def test_upscale_network_timeout(httpx2_mock, temp_image_file, mock_venice_api_key):
     """Test handling of network timeouts"""
     import httpx2
 
     # Mock a timeout response
-    httpx_mock.add_exception(
+    httpx2_mock.add_exception(
         httpx2.TimeoutException("Request timed out"),
         method="POST",
         url="https://api.venice.ai/api/v1/image/upscale",
@@ -265,11 +265,11 @@ def test_upscale_network_timeout(httpx_mock, temp_image_file, mock_venice_api_ke
         perform_image_upscale(str(temp_image_file), scale=2)
 
 
-def test_upscale_network_error_cli(cli_runner, httpx_mock, temp_image_file, mock_venice_api_key):
+def test_upscale_network_error_cli(cli_runner, httpx2_mock, temp_image_file, mock_venice_api_key):
     """CLI should surface network errors without traceback."""
     import httpx2
 
-    httpx_mock.add_exception(
+    httpx2_mock.add_exception(
         httpx2.TimeoutException("Request timed out"),
         method="POST",
         url="https://api.venice.ai/api/v1/image/upscale",
@@ -284,14 +284,14 @@ def test_upscale_network_error_cli(cli_runner, httpx_mock, temp_image_file, mock
 
 
 def test_upscale_binary_response_handling(
-    httpx_mock, temp_image_file, tmp_path, mock_venice_api_key
+    httpx2_mock, temp_image_file, tmp_path, mock_venice_api_key
 ):
     """Test that binary image data is handled correctly"""
     # Mock response with specific binary PNG data
     png_header = b"\x89PNG\r\n\x1a\n"
     mock_png_data = png_header + b"fake png data"
 
-    httpx_mock.add_response(
+    httpx2_mock.add_response(
         method="POST",
         url="https://api.venice.ai/api/v1/image/upscale",
         content=mock_png_data,

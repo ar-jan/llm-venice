@@ -117,15 +117,15 @@ def temp_image_file(tmp_path, mock_image_file):
 
 
 @pytest.fixture
-def mocked_responses(httpx_mock, mock_image_file):
+def mocked_responses(httpx2_mock, mock_image_file):
     """Set up mocked HTTP responses for the upscale API endpoint"""
-    httpx_mock.add_response(
+    httpx2_mock.add_response(
         method="POST",
         url="https://api.venice.ai/api/v1/image/upscale",
         content=b"upscaled image data",
         headers={"Content-Type": "image/jpeg"},
     )
-    return httpx_mock
+    return httpx2_mock
 
 
 @pytest.fixture
