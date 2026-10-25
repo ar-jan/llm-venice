@@ -221,7 +221,25 @@ You can call the library helpers directly from Python (minimally tested):
 - `generate_speech_result()` → `SpeechGenerationResult` with bytes/metadata/output path for TTS generation; persist with `save_speech_result(result)`
 - `stream_speech_result()` (context manager) yields `SpeechStreamResult` with an iterator of audio chunks and a resolved output path
 
-All helpers accept an optional `key=` argument if you do not want to rely on the stored `LLM_VENICE_KEY`.
+The helpers take the API key in one of three ways:
+
+| Argument | Helpers |
+|---|---|
+| optional `key=`; falls back to the stored key or `LLM_VENICE_KEY` | `fetch_models()`, `list_characters()`, `perform_image_upscale()` |
+| required `headers` dict as the first argument | `list_api_keys()`, `get_rate_limits()`, `get_rate_limits_log()`, `create_api_key()`, `delete_api_key()` |
+| required keyword `api_key=` | `generate_image_result()`, `generate_speech_result()`, `stream_speech_result()` |
+
+The `persist_*`, `save_*` and `write_upscaled_image()` helpers only write to disk and take no key.
+
+To build `headers` or resolve the stored key yourself:
+
+```python
+from llm_venice.api.client import get_auth_headers
+from llm_venice.utils import get_venice_key
+
+headers = get_auth_headers()  # or get_auth_headers("sk-...")
+api_key = get_venice_key()  # raises llm.NeedsKeyException if no key is set
+```
 
 ### Async usage
 
