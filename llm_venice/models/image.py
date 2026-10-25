@@ -22,6 +22,7 @@ from llm_venice.constants import (
 from llm_venice.utils import (
     generate_timestamp_filename,
     get_unique_filepath,
+    require_model_key,
     validate_output_directory,
 )
 from llm_venice.api.client import get_auth_headers_with_content_type
@@ -410,7 +411,7 @@ class VeniceImage(llm.KeyModel):
         self, model_id, model_name=None, image_constraints=None, supports_web_search=False
     ):
         self.model_id = f"venice/{model_id}"
-        self.model_name = model_id
+        self.model_name = model_name or model_id
         self.image_constraints = image_constraints
         self.supports_web_search = supports_web_search
 
@@ -423,9 +424,7 @@ class VeniceImage(llm.KeyModel):
     def execute(self, prompt, stream, response, conversation=None, key=None):
         """Execute image generation request."""
         try:
-            api_key = self.get_key(key)
-            if api_key is None:
-                raise llm.NeedsKeyException("No key found for Venice")
+            api_key = require_model_key(self, key)
             try:
                 options_dict = prompt.options.model_dump(by_alias=True)
                 validate_output_directory(
@@ -478,7 +477,7 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
         self, model_id, model_name=None, image_constraints=None, supports_web_search=False
     ):
         self.model_id = f"venice/{model_id}"
-        self.model_name = model_id
+        self.model_name = model_name or model_id
         self.image_constraints = image_constraints
         self.supports_web_search = supports_web_search
 
@@ -491,9 +490,7 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
     async def execute(self, prompt, stream, response, conversation=None, key=None):
         """Execute image generation request asynchronously."""
         try:
-            api_key = self.get_key(key)
-            if api_key is None:
-                raise llm.NeedsKeyException("No key found for Venice")
+            api_key = require_model_key(self, key)
             try:
                 options_dict = prompt.options.model_dump(by_alias=True)
                 validate_output_directory(

@@ -20,6 +20,7 @@ from llm_venice.constants import ENDPOINT_AUDIO_SPEECH
 from llm_venice.utils import (
     generate_timestamp_filename,
     get_unique_filepath,
+    require_model_key,
     validate_output_directory,
 )
 
@@ -450,9 +451,7 @@ class VeniceSpeech(llm.KeyModel):
 
     def execute(self, prompt, stream, response, conversation=None, key=None):
         """Execute text-to-speech request."""
-        api_key = self.get_key(key)
-        if api_key is None:
-            raise llm.NeedsKeyException("No key found for Venice")
+        api_key = require_model_key(self, key)
 
         try:
             options_dict = prompt.options.model_dump(by_alias=True)
@@ -543,9 +542,7 @@ class AsyncVeniceSpeech(llm.AsyncKeyModel):
         self, prompt, stream, response, conversation=None, key=None
     ) -> AsyncGenerator[str, None]:
         """Execute text-to-speech request asynchronously."""
-        api_key = self.get_key(key)
-        if api_key is None:
-            raise llm.NeedsKeyException("No key found for Venice")
+        api_key = require_model_key(self, key)
 
         try:
             options_dict = prompt.options.model_dump(by_alias=True)

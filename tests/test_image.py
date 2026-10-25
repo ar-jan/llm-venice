@@ -16,6 +16,64 @@ from llm_venice.notices import VeniceNotice
 from llm_venice.cli.notices import emit_cli_notices
 
 
+@pytest.mark.parametrize("model_cls", [VeniceImage, AsyncVeniceImage])
+def test_venice_image_honors_model_name(model_cls):
+    """An explicit model_name is the API model ID; model_id only names the llm model."""
+    model = model_cls("my-alias", model_name="real-model")
+    assert model.model_id == "venice/my-alias"
+    assert model.model_name == "real-model"
+
+
+@pytest.mark.parametrize("model_cls", [VeniceImage, AsyncVeniceImage])
+def test_venice_image_model_name_defaults_to_model_id(model_cls):
+    model = model_cls("test-model")
+    assert model.model_name == "test-model"
+
+
+def test_venice_image_sends_model_name_in_payload(mock_venice_api_key, tmp_path):
+    """The request payload uses model_name, not the registered model_id."""
+    model = VeniceImage("my-alias", model_name="real-model")
+    prompt = MagicMock()
+    prompt.prompt = "Test prompt"
+    prompt.options = VeniceImage.Options(output_dir=str(tmp_path))
+
+    with patch("httpx2.post") as mock_post:
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            "images": ["YmFzZTY0ZGF0YQ=="],
+            "request": {"model": "real-model"},
+            "timing": {},
+        }
+        mock_post.return_value = mock_response
+
+        with patch.object(model, "get_key", return_value=mock_venice_api_key):
+            list(model.execute(prompt, False, MagicMock(), None))
+
+    assert mock_post.call_args.kwargs["json"]["model"] == "real-model"
+
+
+@pytest.mark.parametrize("model_cls", [VeniceImage, AsyncVeniceImage])
+def test_venice_image_empty_key_raises_needs_key(model_cls):
+    """An empty key is rejected before any request is made."""
+    model = model_cls("test-model")
+    prompt = MagicMock()
+
+    with patch.object(model, "get_key", return_value=""), patch("httpx2.post") as mock_post:
+        with pytest.raises(llm.NeedsKeyException):
+            result = model.execute(prompt, False, MagicMock(), None)
+            if hasattr(result, "__anext__"):
+
+                async def drain():
+                    return [item async for item in result]
+
+                asyncio.run(drain())
+            else:
+                list(result)
+
+    mock_post.assert_not_called()
+
+
 def test_venice_image_format_in_payload(mock_venice_api_key):
     """Test that image format is correctly included in the API payload."""
     # Create a VeniceImage model instance

@@ -33,6 +33,22 @@ def get_venice_key(explicit_key: Optional[str] = None, *, click_exceptions: bool
     return key
 
 
+def require_model_key(
+    model: Union[llm.KeyModel, llm.AsyncKeyModel], explicit_key: Optional[str] = None
+) -> str:
+    """
+    Resolve a model's API key as a ``str``.
+
+    ``KeyModel.get_key()`` raises when no key is configured, but it is typed to
+    return ``Optional[str]`` (``None`` for models without ``needs_key``). This
+    narrows the type for callers, and also rejects an empty key.
+    """
+    key = model.get_key(explicit_key)
+    if not key:
+        raise NeedsKeyException("No key found for Venice")
+    return key
+
+
 def write_json_atomic(path: pathlib.Path, data: Any) -> None:
     """
     Write data as JSON to path atomically.
