@@ -81,7 +81,11 @@ def register_venice_models(register):
             continue
         model_id = model["id"]
         model_spec = model.get("model_spec") or {}
+        if not isinstance(model_spec, dict):
+            continue
         capabilities = model_spec.get("capabilities") or {}
+        if not isinstance(capabilities, dict):
+            continue
         constraints = model_spec.get("constraints")
         supports_web_search = model_spec.get(
             "supportsWebSearch",

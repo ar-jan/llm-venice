@@ -293,6 +293,34 @@ def test_malformed_entries_are_skipped(monkeypatch, tmp_path):
     assert [m.model_id for m in registered] == ["venice/null-spec", "venice/ok"]
 
 
+@pytest.mark.parametrize(
+    "bad_entry",
+    [
+        {"id": "string-spec", "type": "text", "model_spec": "broken"},
+        {"id": "list-spec", "type": "text", "model_spec": ["broken"]},
+        {"id": "string-capabilities", "type": "text", "model_spec": {"capabilities": "broken"}},
+        {"id": "list-capabilities", "type": "text", "model_spec": {"capabilities": ["broken"]}},
+    ],
+)
+def test_malformed_nested_fields_are_skipped(monkeypatch, tmp_path, bad_entry):
+    """Non-dict model_spec and capabilities values are skipped, not read."""
+    monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
+    (tmp_path / "venice_models.json").write_text(
+        json.dumps(
+            [
+                bad_entry,
+                {"id": "ok", "type": "text", "model_spec": {"capabilities": {}}},
+            ]
+        )
+    )
+    monkeypatch.setattr(llm, "get_key", lambda *_, **__: None)
+
+    registered = []
+    register_venice_models(lambda model, async_model=None, aliases=None: registered.append(model))
+
+    assert [m.model_id for m in registered] == ["venice/ok"]
+
+
 def test_persist_failure_still_registers(
     monkeypatch, tmp_path, capsys, clear_registration_warnings
 ):
