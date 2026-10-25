@@ -22,8 +22,8 @@ def test_upscale_function(mocked_responses, temp_image_file, tmp_path, mock_veni
     assert "multipart/form-data" in request.headers["Content-Type"]
 
     # Check if the output file was created with the correct name
-    # temp_image_file's test.jpg results in test_upscaled.png
-    expected_output_path = tmp_path / "test_upscaled.png"
+    # The mocked response is image/jpeg, so test.jpg results in test_upscaled.jpg
+    expected_output_path = tmp_path / "test_upscaled.jpg"
     assert saved_path == expected_output_path
     assert expected_output_path.exists()
 
@@ -43,7 +43,7 @@ def test_upscale_command(
     assert result.exit_code == 0
 
     # Verify the output message
-    assert f"Upscaled image saved to {tmp_path}/test_upscaled.png" in result.output
+    assert f"Upscaled image saved to {tmp_path}/test_upscaled.jpg" in result.output
 
     # Check the request was made with the correct scale factor
     requests = mocked_responses.get_requests()
@@ -142,7 +142,7 @@ def test_upscale_custom_output_path_directory(
     write_upscaled_image(result)
 
     # Should save to output_dir with default filename
-    expected_output = output_dir / "input_upscaled.png"
+    expected_output = output_dir / "input_upscaled.jpg"
     assert expected_output.exists()
 
 
@@ -150,8 +150,8 @@ def test_upscale_avoid_overwrite_with_timestamp(
     mocked_responses, temp_image_file, tmp_path, mock_venice_api_key
 ):
     """Test that existing files are not overwritten without --overwrite flag"""
-    # Expected output path: test.jpg -> test_upscaled.png
-    existing_output = tmp_path / "test_upscaled.png"
+    # Expected output path (image/jpeg response): test.jpg -> test_upscaled.jpg
+    existing_output = tmp_path / "test_upscaled.jpg"
 
     # Create existing output file
     with open(existing_output, "w") as f:
@@ -165,7 +165,7 @@ def test_upscale_avoid_overwrite_with_timestamp(
         assert f.read() == "existing content"
 
     # A new file with timestamp should be created
-    timestamped_files = list(tmp_path.glob("test_upscaled_*.png"))
+    timestamped_files = list(tmp_path.glob("test_upscaled_*.jpg"))
     assert len(timestamped_files) == 1
 
     # New file should have the upscaled content
@@ -177,8 +177,8 @@ def test_upscale_overwrite_existing_file(
     mocked_responses, temp_image_file, tmp_path, mock_venice_api_key
 ):
     """Test overwriting existing files when --overwrite is True"""
-    # Expected output path: test.jpg -> test_upscaled.png
-    existing_output = tmp_path / "test_upscaled.png"
+    # Expected output path (image/jpeg response): test.jpg -> test_upscaled.jpg
+    existing_output = tmp_path / "test_upscaled.jpg"
 
     # Create existing output file
     with open(existing_output, "w") as f:
@@ -192,7 +192,7 @@ def test_upscale_overwrite_existing_file(
         assert f.read() == b"upscaled image data"
 
     # No timestamped files should exist
-    timestamped_files = list(tmp_path.glob("test_upscaled_*.png"))
+    timestamped_files = list(tmp_path.glob("test_upscaled_*.jpg"))
     assert len(timestamped_files) == 0
 
 
@@ -307,3 +307,65 @@ def test_upscale_binary_response_handling(
         saved_data = f.read()
         assert saved_data == mock_png_data
         assert saved_data.startswith(png_header)
+
+
+@pytest.mark.parametrize(
+    ("content_type", "expected_name"),
+    [
+        ("image/png", "test_upscaled.png"),
+        ("image/jpeg", "test_upscaled.jpg"),
+        ("image/webp", "test_upscaled.webp"),
+        ("IMAGE/WEBP; charset=binary", "test_upscaled.webp"),
+        ("application/octet-stream", "test_upscaled.png"),
+        (None, "test_upscaled.png"),
+    ],
+)
+def test_upscale_extension_from_content_type(
+    httpx2_mock, temp_image_file, tmp_path, mock_venice_api_key, content_type, expected_name
+):
+    """The default output name uses the extension matching the response Content-Type."""
+    headers = {"Content-Type": content_type} if content_type else {}
+    httpx2_mock.add_response(
+        method="POST",
+        url="https://api.venice.ai/api/v1/image/upscale",
+        content=b"image bytes",
+        headers=headers,
+    )
+
+    result = perform_image_upscale(str(temp_image_file), scale=2)
+
+    assert result.output_path == tmp_path / expected_name
+    assert result.content_type == content_type
+
+
+def test_upscale_explicit_output_name_keeps_extension(
+    mocked_responses, temp_image_file, tmp_path, mock_venice_api_key
+):
+    """An explicit output file name is not renamed to match the Content-Type."""
+    output_path = tmp_path / "chosen.png"
+
+    result = perform_image_upscale(str(temp_image_file), scale=2, output_path=output_path)
+
+    assert result.content_type == "image/jpeg"
+    assert result.output_path == output_path
+
+
+def test_upscale_scale_default_is_float():
+    """--scale defaults to the float 2.0, not the string "2"."""
+    from llm_venice.cli.upscale import create_upscale_command
+
+    command = create_upscale_command()
+    scale_option = next(p for p in command.params if p.name == "scale")
+    assert scale_option.default == 2.0
+    assert isinstance(scale_option.default, float)
+
+
+def test_upscale_command_default_scale_sent(
+    mocked_responses, temp_image_file, mock_venice_api_key, cli_runner
+):
+    """Without --scale, the request sends scale=2.0."""
+    result = cli_runner.invoke(cli, ["venice", "upscale", str(temp_image_file)])
+
+    assert result.exit_code == 0, result.output
+    request_body = mocked_responses.get_requests()[0].read()
+    assert b'name="scale"\r\n\r\n2.0' in request_body

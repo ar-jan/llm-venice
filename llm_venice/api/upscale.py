@@ -12,15 +12,34 @@ from llm_venice.api.errors import raise_api_error
 from llm_venice.utils import get_unique_filepath
 
 
+# Explicit map rather than mimetypes, whose guesses vary by platform (e.g. ".jpe").
+_UPSCALE_EXTENSIONS = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/webp": "webp",
+}
+_DEFAULT_UPSCALE_EXTENSION = "png"
+
+
 @dataclass
 class UpscaleResult:
     image_bytes: bytes
     output_path: pathlib.Path
+    content_type: Optional[str] = None
+
+
+def _extension_for_content_type(content_type: Optional[str]) -> str:
+    """Map a response Content-Type to a file extension, defaulting to png."""
+    if not content_type:
+        return _DEFAULT_UPSCALE_EXTENSION
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    return _UPSCALE_EXTENSIONS.get(media_type, _DEFAULT_UPSCALE_EXTENSION)
 
 
 def perform_image_upscale(
     image_path,
-    scale,
+    scale: float,
     enhance: bool = False,
     enhance_creativity=None,
     enhance_prompt=None,
@@ -34,6 +53,9 @@ def perform_image_upscale(
     Upscale an image using Venice AI without writing to disk.
 
     Returns an UpscaleResult containing the image bytes and the resolved output path.
+
+    The default file name uses the extension matching the response Content-Type
+    (png, jpg or webp; png when unknown). An explicit output file name is kept as is.
     """
     headers = get_auth_headers(key)
 
@@ -62,9 +84,11 @@ def perform_image_upscale(
         raise_api_error("Upscaling image", exc)
 
     image_bytes = r.content
+    content_type = r.headers.get("Content-Type")
+    extension = _extension_for_content_type(content_type)
 
     input_path = pathlib.Path(image_path)
-    default_filename = f"{input_path.stem}_upscaled.png"
+    default_filename = f"{input_path.stem}_upscaled.{extension}"
 
     if output_path:
         candidate_path = pathlib.Path(output_path)
@@ -80,7 +104,11 @@ def perform_image_upscale(
 
     resolved_output_path = get_unique_filepath(target_dir, filename, overwrite)
 
-    return UpscaleResult(image_bytes=image_bytes, output_path=resolved_output_path)
+    return UpscaleResult(
+        image_bytes=image_bytes,
+        output_path=resolved_output_path,
+        content_type=content_type,
+    )
 
 
 def write_upscaled_image(result: UpscaleResult) -> pathlib.Path:

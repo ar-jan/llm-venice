@@ -190,13 +190,14 @@ You can check the available parameters for a model by filtering the model list w
 ### Image upscaling
 
 You can upscale existing images.
-The following example saves the returned image as `image_upscaled.png` in the same directory as the original file:
+The following example saves the returned image as `image_upscaled.<ext>` in the same directory as the original file, where `<ext>` matches the format the API returns (`png`, `jpg` or `webp`):
 
 `llm venice upscale /path/to/image.jpg`.
 
 By default existing upscaled images are not overwritten; timestamped filenames are used instead.
 
-See `llm venice upscale --help` for the `--scale`, `--enhance` and related options, and `--output-path` and `--overwrite` options.
+See `llm venice upscale --help` for the `--scale` (default `2.0`), `--enhance` and related options, and `--output-path` and `--overwrite` options.
+A file name passed to `--output-path` is used as given, even if its extension differs from the returned format.
 
 ### Venice commands
 
