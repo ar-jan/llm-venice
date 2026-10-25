@@ -28,10 +28,17 @@ def test_venice_web_search_tool_parameters():
     assert VeniceWebSearch().venice_parameters() == {
         "enable_web_search": "auto",
         "enable_web_citations": True,
+        "enable_web_scraping": False,
     }
     assert VeniceWebSearch(mode="on", citations=False, scraping=True).venice_parameters() == {
         "enable_web_search": "on",
+        "enable_web_citations": False,
         "enable_web_scraping": True,
+    }
+    assert VeniceWebSearch(citations=False, scraping=False).venice_parameters() == {
+        "enable_web_search": "auto",
+        "enable_web_citations": False,
+        "enable_web_scraping": False,
     }
 
     with pytest.raises(ValueError, match="mode must be 'auto' or 'on'"):
@@ -133,6 +140,42 @@ def test_build_kwargs_tool_search_satisfies_citation_option():
     assert venice_parameters["enable_web_citations"] is True
 
 
+def test_build_kwargs_tool_booleans_override_options():
+    """Tool settings win over conflicting citation and scraping options."""
+    chat = make_chat()
+    options = chat.Options(enable_web_citations=True, enable_web_scraping=True)
+    prompt = Prompt(
+        prompt="Test",
+        model=chat,
+        options=options,
+        tools=[VeniceWebSearch(citations=False, scraping=False)],
+    )
+
+    kwargs = chat.build_kwargs(prompt, stream=False)
+
+    assert kwargs["extra_body"]["venice_parameters"] == {
+        "enable_web_search": "auto",
+        "enable_web_citations": False,
+        "enable_web_scraping": False,
+    }
+
+    options = chat.Options(enable_web_citations=False, enable_web_scraping=False)
+    prompt = Prompt(
+        prompt="Test",
+        model=chat,
+        options=options,
+        tools=[VeniceWebSearch(citations=True, scraping=True)],
+    )
+
+    kwargs = chat.build_kwargs(prompt, stream=False)
+
+    assert kwargs["extra_body"]["venice_parameters"] == {
+        "enable_web_search": "auto",
+        "enable_web_citations": True,
+        "enable_web_scraping": True,
+    }
+
+
 def test_server_side_tool_requires_capability(mock_venice_api_key):
     """llm rejects a server-side tool the model does not advertise."""
     chat = make_chat(supports_web_search=False)
@@ -167,7 +210,12 @@ def test_conversation_restores_server_side_tools(cli_runner, monkeypatch, hermet
     def fake_execute(self, prompt, stream=False, **kwargs):
         seen.append(
             [
-                (type(tool).__name__, getattr(tool, "mode", None))
+                (
+                    type(tool).__name__,
+                    getattr(tool, "mode", None),
+                    getattr(tool, "citations", None),
+                    getattr(tool, "scraping", None),
+                )
                 for tool in prompt.tools
                 if isinstance(tool, llm.ServerSideTool)
             ]
@@ -182,13 +230,13 @@ def test_conversation_restores_server_side_tools(cli_runner, monkeypatch, hermet
                 "-m",
                 model_id,
                 "-T",
-                'VeniceWebSearch(mode="on", citations=false)',
+                'VeniceWebSearch(mode="on", citations=false, scraping=true)',
                 "Start",
             ],
         )
         assert first.exit_code == 0, first.output
-        assert seen[-1] == [("VeniceWebSearch", "on")]
+        assert seen[-1] == [("VeniceWebSearch", "on", False, True)]
 
         follow_up = cli_runner.invoke(llm_cli.cli, ["prompt", "-c", "Continue"])
         assert follow_up.exit_code == 0, follow_up.output
-        assert seen[-1] == [("VeniceWebSearch", "on")]
+        assert seen[-1] == [("VeniceWebSearch", "on", False, True)]

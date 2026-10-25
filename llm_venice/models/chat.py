@@ -184,13 +184,16 @@ class VeniceWebSearch(llm.ServerSideTool):
         self.scraping = scraping
 
     def venice_parameters(self) -> Dict[str, object]:
-        """Return the ``venice_parameters`` entries for this tool."""
-        parameters: Dict[str, object] = {"enable_web_search": self.mode}
-        if self.citations:
-            parameters["enable_web_citations"] = True
-        if self.scraping:
-            parameters["enable_web_scraping"] = True
-        return parameters
+        """Return the ``venice_parameters`` entries for this tool.
+
+        Both booleans are emitted even when false so that tool configuration
+        always takes precedence over conflicting ``-o`` options.
+        """
+        return {
+            "enable_web_search": self.mode,
+            "enable_web_citations": self.citations,
+            "enable_web_scraping": self.scraping,
+        }
 
 
 class VeniceXSearch(llm.ServerSideTool):
