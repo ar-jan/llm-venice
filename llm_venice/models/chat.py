@@ -1,32 +1,25 @@
 """Venice chat model implementation."""
 
+import copy
 import json
-from typing import List, Optional, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 import llm
 from llm.default_plugins.openai_models import AsyncChat, Chat
 from llm_venice.constants import VENICE_PARAMETERS, NON_OPENAI_COMPATIBLE_PARAMS
 from pydantic import Field, field_validator
-from typing import Dict
 
 
 class VeniceChatOptions(Chat.Options):
     """Options for Venice chat models."""
 
-    # Explicitly redeclare inherited fields for pyright compatibility
-    temperature: Optional[float] = Field(
-        description=(
-            "What sampling temperature to use, between 0 and 2. Higher values like "
-            "0.8 will make the output more random, while lower values like 0.2 will "
-            "make it more focused and deterministic."
-        ),
-        ge=0,
-        le=2,
-        default=None,
-    )
-    max_tokens: Optional[int] = Field(
-        description="Maximum number of tokens to generate.", default=None
-    )
+    if TYPE_CHECKING:
+        # llm assembles Chat.Options dynamically, so type checkers cannot see
+        # the inherited parameters. Declare only the names here; the real
+        # fields and their descriptions come from llm at runtime.
+        temperature: Optional[float] = None
+        max_tokens: Optional[int] = None
+
     # Non-standard generation parameters (top-level in extra_body)
     min_p: Optional[float] = Field(
         description=(
@@ -57,6 +50,23 @@ class VeniceChatOptions(Chat.Options):
             "Array of token IDs where the API will stop generating further tokens. "
             "When provided via CLI, pass as JSON array string: '[151643, 151645]'"
         ),
+        default=None,
+    )
+
+    # OpenAI-compatible parameters sent at the top level of the request body
+    reasoning_effort: Optional[str] = Field(
+        description=(
+            "Reasoning effort for models that support it: one of 'none', 'minimal', "
+            "'low', 'medium', 'high', 'xhigh' or 'max'."
+        ),
+        default=None,
+    )
+    prompt_cache_key: Optional[str] = Field(
+        description="Key used to group related requests for prompt caching.",
+        default=None,
+    )
+    prompt_cache_retention: Optional[str] = Field(
+        description="Prompt cache retention: 'default', 'extended' or '24h'.",
         default=None,
     )
 
@@ -138,12 +148,62 @@ class VeniceChatOptions(Chat.Options):
         raise ValueError("stop_token_ids must be a list or JSON array string")
 
 
+def _make_json_schema_strict(schema: Dict) -> Dict:
+    """Recursively set ``additionalProperties: false`` on every object schema.
+
+    Venice (like OpenAI strict mode) requires every object in a JSON schema to
+    disallow additional properties, including nested objects, objects in arrays
+    and objects under ``$defs``.
+    """
+    schema_maps = (
+        "properties",
+        "patternProperties",
+        "$defs",
+        "definitions",
+        "dependentSchemas",
+    )
+    schema_lists = ("anyOf", "oneOf", "allOf", "prefixItems")
+    schema_values = ("items", "not", "contains", "if", "then", "else", "propertyNames")
+
+    for key in schema_maps:
+        subschemas = schema.get(key)
+        if isinstance(subschemas, dict):
+            for subschema in subschemas.values():
+                if isinstance(subschema, dict):
+                    _make_json_schema_strict(subschema)
+
+    for key in schema_lists:
+        subschemas = schema.get(key)
+        if isinstance(subschemas, list):
+            for subschema in subschemas:
+                if isinstance(subschema, dict):
+                    _make_json_schema_strict(subschema)
+
+    for key in schema_values:
+        subschema = schema.get(key)
+        if isinstance(subschema, dict):
+            _make_json_schema_strict(subschema)
+
+    schema_type = schema.get("type")
+    if (
+        schema_type == "object"
+        or (isinstance(schema_type, list) and "object" in schema_type)
+        or (schema_type is None and "properties" in schema)
+    ):
+        schema["additionalProperties"] = False
+
+    return schema
+
+
 def _build_venice_kwargs(model_id: str, supports_web_search: bool, kwargs: Dict) -> Dict:
     """Apply Venice-specific request shaping to kwargs."""
-    # Venice requires strict mode and no additional properties for JSON schema
+    # Venice requires strict mode and no additional properties for JSON schema.
+    # The schema is copied so the caller's prompt.schema is never mutated.
     if "response_format" in kwargs and kwargs["response_format"].get("type") == "json_schema":
-        kwargs["response_format"]["json_schema"]["strict"] = True
-        kwargs["response_format"]["json_schema"]["schema"]["additionalProperties"] = False
+        json_schema = kwargs["response_format"]["json_schema"]
+        json_schema["strict"] = True
+        if isinstance(json_schema.get("schema"), dict):
+            json_schema["schema"] = _make_json_schema_strict(copy.deepcopy(json_schema["schema"]))
 
     # Move non-openai-compatible generation parameters into extra_body
     non_openai_compatible_params = {}
@@ -158,19 +218,17 @@ def _build_venice_kwargs(model_id: str, supports_web_search: bool, kwargs: Dict)
             venice_parameters[key] = kwargs.pop(key)
 
     web_search_requested = venice_parameters.get("enable_web_search")
+    web_search_enabled = web_search_requested in ("on", "auto")
     web_citations_requested = venice_parameters.get("enable_web_citations")
     include_results_requested = venice_parameters.get("include_search_results_in_stream")
 
     # Capability guard for web-search-related features
     if (
-        web_search_requested or web_citations_requested or include_results_requested
+        web_search_enabled or web_citations_requested or include_results_requested
     ) and not supports_web_search:
         raise llm.ModelError(f"Model {model_id} does not support web search")
 
-    if (web_citations_requested or include_results_requested) and web_search_requested not in (
-        "on",
-        "auto",
-    ):
+    if (web_citations_requested or include_results_requested) and not web_search_enabled:
         raise llm.ModelError(
             "enable_web_search must be set to 'on' or 'auto' when using web citations or including search results in stream"
         )
@@ -224,7 +282,7 @@ class AsyncVeniceChat(AsyncChat):
     def __str__(self):  # type: ignore[invalid-argument-type]
         return f"Venice Chat: {self.model_id}"
 
-    class Options(VeniceChatOptions, AsyncChat.Options):
+    class Options(VeniceChatOptions):
         pass
 
     def build_kwargs(self, prompt, stream):
