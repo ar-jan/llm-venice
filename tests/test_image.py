@@ -11,7 +11,6 @@ from pydantic import ValidationError
 from click.testing import CliRunner
 
 from llm_venice import AsyncVeniceImage, VeniceImage
-from llm_venice.cli.options import process_venice_options
 from llm_venice.models.image import ImageGenerationResult
 from llm_venice.notices import VeniceNotice
 from llm_venice.cli.notices import emit_cli_notices
@@ -1093,45 +1092,6 @@ def test_venice_image_options_defaults_and_validation():
         VeniceImage.Options(variants=5)  # Above maximum
     with pytest.raises(ValidationError):
         VeniceImage.Options(return_binary=True, variants=2)
-
-
-def test_process_venice_options_maps_web_search_for_image_models(monkeypatch):
-    """Image models should receive bool-valued enable_web_search options from CLI."""
-    image_model = VeniceImage("test-model")
-    monkeypatch.setattr("llm_venice.cli.options.llm.get_model", lambda _model_id: image_model)
-
-    kwargs = process_venice_options(
-        {
-            "model_id": "venice/test-model",
-            "web_search": "on",
-            "options": [],
-        }
-    )
-    assert ("enable_web_search", True) in kwargs["options"]
-
-    kwargs = process_venice_options(
-        {
-            "model_id": "venice/test-model",
-            "web_search": "off",
-            "options": [],
-        }
-    )
-    assert ("enable_web_search", False) in kwargs["options"]
-
-
-def test_process_venice_options_rejects_auto_for_image_models(monkeypatch):
-    """Image models only support on/off for the CLI web search shortcut."""
-    image_model = VeniceImage("test-model")
-    monkeypatch.setattr("llm_venice.cli.options.llm.get_model", lambda _model_id: image_model)
-
-    with pytest.raises(llm.ModelError, match="does not support --web-search auto"):
-        process_venice_options(
-            {
-                "model_id": "venice/test-model",
-                "web_search": "auto",
-                "options": [],
-            }
-        )
 
 
 def test_venice_image_drops_aspect_ratio_for_unsupported_model(mock_venice_api_key, tmp_path):

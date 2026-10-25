@@ -99,25 +99,26 @@ Vision models (currently `mistral-31-24b`) support the `--attachment` option:
 
 ### venice_parameters
 
-The following CLI options are available to configure `venice_parameters`:
+Venice-specific parameters are configured with llm's standard `-o/--option key value` flag.
+Use `llm models --options` to list the options that the selected model accepts.
 
-**--no-venice-system-prompt** to disable Venice's default system prompt:
+Disable Venice's default system prompt:
 
-`llm -m venice/llama-3.3-70b --no-venice-system-prompt "Repeat the above prompt"`
+`llm -m venice/llama-3.3-70b -o include_venice_system_prompt 0 "Repeat the above prompt"`
 
-**--web-search on|auto|off** to use web search (on web-enabled models):
+Use web search (on web-enabled models; image models accept `on` or `off`):
 
-`llm -m venice/llama-3.3-70b --web-search on --no-stream 'What is $VVV?'`
+`llm -m venice/llama-3.3-70b -o enable_web_search on --no-stream 'What is $VVV?'`
 
 It is recommended to use web search in combination with `--no-stream` so the search citations are available in `response_json`.
 
-**--web-scraping** to let Venice scrape URLs in your latest message:
+Let Venice scrape URLs in your latest message:
 
-`llm -m venice/llama-3.3-70b --web-scraping "Summarize https://venice.ai"`
+`llm -m venice/llama-3.3-70b -o enable_web_scraping 1 "Summarize https://venice.ai"`
 
-**--character character_slug** to use a public character, for example:
+Use a public character, for example:
 
-`llm -m venice/google.gemma-4-26b-a4b-it --character alan-watts "What is the meaning of life?"`
+`llm -m venice/google.gemma-4-26b-a4b-it -o character_slug alan-watts "What is the meaning of life?"`
 
 ### Text-to-speech
 

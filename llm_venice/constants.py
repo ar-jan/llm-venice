@@ -17,18 +17,6 @@ ENDPOINT_API_KEYS_RATE_LIMITS = f"{VENICE_API_BASE}/api_keys/rate_limits"
 ENDPOINT_API_KEYS_RATE_LIMITS_LOG = f"{VENICE_API_BASE}/api_keys/rate_limits/log"
 ENDPOINT_CHARACTERS = f"{VENICE_API_BASE}/characters"
 
-# CLI version of venice_parameters options for filtering in command hooks
-VENICE_PARAMETERS_CLI = {
-    "no_venice_system_prompt",
-    "web_search",
-    "web_scraping",
-    "web_citations",
-    "include_search_results_in_stream",
-    "character",
-    "strip_thinking_response",
-    "disable_thinking",
-}
-
 # Venice-specific parameters for VeniceChatOptions
 # Field names as expected by the API formatted as extra_body.venice_parameters
 VENICE_PARAMETERS = {
