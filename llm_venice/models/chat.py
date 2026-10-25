@@ -2,7 +2,7 @@
 
 import copy
 import json
-from typing import TYPE_CHECKING, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Union
 
 import llm
 from llm.default_plugins.openai_models import AsyncChat, Chat
@@ -148,6 +148,111 @@ class VeniceChatOptions(Chat.Options):
         raise ValueError("stop_token_ids must be a list or JSON array string")
 
 
+_WEB_SEARCH_KEYS = (
+    "enable_web_search",
+    "enable_web_citations",
+    "enable_web_scraping",
+    "include_search_results_in_stream",
+)
+
+
+class VeniceWebSearch(llm.ServerSideTool):
+    """Search the web with Venice's hosted web search.
+
+    ``mode`` is passed through as ``enable_web_search``: ``"auto"`` (default)
+    lets Venice decide when to search, ``"on"`` always searches. ``citations``
+    asks the model to cite results with ``^index^`` markers, and ``scraping``
+    lets Venice scrape URLs in the latest user message. Advanced combinations
+    remain available through llm's ``-o`` options.
+    """
+
+    name = "venice_web_search"
+
+    def __init__(
+        self,
+        mode: Literal["auto", "on"] = "auto",
+        citations: bool = True,
+        scraping: bool = False,
+    ):
+        super().__init__()
+        if mode not in ("auto", "on"):
+            raise ValueError("mode must be 'auto' or 'on'")
+        if not isinstance(citations, bool) or not isinstance(scraping, bool):
+            raise TypeError("citations and scraping must be booleans")
+        self.mode = mode
+        self.citations = citations
+        self.scraping = scraping
+
+    def venice_parameters(self) -> Dict[str, object]:
+        """Return the ``venice_parameters`` entries for this tool."""
+        parameters: Dict[str, object] = {"enable_web_search": self.mode}
+        if self.citations:
+            parameters["enable_web_citations"] = True
+        if self.scraping:
+            parameters["enable_web_scraping"] = True
+        return parameters
+
+
+class VeniceXSearch(llm.ServerSideTool):
+    """Use xAI native search (web plus X/Twitter) on supported Grok models.
+
+    X search replaces Venice web search, as in the official venice-cli, so any
+    web-search parameters are dropped when this tool is used.
+    """
+
+    name = "venice_x_search"
+
+    def __init__(self):
+        super().__init__()
+
+    def venice_parameters(self) -> Dict[str, object]:
+        """Return the ``venice_parameters`` entries for this tool."""
+        return {"enable_x_search": True}
+
+
+def _split_server_side_tools(prompt):
+    """Split server-side tools out of a prompt so only function tools are sent.
+
+    llm only calls ``prepare_request()`` for Responses-API models, so Venice
+    applies server-side tool configuration in ``build_kwargs`` instead.
+    """
+    server_side_tools = [tool for tool in prompt.tools if isinstance(tool, llm.ServerSideTool)]
+    if not server_side_tools:
+        return prompt, []
+    prompt_without_server_side_tools = copy.copy(prompt)
+    prompt_without_server_side_tools.tools = [
+        tool for tool in prompt.tools if not isinstance(tool, llm.ServerSideTool)
+    ]
+    return prompt_without_server_side_tools, server_side_tools
+
+
+def _apply_server_side_tools(kwargs: Dict, server_side_tools: List) -> Dict:
+    """Expose server-side tool configuration as Venice request parameters.
+
+    Tool values are merged before ``_build_venice_kwargs`` so they get the same
+    normalization and capability validation as ``-o`` parameters, with the tool
+    configuration taking precedence.
+    """
+    if not server_side_tools:
+        return kwargs
+
+    tool_parameters: Dict[str, object] = {}
+    x_search_requested = False
+    for tool in server_side_tools:
+        tool_parameters.update(tool.venice_parameters())
+        if isinstance(tool, VeniceXSearch):
+            x_search_requested = True
+
+    if x_search_requested:
+        # X search replaces Venice web search, as in the official venice-cli.
+        for key in _WEB_SEARCH_KEYS:
+            kwargs.pop(key, None)
+            tool_parameters.pop(key, None)
+
+    kwargs.update(tool_parameters)
+    return kwargs
+
+
 def _make_json_schema_strict(schema: Dict) -> Dict:
     """Recursively set ``additionalProperties: false`` on every object schema.
 
@@ -252,10 +357,18 @@ class VeniceChat(Chat):
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
     supports_web_search = False
+    supports_x_search = False
 
-    def __init__(self, *args, supports_web_search: bool = False, **kwargs):
+    def __init__(
+        self,
+        *args,
+        supports_web_search: bool = False,
+        supports_x_search: bool = False,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.supports_web_search = supports_web_search
+        self.supports_x_search = supports_x_search
 
     def __str__(self):  # type: ignore[invalid-argument-type]
         return f"Venice Chat: {self.model_id}"
@@ -263,8 +376,20 @@ class VeniceChat(Chat):
     class Options(VeniceChatOptions):
         pass
 
+    @property
+    def supported_server_side_tools(self) -> tuple[type[llm.ServerSideTool], ...]:
+        """Server-side tools allowed by this model's catalog capabilities."""
+        tools: list[type[llm.ServerSideTool]] = []
+        if self.supports_web_search:
+            tools.append(VeniceWebSearch)
+        if self.supports_x_search:
+            tools.append(VeniceXSearch)
+        return tuple(tools)
+
     def build_kwargs(self, prompt, stream):
+        prompt, server_side_tools = _split_server_side_tools(prompt)
         base_kwargs = super().build_kwargs(prompt, stream)
+        base_kwargs = _apply_server_side_tools(base_kwargs, server_side_tools)
         return _build_venice_kwargs(self.model_id, self.supports_web_search, base_kwargs)
 
 
@@ -274,10 +399,18 @@ class AsyncVeniceChat(AsyncChat):
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
     supports_web_search = False
+    supports_x_search = False
 
-    def __init__(self, *args, supports_web_search: bool = False, **kwargs):
+    def __init__(
+        self,
+        *args,
+        supports_web_search: bool = False,
+        supports_x_search: bool = False,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.supports_web_search = supports_web_search
+        self.supports_x_search = supports_x_search
 
     def __str__(self):  # type: ignore[invalid-argument-type]
         return f"Venice Chat: {self.model_id}"
@@ -285,6 +418,18 @@ class AsyncVeniceChat(AsyncChat):
     class Options(VeniceChatOptions):
         pass
 
+    @property
+    def supported_server_side_tools(self) -> tuple[type[llm.ServerSideTool], ...]:
+        """Server-side tools allowed by this model's catalog capabilities."""
+        tools: list[type[llm.ServerSideTool]] = []
+        if self.supports_web_search:
+            tools.append(VeniceWebSearch)
+        if self.supports_x_search:
+            tools.append(VeniceXSearch)
+        return tuple(tools)
+
     def build_kwargs(self, prompt, stream):
+        prompt, server_side_tools = _split_server_side_tools(prompt)
         base_kwargs = super().build_kwargs(prompt, stream)
+        base_kwargs = _apply_server_side_tools(base_kwargs, server_side_tools)
         return _build_venice_kwargs(self.model_id, self.supports_web_search, base_kwargs)

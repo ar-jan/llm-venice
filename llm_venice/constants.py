@@ -24,6 +24,7 @@ VENICE_PARAMETERS = {
     "enable_web_search",
     "enable_web_scraping",
     "enable_web_citations",
+    "enable_x_search",
     "include_search_results_in_stream",
     "character_slug",
     "strip_thinking_response",

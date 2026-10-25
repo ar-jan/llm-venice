@@ -6,7 +6,12 @@ import sys
 import httpx2
 import llm
 
-from llm_venice.models.chat import AsyncVeniceChat, VeniceChat
+from llm_venice.models.chat import (
+    AsyncVeniceChat,
+    VeniceChat,
+    VeniceWebSearch,
+    VeniceXSearch,
+)
 from llm_venice.models.audio import AsyncVeniceSpeech, VeniceSpeech
 from llm_venice.models.image import AsyncVeniceImage, VeniceImage
 from llm_venice.constants import VENICE_API_BASE
@@ -93,6 +98,10 @@ def register_venice_models(register):
             "supportsWebSearch",
             capabilities.get("supportsWebSearch", False),
         )
+        supports_x_search = model_spec.get(
+            "supportsXSearch",
+            capabilities.get("supportsXSearch", False),
+        )
 
         if model.get("type") == "text":
             model_instance = VeniceChat(
@@ -104,6 +113,7 @@ def register_venice_models(register):
                 supports_schema=capabilities.get("supportsResponseSchema", False),
                 supports_tools=capabilities.get("supportsFunctionCalling", False),
                 supports_web_search=supports_web_search,
+                supports_x_search=supports_x_search,
             )
             async_model_instance = AsyncVeniceChat(
                 model_id=f"venice/{model_id}",
@@ -114,6 +124,7 @@ def register_venice_models(register):
                 supports_schema=capabilities.get("supportsResponseSchema", False),
                 supports_tools=capabilities.get("supportsFunctionCalling", False),
                 supports_web_search=supports_web_search,
+                supports_x_search=supports_x_search,
             )
             register(model_instance, async_model=async_model_instance)
         elif model.get("type") == "image":
@@ -143,6 +154,8 @@ def register_venice_models(register):
 __all__ = [
     "VeniceChat",
     "AsyncVeniceChat",
+    "VeniceWebSearch",
+    "VeniceXSearch",
     "VeniceImage",
     "AsyncVeniceImage",
     "VeniceSpeech",
