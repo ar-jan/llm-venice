@@ -120,6 +120,23 @@ Use a public character, for example:
 
 `llm -m venice/google.gemma-4-26b-a4b-it -o character_slug alan-watts "What is the meaning of life?"`
 
+### Web and X search tools
+
+Models that advertise web search or X search expose them as llm server-side tools, so they also
+show up in `llm tools -m venice/<model>` and are restored when you continue a conversation with
+`-c`. Turn web search on or off per model with:
+
+`llm -m venice/llama-3.3-70b -T 'VeniceWebSearch(mode="on")' --no-stream 'What is $VVV?'`
+
+`VeniceWebSearch` accepts `mode` (`"auto"` or `"on"`), `citations` (on by default) and `scraping`
+(off by default). Models with X search support also offer:
+
+`llm -m venice/grok-4-3 -T VeniceXSearch --no-stream "What is trending about Venice AI?"`
+
+`VeniceXSearch` replaces Venice web search, so any web-search parameters are dropped when it is
+used. Use the `-o` parameters above for explicit web search modes and combinations that the tools
+do not cover.
+
 ### Text-to-speech
 
 Text-to-speech models (currently `tts-kokoro`) generate audio from text. Audio files are stored in the LLM user directory by default.

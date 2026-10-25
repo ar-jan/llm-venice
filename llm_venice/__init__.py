@@ -6,7 +6,13 @@ from llm_venice.cli import register_venice_commands
 from llm_venice.models import register_venice_models
 
 # Public API exports
-from llm_venice.models.chat import AsyncVeniceChat, VeniceChat, VeniceChatOptions
+from llm_venice.models.chat import (
+    AsyncVeniceChat,
+    VeniceChat,
+    VeniceChatOptions,
+    VeniceWebSearch,
+    VeniceXSearch,
+)
 from llm_venice.models.audio import (
     AsyncVeniceSpeech,
     VeniceSpeech,
@@ -67,6 +73,8 @@ __all__ = [
     "VeniceChat",
     "AsyncVeniceChat",
     "VeniceChatOptions",
+    "VeniceWebSearch",
+    "VeniceXSearch",
     "VeniceSpeech",
     "AsyncVeniceSpeech",
     "VeniceSpeechOptions",
