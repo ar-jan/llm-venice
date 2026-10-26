@@ -1,12 +1,16 @@
 """Buffered media values. Saves are explicit and atomic per file, not per batch."""
 
-from collections.abc import Mapping
+from contextlib import suppress
+from collections.abc import AsyncIterator, Iterator, Mapping
 from dataclasses import dataclass, field
 import os
 from pathlib import Path
 from typing import Any
 
-from ._files import write_chunks
+import httpx2
+
+from ._files import async_file_call, write_chunks, open_staging_file, publish_file, retain_partial
+from .errors import VeniceConnectionError
 
 
 @dataclass(frozen=True)
@@ -71,3 +75,120 @@ class SpeechResult:
     def save(self, path: str | os.PathLike[str], *, overwrite: bool = False) -> Path:
         """Save to an exact path, creating parents without prompting."""
         return write_chunks((self.data,), path, overwrite=overwrite).path
+
+
+class SpeechStream:
+    """Context-bound, single-use speech. Consume only inside client.stream_speech()."""
+
+    def __init__(self, response: httpx2.Response, format: str) -> None:
+        self.content_type = response.headers.get("content-type")
+        self.format = format
+        self._response = response
+        self._claimed = False
+        self._active = True
+
+    def _claim(self) -> None:
+        if not self._active:
+            raise ValueError("speech stream context has exited")
+        if self._claimed:
+            raise ValueError("speech stream has already been consumed")
+        self._claimed = True
+
+    def iter_bytes(self) -> Iterator[bytes]:
+        """Claim the stream once; later body failures become VeniceConnectionError."""
+        self._claim()
+        return self._iterate()
+
+    def close(self) -> None:
+        """End the stream lifetime and close its response (idempotent)."""
+        self._active = False
+        self._response.close()
+
+    def _iterate(self) -> Iterator[bytes]:
+        if not self._active:
+            raise ValueError("speech stream context has exited")
+        try:
+            iterator = self._response.iter_bytes()
+            while True:
+                if not self._active:
+                    raise ValueError("speech stream context has exited")
+                try:
+                    chunk = next(iterator)
+                except StopIteration:
+                    break
+                yield chunk
+        except httpx2.RequestError as exc:
+            raise VeniceConnectionError(f"Generating speech failed: {exc}") from exc
+        finally:
+            self._response.close()
+
+    def save(self, path: str | os.PathLike[str], *, overwrite: bool = False) -> Path:
+        """Consume into an exact file path with atomic publication and partial retention."""
+        return write_chunks(self.iter_bytes(), path, overwrite=overwrite).path
+
+
+class AsyncSpeechStream:
+    """Async counterpart of SpeechStream; network I/O never uses a worker thread."""
+
+    def __init__(self, response: httpx2.Response, format: str) -> None:
+        self.content_type = response.headers.get("content-type")
+        self.format = format
+        self._response = response
+        self._claimed = False
+        self._active = True
+
+    def _claim(self) -> None:
+        if not self._active:
+            raise ValueError("speech stream context has exited")
+        if self._claimed:
+            raise ValueError("speech stream has already been consumed")
+        self._claimed = True
+
+    def aiter_bytes(self) -> AsyncIterator[bytes]:
+        """Claim the byte iterator once; consume it inside the stream context."""
+        self._claim()
+        return self._iterate()
+
+    async def aclose(self) -> None:
+        """End the stream lifetime and close its response (idempotent)."""
+        self._active = False
+        await self._response.aclose()
+
+    async def _iterate(self) -> AsyncIterator[bytes]:
+        if not self._active:
+            raise ValueError("speech stream context has exited")
+        try:
+            iterator = self._response.aiter_bytes()
+            while True:
+                if not self._active:
+                    raise ValueError("speech stream context has exited")
+                try:
+                    chunk = await anext(iterator)
+                except StopAsyncIteration:
+                    break
+                yield chunk
+        except httpx2.RequestError as exc:
+            raise VeniceConnectionError(f"Generating speech failed: {exc}") from exc
+        finally:
+            await self._response.aclose()
+
+    async def save(self, path: str | os.PathLike[str], *, overwrite: bool = False) -> Path:
+        """Consume into an exact path, awaiting outstanding file writes on cancellation."""
+        chunks = self.aiter_bytes()
+        destination = Path(path)
+        if destination.is_dir():
+            raise IsADirectoryError(str(destination))
+        # Acquiring staging synchronously prevents cancellation from orphaning a handle.
+        handle, staging = open_staging_file(destination)
+        try:
+            async for chunk in chunks:
+                await async_file_call(handle.write, chunk)
+            await async_file_call(handle.close)
+            return (
+                await async_file_call(publish_file, staging, destination, overwrite=overwrite)
+            ).path
+        except BaseException as exc:
+            with suppress(OSError, ValueError):
+                handle.close()
+            retain_partial(staging, exc)
+            raise

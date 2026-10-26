@@ -282,3 +282,63 @@ def parse_speech(response: httpx2.Response, model: str, requested: str | None) -
         content_type,
         media_format(content_type, response.content, requested, image=False),
     )
+
+
+# The CLI and public methods share these operations; only public methods unwrap data.
+def json_operation(name: str, inputs: dict[str, Any]) -> tuple[str, str, str, dict[str, Any]]:
+    if name == "models":
+        type_filter = TypeAdapter(str).validate_python(inputs.get("type", "all"), strict=True)
+        return "GET", "models", "Fetching model list", {"params": {"type": type_filter}}
+    if name == "characters":
+        return (
+            "GET",
+            "characters",
+            "Listing characters",
+            {"params": CharacterFilters.model_validate(inputs).query()},
+        )
+    if name == "keys":
+        return "GET", "api_keys", "Listing API keys", {}
+    if name == "rate_limits":
+        return "GET", "api_keys/rate_limits", "Retrieving rate limits", {}
+    if name == "rate_limits_log":
+        return "GET", "api_keys/rate_limits/log", "Retrieving rate limit logs", {}
+    if name == "create_key":
+        return (
+            "POST",
+            "api_keys",
+            "Creating API key",
+            {"json": KeyInput.model_validate(inputs).body()},
+        )
+    if name == "delete_key":
+        return (
+            "DELETE",
+            "api_keys",
+            "Deleting API key",
+            {"params": KeyIdInput.model_validate(inputs).model_dump()},
+        )
+    raise ValueError(f"Unknown JSON operation: {name}")
+
+
+def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[str, Any]:
+    from .types import ApiKey, Character, CreatedApiKey, RateLimitLogEntry, RateLimits
+
+    if name == "delete_key" and response.status_code == 204:
+        return {}
+    obj = json_object(response, action)
+    if name == "models":
+        for item in list_data(obj, action):
+            model_resource(item, action)
+    elif name == "characters":
+        for item in list_data(obj, action):
+            resource(item, Character, action)
+    elif name == "keys":
+        for item in list_data(obj, action):
+            resource(item, ApiKey, action)
+    elif name == "rate_limits_log":
+        for item in list_data(obj, action):
+            resource(item, RateLimitLogEntry, action)
+    elif name == "rate_limits":
+        resource(obj.get("data"), RateLimits, action)
+    elif name == "create_key":
+        resource(obj.get("data"), CreatedApiKey, action)
+    return obj

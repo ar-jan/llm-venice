@@ -3,6 +3,7 @@
 from collections.abc import Iterable
 from contextlib import suppress
 from dataclasses import dataclass
+import asyncio
 import ctypes
 import errno
 from functools import lru_cache
@@ -11,7 +12,7 @@ import pathlib
 import sys
 import stat
 import tempfile
-from typing import BinaryIO, Callable, Optional
+from typing import Any, BinaryIO, Callable, Optional, TypeVar
 
 
 _UNSUPPORTED = {errno.ENOSYS, errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP}
@@ -167,4 +168,25 @@ def write_chunks(
         with suppress(OSError, ValueError):
             handle.close()
         retain_partial(staging, exc)
+        raise
+
+
+_R = TypeVar("_R")
+
+
+async def async_file_call(function: Callable[..., _R], *args: Any, **kwargs: Any) -> _R:
+    """Wait for a running file operation before propagating cancellation."""
+    task = asyncio.create_task(asyncio.to_thread(function, *args, **kwargs))
+    try:
+        return await asyncio.shield(task)
+    except BaseException:
+        # Repeated cancellation must not race close/unlink against a running write.
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except BaseException:
+                pass
+        # Retrieve any exception, keeping the original cancellation/failure.
+        if not task.cancelled():
+            task.exception()
         raise
