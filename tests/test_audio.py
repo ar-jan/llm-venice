@@ -202,3 +202,22 @@ def test_venice_speech_speed_validation():
     """Options should validate speed range."""
     with pytest.raises(ValueError):
         VeniceSpeech.Options(speed=0.24)
+
+
+def test_venice_speech_streaming_http_error_has_detail(httpx2_mock, mock_venice_api_key, tmp_path):
+    """A streamed error response is read, so the API's error detail reaches the user."""
+    import llm
+
+    httpx2_mock.add_response(
+        method="POST",
+        url="https://api.venice.ai/api/v1/audio/speech",
+        status_code=400,
+        json={"error": "Invalid voice"},
+    )
+    model = VeniceSpeech("tts-kokoro")
+    prompt = MagicMock()
+    prompt.prompt = "Hello"
+    prompt.options = VeniceSpeech.Options(output_dir=tmp_path)
+
+    with pytest.raises(llm.ModelError, match="Invalid voice"):
+        list(model.execute(prompt, True, MagicMock(), None))

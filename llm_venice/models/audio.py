@@ -334,6 +334,8 @@ def _stream_speech_bytes(
         try:
             r.raise_for_status()
         except httpx2.HTTPStatusError as exc:
+            # A streamed body is unread; read it so the error detail can be extracted.
+            r.read()
             raise_api_error("Generating speech", exc)
         yield r.headers.get("Content-Type"), r.iter_bytes()
 
