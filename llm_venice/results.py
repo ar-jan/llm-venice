@@ -1,6 +1,5 @@
 """Buffered media values. Saves are explicit and atomic per file, not per batch."""
 
-from contextlib import suppress
 from collections.abc import AsyncIterator, Iterator, Mapping
 from dataclasses import dataclass, field
 import os
@@ -9,7 +8,7 @@ from typing import Any
 
 import httpx2
 
-from ._files import async_file_call, write_chunks, open_staging_file, publish_file, retain_partial
+from ._files import write_chunks, write_async_chunks
 from .errors import VeniceConnectionError
 
 
@@ -174,21 +173,4 @@ class AsyncSpeechStream:
 
     async def save(self, path: str | os.PathLike[str], *, overwrite: bool = False) -> Path:
         """Consume into an exact path, awaiting outstanding file writes on cancellation."""
-        chunks = self.aiter_bytes()
-        destination = Path(path)
-        if destination.is_dir():
-            raise IsADirectoryError(str(destination))
-        # Acquiring staging synchronously prevents cancellation from orphaning a handle.
-        handle, staging = open_staging_file(destination)
-        try:
-            async for chunk in chunks:
-                await async_file_call(handle.write, chunk)
-            await async_file_call(handle.close)
-            return (
-                await async_file_call(publish_file, staging, destination, overwrite=overwrite)
-            ).path
-        except BaseException as exc:
-            with suppress(OSError, ValueError):
-                handle.close()
-            retain_partial(staging, exc)
-            raise
+        return (await write_async_chunks(self.aiter_bytes(), path, overwrite=overwrite)).path

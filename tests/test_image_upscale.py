@@ -209,7 +209,7 @@ def test_upscale_cli_with_all_options(
             "upscale",
             str(temp_image_file),
             "--scale",
-            "3.5",
+            "4",
             "--enhance",
             "--enhance-creativity",
             "0.8",

@@ -210,7 +210,7 @@ Web-enabled image models can also search the web for fresher visual context:
 
 Besides the Venice API image generation parameters, you can specify the output directory and filename, and whether or not to overwrite existing files.
 
-When `return_binary` is `false`, you can also request up to four image variants with `-o variants 4`. Multiple returned images are saved as suffixed filenames such as `image_1.png`, `image_2.png`.
+You can request up to four image variants with `-o variants 4`. Multiple returned images are saved as suffixed filenames such as `image_1.png`, `image_2.png`.
 
 You can check the available parameters for a model by filtering the model list with `--query`, and show the `--options`:
 

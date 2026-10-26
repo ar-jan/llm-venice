@@ -6,21 +6,21 @@ import sys
 from typing import BinaryIO, Iterable, Optional, get_args
 
 import click
-import httpx2
 from pydantic import ValidationError
 
-from llm_venice.api.errors import VeniceAPIError
-from llm_venice.api.refresh import default_models_path
+from llm_venice.errors import VeniceError
+from llm_venice.client import VeniceClient
+from llm_venice.params import SpeechParams, copy_params
+from llm_venice.catalog import catalog_path
 from llm_venice.cli.errors import handle_cli_error
 from llm_venice.models import _load_or_fetch_models
 from llm_venice.models.audio import (
     AudioResponseFormat,
     DownloadProgress,
     VeniceSpeech,
-    stream_speech_result,
+    speech_output_path,
     write_audio_file,
 )
-from llm_venice.utils import get_venice_key
 
 # Maps VeniceSpeech.Options fields to the flags that set them, for error messages.
 _OPTION_FLAGS = {
@@ -102,9 +102,7 @@ def _split_output_path(
 
 def _resolve_model(requested: Optional[str]) -> str:
     """Return the API model ID, defaulting to the first tts model in the catalog."""
-    catalog = [
-        m for m in (_load_or_fetch_models(default_models_path()) or []) if isinstance(m, dict)
-    ]
+    catalog = [m for m in (_load_or_fetch_models(catalog_path()) or []) if isinstance(m, dict)]
 
     if requested:
         model_id = requested.removeprefix("venice/")
@@ -223,23 +221,24 @@ def create_tts_command():
                 "Redirect stdout (e.g. '> out.mp3') or use -o FILE."
             )
         input_text = _read_text(text)
-        key = get_venice_key(click_exceptions=True)
         model_id = _resolve_model(model)
 
         reporter = DownloadProgress(progress)
         try:
-            with stream_speech_result(
-                input_text=input_text, options=options, model_name=model_id, api_key=key
-            ) as result:
+            with (
+                VeniceClient() as client,
+                client.stream_speech(
+                    model_id, input_text, copy_params(SpeechParams, options)
+                ) as result,
+            ):
                 if to_stdout:
-                    _write_to_stdout(result.chunks, reporter)
+                    _write_to_stdout(result.iter_bytes(), reporter)
                     return
-                if result.output_path is None:
-                    raise ValueError("No output path available to save audio")
+                path = speech_output_path(model_id, options, result.format)
                 saved_path = write_audio_file(
-                    result.chunks, result.output_path, reporter, overwrite=overwrite
+                    result.iter_bytes(), path, reporter, overwrite=overwrite
                 )
-        except (VeniceAPIError, ValueError, OSError, httpx2.RequestError) as e:
+        except (VeniceError, ValueError, OSError) as e:
             handle_cli_error(e)
         click.echo(str(saved_path))
 

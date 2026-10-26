@@ -1,16 +1,14 @@
 """Main venice CLI command group."""
 
 import click
-import httpx2
 
-from llm_venice.api.refresh import fetch_models, persist_models
-from llm_venice.api.errors import VeniceAPIError
+from llm_venice.catalog import refresh_catalog, catalog_path
+from llm_venice.errors import VeniceError
 from llm_venice.cli.api_keys import create_api_keys_group
 from llm_venice.cli.characters import create_characters_command
 from llm_venice.cli.errors import handle_cli_error
 from llm_venice.cli.tts import create_tts_command
 from llm_venice.cli.upscale import create_upscale_command
-from llm_venice.utils import get_venice_key
 
 
 def create_venice_group():
@@ -29,12 +27,11 @@ def create_venice_group():
     @venice.command(name="refresh")
     def refresh():
         """Refresh the list of models from the Venice API"""
-        key = get_venice_key(click_exceptions=True)
         try:
-            models = fetch_models(key)
-        except (ValueError, VeniceAPIError, httpx2.RequestError) as e:
+            models = refresh_catalog()
+        except (ValueError, VeniceError, OSError) as e:
             handle_cli_error(e)
-        path = persist_models(models)
+        path = catalog_path()
         click.echo(f"{len(models)} models saved to {path}", err=True)
 
     venice.add_command(create_api_keys_group())

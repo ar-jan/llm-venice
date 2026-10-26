@@ -4,33 +4,18 @@ import datetime
 import json
 import os
 import pathlib
-import sys
 import tempfile
 from typing import Any, Optional, Union
 
-import click
 import llm
 from llm import NeedsKeyException
 
 
-def get_venice_key(explicit_key: Optional[str] = None, *, click_exceptions: bool = False) -> str:
-    """
-    Get the Venice API key from LLM's key management.
+def get_venice_key(explicit_key: Optional[str] = None) -> str:
+    """Resolve a key, preserving llm's missing-key exception contract."""
+    from ._http import resolve_key
 
-    Raises:
-        NeedsKeyException by default when no key is found; set click_exceptions=True
-        for CLI use to raise click.ClickException instead.
-
-    Returns:
-        The Venice API key.
-    """
-    key = llm.get_key(explicit_key, "venice", "LLM_VENICE_KEY")
-    if not key:
-        message = "No key found for Venice"
-        if click_exceptions:
-            raise click.ClickException(message)
-        raise NeedsKeyException(message)
-    return key
+    return resolve_key(explicit_key)
 
 
 def require_model_key(
@@ -125,8 +110,7 @@ def validate_output_directory(
     Validate that an output directory is writable.
 
     If the directory does not exist, this validates that it can be created.
-    When running under an interactive click CLI, set create_if_missing=True to
-    prompt the user to create the directory.
+    Saving creates missing directories without interactive confirmation.
 
     Args:
         output_dir: Directory path to validate, or None
@@ -162,28 +146,6 @@ def validate_output_directory(
 
         # On POSIX, directory creation requires write + execute.
         return os.access(parent, os.W_OK | os.X_OK)
-
-    if (
-        create_if_missing
-        and click.get_current_context(silent=True) is not None
-        and sys.stdin.isatty()
-    ):
-        should_create = click.confirm(
-            f"Output directory {resolved_dir} does not exist. Create it?",
-            default=True,
-            err=True,
-        )
-        if not should_create:
-            raise ValueError(f"output_dir {resolved_dir} is not a writable directory")
-
-        try:
-            resolved_dir.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            raise ValueError(f"output_dir {resolved_dir} is not a writable directory") from exc
-
-        if not resolved_dir.is_dir() or not os.access(resolved_dir, os.W_OK):
-            raise ValueError(f"output_dir {resolved_dir} is not a writable directory")
-        return resolved_dir
 
     if not can_create_directory(resolved_dir):
         raise ValueError(f"output_dir {resolved_dir} is not a writable directory")

@@ -1,5 +1,12 @@
 """Shared adapter construction and use-time catalog notices."""
 
+from contextlib import contextmanager
+from collections.abc import Generator
+
+import llm
+from pydantic import ValidationError
+from llm_venice.errors import VeniceError
+
 import sys
 from typing import Any
 
@@ -33,3 +40,14 @@ def warn_deprecated(model: Any) -> None:
         message += f"; use venice/{normalize_model_id(replacement)} instead"
     _deprecated_warnings.add(model.model_id)
     print(f"Warning: {message}", file=sys.stderr)
+
+
+@contextmanager
+def model_error_boundary() -> Generator[None, None, None]:
+    """Map expected service/file/input failures while preserving llm key handling."""
+    try:
+        yield
+    except llm.NeedsKeyException:
+        raise
+    except (VeniceError, ValidationError, ValueError, OSError) as exc:
+        raise llm.ModelError(str(exc)) from exc

@@ -1,24 +1,26 @@
 """Venice image generation model implementation."""
 
-import asyncio
 import base64
 import os
 import pathlib
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
-from typing import Any, Literal, Optional, Union
+from typing import Any, Literal, Optional, cast
 
 import httpx2
 import llm
-from ._common import initialize_model, warn_deprecated
+from ._common import initialize_model, warn_deprecated, model_error_boundary
+from llm_venice.client import VeniceClient, AsyncVeniceClient
+from llm_venice.params import ImageParams, copy_params
+from llm_venice.results import ImageResult
+from llm_venice._files import async_file_call, write_chunks
+from .audio import _publish_media_file
 from llm.utils import logging_client
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import Field
 
 from llm_venice.constants import (
     ENDPOINT_IMAGE_GENERATE,
     DEFAULT_IMAGE_FORMAT,
-    DEFAULT_IMAGE_HIDE_WATERMARK,
-    DEFAULT_IMAGE_SAFE_MODE,
 )
 from llm_venice.utils import (
     generate_timestamp_filename,
@@ -27,92 +29,23 @@ from llm_venice.utils import (
     validate_output_directory,
 )
 from llm_venice.api.client import get_auth_headers_with_content_type
-from llm_venice.api.errors import VeniceAPIError, raise_api_error
+from llm_venice.api.errors import raise_api_error
 from llm_venice.notices import VeniceNotice, render_notices
 
 
-class VeniceImageOptions(llm.Options):
-    """Options for Venice image generation models."""
+class ImageOutputOptions(llm.Options):
+    output_dir: pathlib.Path | str | None = None
+    output_filename: str | None = None
+    overwrite_files: bool = False
 
-    model_config = ConfigDict(populate_by_name=True)
 
-    negative_prompt: Optional[str] = Field(
-        description="Negative prompt to guide image generation away from certain features",
-        default=None,
-    )
-    style_preset: Optional[str] = Field(
-        description="Style preset to use for generation", default=None
-    )
-    height: Optional[int] = Field(
-        description="Height of generated image", default=None, ge=64, le=1280
-    )
-    width: Optional[int] = Field(
-        description="Width of generated image", default=None, ge=64, le=1280
-    )
-    aspect_ratio: Optional[str] = Field(
-        description="Aspect ratio to use for generation", default=None
-    )
-    resolution: Optional[str] = Field(
-        description="Resolution preset to use for generation", default=None
-    )
-    steps: Optional[int] = Field(description="Number of inference steps", default=None, ge=7, le=50)
-    cfg_scale: Optional[float] = Field(
-        description="CFG scale for generation", default=None, gt=0, le=20.0
-    )
-    seed: Optional[int] = Field(
-        description="Random seed for reproducible generation",
-        default=None,
-        ge=-999999999,
-        le=999999999,
-    )
-    lora_strength: Optional[int] = Field(
-        description="LoRA adapter strength percentage", default=None, ge=0, le=100
-    )
-    safe_mode: Optional[bool] = Field(
-        description="Enable safety filters", default=DEFAULT_IMAGE_SAFE_MODE
-    )
-    hide_watermark: Optional[bool] = Field(
-        description="Hide watermark in generated image", default=DEFAULT_IMAGE_HIDE_WATERMARK
-    )
-    return_binary: Optional[bool] = Field(
-        description="Return raw binary instead of base64", default=False
-    )
-    variants: Optional[int] = Field(
-        description="Number of images to generate (1-4). Only supported when return_binary is false.",
-        default=None,
-        ge=1,
-        le=4,
-    )
-    image_format: Optional[Literal["png", "jpeg", "webp"]] = Field(
-        description="The image format to return",
-        default=DEFAULT_IMAGE_FORMAT,
-        alias="format",
-    )
-    embed_exif_metadata: Optional[bool] = Field(
-        description="Embed prompt generation information in the image's EXIF metadata",
-        default=False,
-    )
-    enable_web_search: Optional[bool] = Field(
-        description="Enable web search for image generation on supported models",
-        default=None,
-    )
-    output_dir: Optional[Union[pathlib.Path, str]] = Field(
-        description="Directory to save generated images",
-        default=None,
-    )
-    output_filename: Optional[str] = Field(
-        description="Custom filename for saved image", default=None
-    )
-    overwrite_files: Optional[bool] = Field(
-        description="Option to overwrite existing output files", default=False
-    )
+class VeniceImageOptions(ImageParams, ImageOutputOptions):
+    """Image endpoint parameters with plugin defaults and output options."""
 
-    @model_validator(mode="after")
-    def validate_variants_with_return_binary(self):
-        """Venice only supports multi-image responses in JSON mode."""
-        if self.return_binary and self.variants is not None:
-            raise ValueError("variants is only supported when return_binary is false")
-        return self
+    safe_mode: bool | None = False
+    hide_watermark: bool | None = True
+    image_format: Literal["png", "jpeg", "webp"] | None = Field(default="png", alias="format")
+    embed_exif_metadata: bool | None = False
 
 
 @dataclass
@@ -400,8 +333,66 @@ def render_saved_paths_for_output(output_paths: list[pathlib.Path]) -> str:
     return "\n".join(f"Image saved to {saved_path}" for saved_path in output_paths)
 
 
+def _image_options(model, prompt):
+    warn_deprecated(model)
+    opts = cast(VeniceImageOptions, model.Options.model_validate(prompt.options.model_dump()))
+    validate_output_directory(opts.output_dir)
+    params = copy_params(ImageParams, opts)
+    if params.enable_web_search and not model.supports_web_search:
+        raise ValueError(f"Model {model.model_id} does not support web search")
+    values = params.model_dump()
+    notices = normalize_image_options_for_model(
+        model_name=model.model_name, options_dict=values, image_constraints=model.image_constraints
+    )
+    return opts, ImageParams.model_validate(values), notices
+
+
+def _save_adapter_images(model, opts, result):
+    paths = []
+    for index, image in enumerate(result.images, 1):
+        directory = (
+            pathlib.Path(opts.output_dir).expanduser()
+            if opts.output_dir
+            else llm.user_dir() / "images"
+        )
+        filename = opts.output_filename or generate_timestamp_filename(
+            "venice", model.model_name, image.format
+        )
+        if len(result.images) > 1:
+            filename = _filename_with_index(filename, index)
+        path = get_unique_filepath(directory, filename, opts.overwrite_files)
+        paths.append(
+            write_chunks(
+                [image.data], path, overwrite=opts.overwrite_files, publish=_publish_media_file
+            ).path
+        )
+    return paths
+
+
+def _image_response(response, result: ImageResult, paths):
+    response.response_json = {
+        **result.raw,
+        "is_blurred": result.blurred,
+        "content_violation": result.content_violation,
+        "content_policy_violation_count": result.content_policy_violation_count,
+        "output_paths": [str(path) for path in paths],
+    }
+
+
+def _image_notices(result, notices):
+    append_blurred_notice(notices, is_blurred=result.blurred)
+    if result.content_policy_violation_count:
+        notices.append(
+            VeniceNotice(
+                "warning",
+                f"{result.content_policy_violation_count} image variants omitted by content policy",
+            )
+        )
+    return render_notices_for_output(notices)
+
+
 class VeniceImage(llm.KeyModel):
-    """Venice AI image generation model."""
+    """Venice image adapter, with file naming and moderation output policy."""
 
     can_stream = False
     needs_key = "venice"
@@ -425,56 +416,28 @@ class VeniceImage(llm.KeyModel):
     def __str__(self):
         return f"Venice Image: {self.model_id}"
 
-    class Options(VeniceImageOptions):  # type: ignore[override]
+    class Options(VeniceImageOptions):  # type: ignore[reportIncompatibleVariableOverride]
         pass
 
     def execute(self, prompt, stream, response, conversation=None, key=None):
-        """Execute image generation request."""
-        warn_deprecated(self)
-        try:
+        with model_error_boundary():
             api_key = require_model_key(self, key)
-            try:
-                options_dict = prompt.options.model_dump(by_alias=True)
-                validate_output_directory(
-                    options_dict.get("output_dir"),
-                    create_if_missing=True,
-                )
-                result = generate_image_result(
-                    prompt=prompt.prompt,
-                    options=prompt.options,
-                    model_id=self.model_id,
-                    model_name=self.model_name,
-                    api_key=api_key,
-                    supports_web_search=self.supports_web_search,
-                    image_constraints=self.image_constraints,
-                )
-            except ValueError as exc:
-                raise llm.ModelError(str(exc)) from exc
-
+            opts, params, notices = _image_options(self, prompt)
+            with VeniceClient(key=api_key) as client:
+                result = client.generate_image(self.model_name, prompt.prompt, params)
+            paths = [] if result.content_violation else _save_adapter_images(self, opts, result)
+            _image_response(response, result, paths)
+            rendered = _image_notices(result, notices)
+            if rendered:
+                yield rendered
             if result.content_violation:
-                rendered_notices = render_notices_for_output(result.notices)
-                if rendered_notices:
-                    yield rendered_notices
                 yield "Response marked as content violation; no image was returned."
-                return
-
-            if result.response_json is not None:
-                response.response_json = result.response_json
-
-            try:
-                save_image_result(result)
-                rendered_notices = render_notices_for_output(result.notices)
-                if rendered_notices:
-                    yield rendered_notices
-                yield render_saved_paths_for_output(result.output_paths)
-            except (OSError, ValueError) as exc:
-                raise llm.ModelError(f"Failed to write image file: {exc}") from exc
-        except VeniceAPIError as exc:
-            raise llm.ModelError(str(exc)) from exc
+            else:
+                yield render_saved_paths_for_output(paths)
 
 
 class AsyncVeniceImage(llm.AsyncKeyModel):
-    """Asynchronous Venice AI image generation model."""
+    """Venice image adapter using native async network I/O."""
 
     can_stream = False
     needs_key = "venice"
@@ -498,50 +461,25 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
     def __str__(self):
         return f"Venice Image: {self.model_id}"
 
-    class Options(VeniceImageOptions):  # type: ignore[override]
+    class Options(VeniceImageOptions):  # type: ignore[reportIncompatibleVariableOverride]
         pass
 
     async def execute(self, prompt, stream, response, conversation=None, key=None):
-        """Execute image generation request asynchronously."""
-        warn_deprecated(self)
-        try:
+        with model_error_boundary():
             api_key = require_model_key(self, key)
-            try:
-                options_dict = prompt.options.model_dump(by_alias=True)
-                validate_output_directory(
-                    options_dict.get("output_dir"),
-                    create_if_missing=True,
-                )
-                result = await asyncio.to_thread(
-                    generate_image_result,
-                    prompt=prompt.prompt,
-                    options=prompt.options,
-                    model_id=self.model_id,
-                    model_name=self.model_name,
-                    api_key=api_key,
-                    supports_web_search=self.supports_web_search,
-                    image_constraints=self.image_constraints,
-                )
-            except ValueError as exc:
-                raise llm.ModelError(str(exc)) from exc
-
+            opts, params, notices = _image_options(self, prompt)
+            async with AsyncVeniceClient(key=api_key) as client:
+                result = await client.generate_image(self.model_name, prompt.prompt, params)
+            paths = (
+                []
+                if result.content_violation
+                else await async_file_call(_save_adapter_images, self, opts, result)
+            )
+            _image_response(response, result, paths)
+            rendered = _image_notices(result, notices)
+            if rendered:
+                yield rendered
             if result.content_violation:
-                rendered_notices = render_notices_for_output(result.notices)
-                if rendered_notices:
-                    yield rendered_notices
                 yield "Response marked as content violation; no image was returned."
-                return
-
-            if result.response_json is not None:
-                response.response_json = result.response_json
-
-            try:
-                await asyncio.to_thread(save_image_result, result)
-                rendered_notices = render_notices_for_output(result.notices)
-                if rendered_notices:
-                    yield rendered_notices
-                yield render_saved_paths_for_output(result.output_paths)
-            except (OSError, ValueError) as exc:
-                raise llm.ModelError(f"Failed to write image file: {exc}") from exc
-        except VeniceAPIError as exc:
-            raise llm.ModelError(str(exc)) from exc
+            else:
+                yield render_saved_paths_for_output(paths)

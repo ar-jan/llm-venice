@@ -20,7 +20,7 @@ from llm_venice.errors import (
     VeniceResponseError,
 )
 from llm_venice.params import ImageParams
-from llm_venice import results
+from llm_venice import _files
 
 PNG = b"\x89PNG\r\n\x1a\nbytes"
 
@@ -336,7 +336,7 @@ def test_async_stream_contract_and_partial_save(tmp_path):
 
 def test_async_cancel_waits_for_running_file_write(tmp_path, monkeypatch):
     started, release = Event(), Event()
-    original = results.open_staging_file
+    original = _files.open_staging_file
 
     class SlowWriter:
         def __init__(self, handle):
@@ -358,7 +358,7 @@ def test_async_cancel_waits_for_running_file_write(tmp_path, monkeypatch):
         handle, staging = original(path)
         return SlowWriter(handle), staging
 
-    monkeypatch.setattr(results, "open_staging_file", open_slow)
+    monkeypatch.setattr(_files, "open_staging_file", open_slow)
 
     async def run():
         chunks = AsyncChunks()

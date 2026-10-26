@@ -1,6 +1,6 @@
 """Platform bindings for publishing files without replacing an existing path."""
 
-from collections.abc import Iterable
+from collections.abc import AsyncIterable, Iterable
 from contextlib import suppress
 from dataclasses import dataclass
 import asyncio
@@ -189,4 +189,28 @@ async def async_file_call(function: Callable[..., _R], *args: Any, **kwargs: Any
         # Retrieve any exception, keeping the original cancellation/failure.
         if not task.cancelled():
             task.exception()
+        raise
+
+
+async def write_async_chunks(
+    chunks: AsyncIterable[bytes],
+    path: str | os.PathLike[str],
+    *,
+    overwrite: bool = False,
+    publish: Callable[..., Publication] = publish_file,
+) -> Publication:
+    """Async network consumption with cancellation-safe file writes and shared publication."""
+    destination = pathlib.Path(path)
+    if destination.is_dir():
+        raise IsADirectoryError(str(destination))
+    handle, staging = open_staging_file(destination)
+    try:
+        async for chunk in chunks:
+            await async_file_call(handle.write, chunk)
+        await async_file_call(handle.close)
+        return await async_file_call(publish, staging, destination, overwrite=overwrite)
+    except BaseException as exc:
+        with suppress(OSError, ValueError):
+            handle.close()
+        retain_partial(staging, exc)
         raise
