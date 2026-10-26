@@ -94,6 +94,8 @@ def test_failed_writer_preserves_concurrent_overwrite(tmp_path, capsys, partial,
 
 @pytest.fixture
 def umask_022():
+    if os.name == "nt":
+        pytest.skip("Windows does not support Unix permission-bit distinctions")
     previous = os.umask(0o022)
     try:
         yield

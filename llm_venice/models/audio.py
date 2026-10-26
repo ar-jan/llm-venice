@@ -446,6 +446,24 @@ def _open_staging_file(output_path: pathlib.Path) -> tuple[BinaryIO, pathlib.Pat
     return os.fdopen(fd, "wb"), pathlib.Path(temp_name)
 
 
+def _cleanup_failed_audio_file(part_path: pathlib.Path) -> None:
+    """Remove empty staging or report retained bytes; callers preserve the primary error."""
+    try:
+        size = part_path.stat().st_size
+    except FileNotFoundError:
+        return
+    except OSError:
+        # Never delete audio when its size cannot be determined.
+        message = f"download interrupted; staging file may remain at {part_path} (size unavailable)"
+    else:
+        if size == 0:
+            part_path.unlink(missing_ok=True)
+            return
+        message = f"download interrupted; partial audio kept at {part_path} ({_format_bytes(size)})"
+    # Stay click-free here: library modules must not depend on the CLI layer.
+    print(render_notice(VeniceNotice("warning", message)), file=sys.stderr)
+
+
 def write_audio_file(
     chunks: Iterable[bytes],
     output_path: pathlib.Path,
@@ -470,25 +488,27 @@ def write_audio_file(
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
     part_path: Optional[pathlib.Path] = None
+    file_handle: Optional[BinaryIO] = None
     try:
         file_handle, part_path = _open_staging_file(output_path)
-        with file_handle:
-            for chunk in chunks:
-                if not chunk:
-                    continue
-                file_handle.write(chunk)
-                reporter.advance(len(chunk))
+        for chunk in chunks:
+            if not chunk:
+                continue
+            file_handle.write(chunk)
+            reporter.advance(len(chunk))
+        file_handle.close()
+        file_handle = None
         saved_path = _publish_audio_file(part_path, output_path, overwrite=overwrite)
     except BaseException:
-        if reporter.bytes_written and part_path is not None and part_path.exists():
-            message = (
-                "download interrupted; partial audio kept at "
-                f"{part_path} ({_format_bytes(reporter.bytes_written)})"
-            )
-            # Stay click-free here: library modules must not depend on the CLI layer.
-            print(render_notice(VeniceNotice("warning", message)), file=sys.stderr)
-        elif part_path is not None:
-            part_path.unlink(missing_ok=True)
+        # A buffered close may itself fail while handling a stream error or
+        # KeyboardInterrupt. Preserve that original failure and inspect the
+        # actual on-disk size after attempting to flush/close, not progress.
+        if file_handle is not None:
+            with suppress(OSError, ValueError):
+                file_handle.close()
+        if part_path is not None:
+            with suppress(OSError, ValueError):
+                _cleanup_failed_audio_file(part_path)
         raise
     reporter.finish()
     return saved_path
