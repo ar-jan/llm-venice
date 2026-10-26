@@ -45,7 +45,7 @@ def response(**kwargs):
 
 def test_defaults_aliases_and_extra_body_survive_copy_without_mutation():
     extra = {"future": {"value": [1]}, "explicit_null": None}
-    params = ImageParams(format="webp", extra_body=extra)
+    params = ImageParams.model_validate({"format": "webp", "extra_body": extra})
     copied = copy_params(ImageParams, params)
     body = image_body("model", "hello", copied)
     assert body == {
@@ -95,7 +95,7 @@ def test_mutated_params_revalidated_at_request_boundary():
     with pytest.raises(ValidationError):
         speech_body("m", "x" * 4097, None, streaming=False)
     with pytest.raises(ValidationError):
-        ImageParams(format="jpeg", transparent_background=True)
+        ImageParams(image_format="jpeg", transparent_background=True)
     with pytest.raises(ValidationError):
         SpeechParams(speed=float("nan"))
 

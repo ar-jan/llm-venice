@@ -13,7 +13,7 @@ from llm_venice.constants import VENICE_PARAMETERS, NON_OPENAI_COMPATIBLE_PARAMS
 from pydantic import Field, field_validator
 
 
-class VeniceChatOptions(Chat.Options):
+class _ChatOptions(Chat.Options):
     """Options for Venice chat models."""
 
     if TYPE_CHECKING:
@@ -389,7 +389,7 @@ class VeniceChat(CatalogOptionsMixin, Chat):
     def __str__(self):  # type: ignore[invalid-argument-type]
         return f"Venice Chat: {self.model_id}"
 
-    class Options(VeniceChatOptions):
+    class Options(_ChatOptions):
         pass
 
     @property

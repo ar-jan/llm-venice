@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from llm_venice.errors import VeniceError
 
 import sys
-from typing import Any
+from typing import Any, cast
 
 _deprecated_warnings: set[str] = set()
 
@@ -18,7 +18,7 @@ def normalize_model_id(value: str) -> str:
 
 
 def initialize_model(
-    model: Any, model_id: str, model_name: str | None, model_spec: dict | None
+    model: Any, model_id: str, model_name: str | None, model_spec: dict[str, Any] | None
 ) -> None:
     model.model_id = f"venice/{normalize_model_id(model_id)}"
     model.model_name = normalize_model_id(model_name or model_id)
@@ -35,7 +35,7 @@ def warn_deprecated(model: Any) -> None:
     ):
         return
     message = f"{model.model_id} is deprecated"
-    replacement = deprecation.get("replacementModelId")
+    replacement: Any = cast(dict[str, Any], deprecation).get("replacementModelId")
     if isinstance(replacement, str) and replacement:
         message += f"; use venice/{normalize_model_id(replacement)} instead"
     _deprecated_warnings.add(model.model_id)

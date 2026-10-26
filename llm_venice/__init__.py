@@ -1,106 +1,64 @@
-"""LLM Venice plugin for Venice AI models."""
+"""Venice clients, media values, catalog helpers and llm plugin adapters."""
 
 import llm
 
-from llm_venice.cli import register_venice_commands
-from llm_venice.models import register_venice_models
-
-# Public API exports
-from llm_venice.models.chat import (
-    AsyncVeniceChat,
-    VeniceChat,
-    VeniceChatOptions,
-    VeniceWebSearch,
-    VeniceXSearch,
+from .client import VeniceClient, AsyncVeniceClient
+from .params import ImageParams, SpeechParams
+from .results import GeneratedImage, ImageResult, SpeechResult, SpeechStream, AsyncSpeechStream
+from .errors import (
+    VeniceError,
+    VeniceAPIError,
+    AuthenticationError,
+    RateLimitError,
+    VeniceConnectionError,
+    VeniceResponseError,
+    MissingKeyError,
 )
-from llm_venice.models.audio import (
-    AsyncVeniceSpeech,
-    VeniceSpeech,
-    VeniceSpeechOptions,
-    SpeechGenerationResult,
-    SpeechStreamResult,
-    generate_speech_result,
-    stream_speech_result,
-    save_speech_result,
-)
-from llm_venice.models.image import (
-    AsyncVeniceImage,
-    VeniceImage,
-    VeniceImageOptions,
-    generate_image_result,
-    ImageGenerationResult,
-    save_image_result,
-)
-from llm_venice.notices import VeniceNotice
-from llm_venice.api.upscale import UpscaleResult, perform_image_upscale, write_upscaled_image
-from llm_venice.api.refresh import fetch_models, persist_models
-from llm_venice.api.characters import list_characters, persist_characters
-from llm_venice.api.keys import (
-    list_api_keys,
-    get_rate_limits,
-    get_rate_limits_log,
-    create_api_key,
-    delete_api_key,
-)
-from llm_venice.api.errors import VeniceAPIError
+from .catalog import load_catalog, refresh_catalog
+from .models.chat import VeniceChat, AsyncVeniceChat, VeniceWebSearch, VeniceXSearch
+from .models.image import VeniceImage, AsyncVeniceImage
+from .models.audio import VeniceSpeech, AsyncVeniceSpeech
+from .models import register_venice_models as _register_models
+from .cli import register_venice_commands as _register_commands
 
 
 @llm.hookimpl
 def register_commands(cli):
-    """
-    Register Venice CLI commands with the LLM CLI.
-
-    Args:
-        cli: The LLM CLI application
-    """
-    register_venice_commands(cli)
+    """Register Venice commands with llm's plugin system."""
+    _register_commands(cli)
 
 
 @llm.hookimpl
 def register_models(register):
-    """
-    Register Venice models with the LLM plugin system.
-
-    Args:
-        register: The LLM model registration function
-    """
-    register_venice_models(register)
+    """Register cached Venice models with llm's plugin system."""
+    _register_models(register)
 
 
 __all__ = [
-    "register_commands",
-    "register_models",
+    "VeniceClient",
+    "AsyncVeniceClient",
+    "ImageParams",
+    "SpeechParams",
+    "GeneratedImage",
+    "ImageResult",
+    "SpeechResult",
+    "SpeechStream",
+    "AsyncSpeechStream",
+    "VeniceError",
+    "VeniceAPIError",
+    "AuthenticationError",
+    "RateLimitError",
+    "VeniceConnectionError",
+    "VeniceResponseError",
+    "MissingKeyError",
+    "load_catalog",
+    "refresh_catalog",
     "VeniceChat",
     "AsyncVeniceChat",
-    "VeniceChatOptions",
-    "VeniceWebSearch",
-    "VeniceXSearch",
-    "VeniceSpeech",
-    "AsyncVeniceSpeech",
-    "VeniceSpeechOptions",
-    "SpeechGenerationResult",
-    "SpeechStreamResult",
-    "generate_speech_result",
-    "stream_speech_result",
-    "save_speech_result",
     "VeniceImage",
     "AsyncVeniceImage",
-    "VeniceImageOptions",
-    "ImageGenerationResult",
-    "generate_image_result",
-    "save_image_result",
-    "VeniceNotice",
-    "UpscaleResult",
-    "perform_image_upscale",
-    "write_upscaled_image",
-    "fetch_models",
-    "persist_models",
-    "list_characters",
-    "persist_characters",
-    "list_api_keys",
-    "get_rate_limits",
-    "get_rate_limits_log",
-    "create_api_key",
-    "delete_api_key",
-    "VeniceAPIError",
+    "VeniceSpeech",
+    "AsyncVeniceSpeech",
+    "VeniceWebSearch",
+    "VeniceXSearch",
 ]

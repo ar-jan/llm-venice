@@ -2,8 +2,9 @@ import httpx2
 import pytest
 from llm.cli import cli
 
-from llm_venice.api.errors import VeniceAPIError
-from llm_venice.api.refresh import fetch_models
+from llm_venice.errors import VeniceAPIError, VeniceResponseError
+from llm_venice.client import VeniceClient
+from llm_venice.types import ModelInfo
 
 
 def test_refresh_http_error_cli(cli_runner, httpx2_mock, mock_venice_api_key):
@@ -50,7 +51,8 @@ def test_fetch_models_http_error_programmatic(httpx2_mock, mock_venice_api_key):
     )
 
     with pytest.raises(VeniceAPIError) as excinfo:
-        fetch_models(mock_venice_api_key)
+        with VeniceClient(key=mock_venice_api_key) as client:
+            client.list_models()
 
     message = str(excinfo.value)
     assert "401" in message
@@ -61,11 +63,11 @@ def test_persist_models_is_atomic(tmp_path, monkeypatch):
     """An interrupted write must leave the previous cache intact."""
     import json
 
-    from llm_venice.api.refresh import persist_models
+    from llm_venice.catalog import save_catalog
 
     target = tmp_path / "venice_models.json"
-    old = [{"id": "old"}]
-    persist_models(old, target)
+    old: list[ModelInfo] = [{"id": "old", "type": "text"}]
+    save_catalog(old, target)
     assert json.loads(target.read_text()) == old
 
     def failing_dump(*_args, **_kwargs):
@@ -73,7 +75,7 @@ def test_persist_models_is_atomic(tmp_path, monkeypatch):
 
     monkeypatch.setattr("llm_venice.utils.json.dump", failing_dump)
     with pytest.raises(KeyboardInterrupt):
-        persist_models([{"id": "new"}], target)
+        save_catalog([{"id": "new", "type": "text"}], target)
 
     assert json.loads(target.read_text()) == old
     # No temporary files left behind
@@ -88,5 +90,6 @@ def test_fetch_models_malformed_payload_raises_value_error(httpx2_mock, mock_ven
         json={"unexpected": True},
     )
 
-    with pytest.raises(ValueError):
-        fetch_models(mock_venice_api_key)
+    with pytest.raises(VeniceResponseError):
+        with VeniceClient(key=mock_venice_api_key) as client:
+            client.list_models()

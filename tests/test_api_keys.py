@@ -6,8 +6,37 @@ from jsonschema import Draft202012Validator
 from llm.cli import cli
 import pytest
 
-from llm_venice.api.errors import VeniceAPIError
-from llm_venice.api.keys import list_api_keys
+from llm_venice.errors import VeniceAPIError
+from llm_venice.client import VeniceClient
+
+
+@pytest.mark.parametrize(
+    "args,method,path,data",
+    [
+        (["list"], "GET", "api_keys", [{"id": "key", "future": {"flag": True}}]),
+        (["rate-limits"], "GET", "api_keys/rate_limits", {"accessPermitted": True}),
+        (
+            ["rate-limits-log"],
+            "GET",
+            "api_keys/rate_limits/log",
+            [{"apiKeyId": "key", "rateLimitType": "RPM", "timestamp": "2026-10-26T00:00:00Z"}],
+        ),
+        (["create", "--type", "ADMIN"], "POST", "api_keys", {"id": "key", "apiKey": "created"}),
+        (["delete", "key"], "DELETE", "api_keys?id=key", None),
+    ],
+)
+def test_api_key_cli_preserves_json_envelope_bytes(
+    cli_runner, httpx2_mock, mock_venice_api_key, args, method, path, data
+):
+    payload = {"success": True, "data": data, "future": {"message": "café"}}
+    httpx2_mock.add_response(
+        method=method, url=f"https://api.venice.ai/api/v1/{path}", json=payload
+    )
+
+    result = cli_runner.invoke(cli, ["venice", "api-keys", *args])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout_bytes == (json.dumps(payload, indent=2) + "\n").encode()
 
 
 def test_list_api_keys_http_error(cli_runner, httpx2_mock, mock_venice_api_key):
@@ -77,7 +106,8 @@ def test_list_api_keys_http_error_programmatic(httpx2_mock, mock_venice_api_key)
     )
 
     with pytest.raises(VeniceAPIError) as excinfo:
-        list_api_keys({"Authorization": f"Bearer {mock_venice_api_key}"})
+        with VeniceClient(key=mock_venice_api_key) as client:
+            client.list_api_keys()
 
     message = str(excinfo.value)
     assert "403" in message
@@ -95,7 +125,8 @@ def test_list_api_keys_maps_error_code(httpx2_mock, mock_venice_api_key):
     )
 
     with pytest.raises(VeniceAPIError) as excinfo:
-        list_api_keys({"Authorization": f"Bearer {mock_venice_api_key}"})
+        with VeniceClient(key=mock_venice_api_key) as client:
+            client.list_api_keys()
 
     message = str(excinfo.value)
     assert "INVALID_API_KEY" in message

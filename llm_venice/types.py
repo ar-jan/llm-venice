@@ -5,6 +5,8 @@ from typing_extensions import Required, TypedDict
 
 
 class ModelCapabilities(TypedDict, total=False):
+    """Optional capability metadata supplied by the catalog."""
+
     supportsVision: bool
     supportsMultipleImages: bool
     maxImages: int
@@ -26,12 +28,16 @@ class ModelCapabilities(TypedDict, total=False):
 
 
 class StepsConstraint(TypedDict, total=False):
+    """Published image-step limits and default."""
+
     min: int
     max: int
     default: int
 
 
 class ImageConstraints(TypedDict, total=False):
+    """Optional model-specific image limits and supported choices."""
+
     promptCharacterLimit: int
     steps: StepsConstraint
     widthHeightDivisor: int
@@ -45,15 +51,21 @@ class ImageConstraints(TypedDict, total=False):
 
 
 class SpeechConstraints(TypedDict, total=False):
+    """Optional text-length and speech-speed constraints."""
+
     inputCharacterLimit: int
     speed: dict[str, float]
 
 
 class ChatConstraints(TypedDict, total=False):
+    """Optional chat request constraints from the catalog."""
+
     reasoningEffortOptions: list[str]
 
 
 class Deprecation(TypedDict, total=False):
+    """Wire-format deprecation dates and suggested replacement model."""
+
     date: str
     removesAt: str
     autoRemap: bool
@@ -61,6 +73,8 @@ class Deprecation(TypedDict, total=False):
 
 
 class ModelSpec(TypedDict, total=False):
+    """Optional catalog metadata; unfamiliar JSON fields remain in responses."""
+
     name: str
     description: str
     offline: bool
@@ -80,6 +94,8 @@ class ModelSpec(TypedDict, total=False):
 
 
 class ModelInfo(TypedDict, total=False):
+    """A concrete catalog resource with required model ID and type."""
+
     id: Required[str]
     type: Required[str]
     object: str
@@ -90,6 +106,8 @@ class ModelInfo(TypedDict, total=False):
 
 
 class Character(TypedDict, total=False):
+    """A character resource with required ID and public slug."""
+
     id: Required[str]
     slug: Required[str]
     name: str
@@ -108,11 +126,15 @@ class Character(TypedDict, total=False):
 
 
 class ApiTier(TypedDict, total=False):
+    """Optional account tier information."""
+
     id: str
     isCharged: bool
 
 
 class RateLimits(TypedDict, total=False):
+    """Access status and optional balance, expiry and rate-limit metadata."""
+
     accessPermitted: Required[bool]
     apiTier: ApiTier
     balances: dict[str, float]
@@ -122,6 +144,8 @@ class RateLimits(TypedDict, total=False):
 
 
 class ApiKey(TypedDict, total=False):
+    """An API key resource; timestamps remain wire-format strings."""
+
     id: Required[str]
     apiKeyType: str
     description: str
@@ -136,10 +160,14 @@ class ApiKey(TypedDict, total=False):
 
 
 class CreatedApiKey(ApiKey, total=False):
+    """A newly created key, including the returned secret."""
+
     apiKey: Required[str]
 
 
 class RateLimitLogEntry(TypedDict, total=False):
+    """A rate-limit event with its key ID, type and wire timestamp."""
+
     apiKeyId: Required[str]
     modelId: str
     rateLimitTier: str

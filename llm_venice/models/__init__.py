@@ -19,7 +19,7 @@ from llm_venice.catalog import catalog_path, read_catalog, save_catalog
 from llm_venice.client import VeniceClient
 from llm_venice import _catalog_state
 from llm_venice.errors import VeniceError, VeniceResponseError
-from llm_venice.notices import VeniceNotice, render_notice
+from llm_venice._notices import VeniceNotice, render_notice
 
 # Model registration can run several times per process (once per model lookup),
 # so remember which warnings were already shown.

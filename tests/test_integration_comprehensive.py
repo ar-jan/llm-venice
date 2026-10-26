@@ -5,6 +5,7 @@ Run with: pytest -m integration tests/test_integration_comprehensive.py
 """
 
 import json
+import os
 import struct
 import zlib
 from pathlib import Path
@@ -393,6 +394,10 @@ class TestWebSearch:
         # Just verify the structure is correct
 
 
+@pytest.mark.skipif(
+    os.environ.get("LLM_VENICE_TEST_IMAGES") != "1",
+    reason="Set LLM_VENICE_TEST_IMAGES=1 for paid image tests",
+)
 class TestImageGeneration:
     """Test image generation functionality."""
 
@@ -411,6 +416,10 @@ class TestImageGeneration:
         assert len(response_text) > 0
 
 
+@pytest.mark.skipif(
+    os.environ.get("LLM_VENICE_TEST_IMAGES") != "1",
+    reason="Set LLM_VENICE_TEST_IMAGES=1 for paid image tests",
+)
 class TestImageUpscaling:
     """Test image upscaling functionality."""
 

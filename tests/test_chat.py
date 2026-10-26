@@ -3,7 +3,9 @@
 import pytest
 from pydantic import ValidationError
 from llm import Prompt, Response
-from llm_venice import AsyncVeniceChat, VeniceChat, VeniceChatOptions
+from llm_venice import AsyncVeniceChat, VeniceChat
+
+VeniceChatOptions = VeniceChat.Options
 
 
 def test_venice_chat_options_fields():
@@ -985,7 +987,7 @@ def test_new_parameters_request_shape_client_call(monkeypatch):
     and that stream_options is present when streaming.
     """
     from llm import Prompt
-    from llm_venice import VeniceChat, VeniceChatOptions
+    from llm_venice import VeniceChat
 
     captured_kwargs = {}
 

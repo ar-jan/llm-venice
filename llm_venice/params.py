@@ -1,7 +1,7 @@
 """Endpoint parameters. None omits a field and lets Venice choose its default."""
 
 from typing import Any, Literal, TypeVar
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 from typing_extensions import Self
 
 
@@ -30,6 +30,11 @@ class _VeniceParams(BaseModel):
     def _check_extra_body(self) -> Self:
         reserved = _RESERVED | set(type(self).model_fields)
         reserved.update(field.alias for field in type(self).model_fields.values() if field.alias)
+        reserved.update(
+            field.serialization_alias
+            for field in type(self).model_fields.values()
+            if field.serialization_alias
+        )
         if isinstance(self, ImageParams):
             reserved.add("prompt")
         collisions = reserved.intersection(self.extra_body or {})
@@ -58,7 +63,11 @@ class ImageParams(_VeniceParams):
     safe_mode: bool | None = None
     hide_watermark: bool | None = None
     variants: int | None = Field(default=None, ge=1, le=4)
-    image_format: Literal["png", "jpeg", "webp"] | None = Field(default=None, alias="format")
+    image_format: Literal["png", "jpeg", "webp"] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("image_format", "format"),
+        serialization_alias="format",
+    )
     embed_exif_metadata: bool | None = None
     enable_web_search: bool | None = None
 

@@ -11,8 +11,7 @@ from click.testing import CliRunner
 
 from llm_venice import AsyncVeniceImage, VeniceImage
 from llm_venice.constants import ENDPOINT_IMAGE_GENERATE
-from llm_venice.models.image import ImageGenerationResult
-from llm_venice.notices import VeniceNotice
+from llm_venice._notices import VeniceNotice
 from llm_venice.cli.notices import emit_cli_notices
 
 
@@ -950,25 +949,6 @@ def test_venice_image_keeps_resolution_when_support_is_unknown(
     payload = request_json()
     assert payload["resolution"] == "4K"
     assert results[0].startswith("Image saved to ")
-
-
-def test_image_generation_result_exposes_structured_notices():
-    """ImageGenerationResult should retain structured notices."""
-    result = ImageGenerationResult(
-        notices=[
-            VeniceNotice(
-                level="info",
-                message="dropped unsupported options for model 'test-model': aspect_ratio",
-            )
-        ],
-    )
-
-    assert result.notices == [
-        VeniceNotice(
-            level="info",
-            message="dropped unsupported options for model 'test-model': aspect_ratio",
-        )
-    ]
 
 
 def test_emit_cli_notices_surfaces_rendered_messages():

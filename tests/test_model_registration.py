@@ -4,7 +4,7 @@ import httpx2
 import llm
 import pytest
 from llm_venice import AsyncVeniceImage, AsyncVeniceSpeech, VeniceImage, VeniceSpeech
-from llm_venice.api.refresh import fetch_models
+from llm_venice.client import VeniceClient
 from llm_venice.models import register_venice_models
 
 
@@ -116,7 +116,8 @@ def test_fetch_models_missing_key_raises_needs_key(monkeypatch):
     monkeypatch.setattr(llm, "get_key", lambda *_, **__: None)
 
     with pytest.raises(llm.NeedsKeyException):
-        fetch_models()
+        with VeniceClient() as client:
+            client.list_models()
 
 
 def test_registers_image_async_model(monkeypatch, tmp_path):

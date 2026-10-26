@@ -2,8 +2,8 @@ import httpx2
 import pytest
 from llm.cli import cli
 
-from llm_venice.api.characters import list_characters
-from llm_venice.api.errors import VeniceAPIError
+from llm_venice.client import VeniceClient
+from llm_venice.errors import VeniceAPIError
 
 
 def test_characters_http_error_cli(cli_runner, httpx2_mock, mock_venice_api_key):
@@ -50,7 +50,8 @@ def test_characters_http_error_programmatic(httpx2_mock, mock_venice_api_key):
     )
 
     with pytest.raises(VeniceAPIError) as excinfo:
-        list_characters(mock_venice_api_key)
+        with VeniceClient(key=mock_venice_api_key) as client:
+            client.list_characters()
 
     message = str(excinfo.value)
     assert "404" in message
