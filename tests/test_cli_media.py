@@ -163,7 +163,12 @@ def test_cli_speech_streaming_writes_file(
 def test_cli_speech_api_error_is_clean(
     cli_runner, httpx2_mock, mock_venice_api_key, catalog, tmp_path
 ):
-    """A model-path API error is reported without a traceback and writes no file."""
+    """An API error arrives before any audio, so nothing is written at all.
+
+    This is the counterpart to the interrupted-download case: a failure after
+    bytes have started is kept as <name>.part, but a rejected request never
+    creates a file, not even an empty part file.
+    """
     httpx2_mock.add_response(
         method="POST", url=ENDPOINT_AUDIO_SPEECH, status_code=400, json={"error": "Invalid voice"}
     )
@@ -185,6 +190,7 @@ def test_cli_speech_api_error_is_clean(
     assert "Invalid voice" in result.output
     assert "Traceback" not in result.output
     assert list(tmp_path.iterdir()) == []
+    assert not (tmp_path / "hello.mp3.part").exists()
 
 
 def test_tests_do_not_patch_httpx2_modules():

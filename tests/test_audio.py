@@ -121,6 +121,9 @@ def test_venice_speech_streaming_http_error_has_detail(httpx2_mock, mock_venice_
     with pytest.raises(llm.ModelError, match="Invalid voice"):
         list(model.execute(prompt, True, MagicMock(), None))
 
+    # The request was rejected before any audio arrived, so nothing was written
+    assert list(tmp_path.iterdir()) == []
+
 
 def _chunks_then_fail(chunks, exc):
     yield from chunks
