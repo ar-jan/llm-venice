@@ -153,17 +153,41 @@ Disable streaming (wait for the full audio before writing the file):
 
 `llm --no-stream -m venice/tts-kokoro "First sentence. Second sentence. Third sentence."`
 
-Write audio bytes to stdout (progress/status go to stderr):
-
-`llm -m venice/tts-kokoro "Hello." -o stdout true -o response_format mp3 > out.mp3`
-
-You can also save a copy while writing to stdout by providing `output_dir` and/or `output_filename`:
-
-`llm -m venice/tts-kokoro "Hello." -o stdout true -o output_dir . -o output_filename out.mp3`
-
 To see all available options:
 
 `llm models list --query tts-kokoro --options`
+
+#### `llm venice tts`
+
+The `llm venice tts` command writes audio to a file or, byte-exact, to stdout. Use it for pipelines: `llm -m venice/tts-...` always adds llm's own output (such as a trailing newline) to stdout, so it can only save files.
+
+```
+llm venice tts [TEXT] [-m MODEL] [--voice VOICE] [--format FORMAT] [--speed SPEED]
+               [-o PATH | -o -] [--overwrite] [--progress]
+```
+
+- `TEXT` is read from stdin when it is omitted or `-`.
+- `-m` takes the model ID with or without the `venice/` prefix. The default is the first text-to-speech model in the Venice model catalog.
+- `--voice`, `--format` (the API's `response_format`) and `--speed` accept the same values as the `voice`, `response_format` and `speed` options of `llm -m venice/<tts-model>`.
+- `-o` is this command's own output option, unrelated to llm's `-o/--option KEY VALUE`. `-o FILE` writes a file, `-o DIR` writes a generated file name into a directory, and `-o -` writes only the raw audio bytes to stdout (status and `--progress` go to stderr). Without `-o`, audio is saved under the LLM user directory in `audio/`. In file mode the saved path is printed on stdout.
+- Existing files are not overwritten unless `--overwrite` is given; a timestamped file name is used instead.
+- The command does not log to llm's logs database.
+
+Examples:
+
+```sh
+llm venice tts "Hello." --format mp3 -o - > out.mp3
+llm venice tts "Hello." -o out.mp3
+echo "Hello." | llm venice tts --voice af_sky -o - | mpv -
+llm venice tts "Hello." -o - | tee out.mp3 | mpv -   # play and keep a copy
+```
+
+The former `-o stdout true` option of `llm -m venice/tts-...` has been removed:
+
+| Old | New |
+|---|---|
+| `llm -m venice/tts-kokoro "Hello." -o stdout true -o response_format mp3 > out.mp3` | `llm venice tts "Hello." --format mp3 -o - > out.mp3` |
+| `llm -m venice/tts-kokoro "Hello." -o stdout true -o output_dir . -o output_filename out.mp3` | `llm venice tts "Hello." -o - \| tee out.mp3`, or just `-o out.mp3` |
 
 ### Image generation
 

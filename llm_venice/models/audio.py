@@ -62,12 +62,6 @@ class VeniceSpeechOptions(llm.Options):
         description="Show download progress on stderr",
         default=False,
     )
-    stdout: Optional[bool] = Field(
-        description=(
-            "Write audio bytes to stdout. When set, progress and status messages are written to stderr."
-        ),
-        default=False,
-    )
 
 
 @dataclass
@@ -89,8 +83,7 @@ class SpeechStreamResult:
 @dataclass(frozen=True)
 class _SpeechCLIRequest:
     payload: dict
-    output_path: Optional[pathlib.Path]
-    write_stdout: bool
+    output_path: pathlib.Path
     progress: bool
     use_streaming_download: bool
 
@@ -142,14 +135,13 @@ def _prepare_speech_generation(
     """
     Prepare a speech request payload and a resolved output path.
 
-    Removes CLI-only options (stdout/progress) and output-path options from the payload.
+    Removes the CLI-only progress option and output-path options from the payload.
     Does not write anything to disk.
     """
     output_dir = options_dict.pop("output_dir", None)
     output_filename = options_dict.pop("output_filename", None)
     overwrite_files = options_dict.pop("overwrite_files", False)
     options_dict.pop("progress", None)
-    options_dict.pop("stdout", None)
 
     response_format = options_dict.get("response_format") or "mp3"
     output_path = _resolve_speech_output_path(
@@ -173,26 +165,17 @@ def _prepare_speech_cli_request(
     stream: bool,
 ) -> _SpeechCLIRequest:
     options_dict = options.model_dump(by_alias=True)
-
-    write_stdout = bool(options_dict.get("stdout", False))
     progress = bool(options_dict.get("progress", False))
-
-    requested_file_output = (
-        _normalize_output_dir(options_dict.get("output_dir")) is not None
-        or _normalize_output_filename(options_dict.get("output_filename")) is not None
-    )
-    save_to_file = (not write_stdout) or requested_file_output
 
     payload, resolved_output_path = _prepare_speech_generation(
         input_text=input_text, options_dict=options_dict, model_name=model_name
     )
 
     payload["streaming"] = stream
-    use_streaming_download = write_stdout or progress or stream
+    use_streaming_download = progress or stream
     return _SpeechCLIRequest(
         payload=payload,
-        output_path=resolved_output_path if save_to_file else None,
-        write_stdout=write_stdout,
+        output_path=resolved_output_path,
         progress=progress,
         use_streaming_download=use_streaming_download,
     )
@@ -204,15 +187,13 @@ def _set_speech_response_json(
     payload: dict,
     content_type: Optional[str],
     bytes_written: int,
-    output_path: Optional[pathlib.Path],
-    stdout: bool,
+    output_path: pathlib.Path,
 ) -> None:
     response.response_json = {
         "request": payload,
         "content_type": content_type,
         "bytes_written": bytes_written,
-        "output_path": str(output_path) if output_path else None,
-        "stdout": stdout,
+        "output_path": str(output_path),
     }
 
 
@@ -340,71 +321,61 @@ def _stream_speech_bytes(
         yield r.headers.get("Content-Type"), r.iter_bytes()
 
 
-def _stream_speech_to_outputs(
-    *,
-    api_key: str,
-    payload: dict,
-    output_path: Optional[pathlib.Path],
-    write_stdout: bool,
-    progress: bool,
-) -> tuple[Optional[str], int]:
-    """Download speech audio and write to file and/or stdout."""
-    bytes_written = 0
-    start_time = time.monotonic()
-    last_update = start_time
-    write_stdout_enabled = write_stdout
+class DownloadProgress:
+    """Report download progress on stderr, throttled to one update per 0.5 s."""
 
-    def maybe_update_progress(*, force: bool = False) -> None:
-        nonlocal last_update
-        if not progress:
+    def __init__(self, enabled: bool) -> None:
+        self.enabled = enabled
+        self.bytes_written = 0
+        self._start = time.monotonic()
+        self._last_update = self._start
+
+    def advance(self, num_bytes: int) -> None:
+        self.bytes_written += num_bytes
+        self._report()
+
+    def finish(self) -> None:
+        self._report(force=True)
+        if self.enabled and sys.stderr.isatty():
+            sys.stderr.write("\n")
+            sys.stderr.flush()
+
+    def _report(self, *, force: bool = False) -> None:
+        if not self.enabled:
             return
         now = time.monotonic()
-        if not force and (now - last_update) < 0.5:
+        if not force and (now - self._last_update) < 0.5:
             return
-        elapsed = max(now - start_time, 0.001)
-        rate = bytes_written / elapsed
-        message = f"Downloaded {_format_bytes(bytes_written)} ({_format_bytes(int(rate))}/s)"
+        elapsed = max(now - self._start, 0.001)
+        rate = self.bytes_written / elapsed
+        message = f"Downloaded {_format_bytes(self.bytes_written)} ({_format_bytes(int(rate))}/s)"
         if sys.stderr.isatty():
             sys.stderr.write(f"\r{message}")
         else:
             sys.stderr.write(f"{message}\n")
         sys.stderr.flush()
-        last_update = now
+        self._last_update = now
 
-    file_handle = None
-    content_type: Optional[str] = None
 
-    try:
-        with _stream_speech_bytes(api_key=api_key, payload=payload) as (content_type, chunks):
-            if output_path is not None:
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                file_handle = open(output_path, "wb")
-
+def _stream_speech_to_file(
+    *,
+    api_key: str,
+    payload: dict,
+    output_path: pathlib.Path,
+    progress: bool,
+) -> tuple[Optional[str], int]:
+    """Download speech audio and write it to output_path."""
+    reporter = DownloadProgress(progress)
+    with _stream_speech_bytes(api_key=api_key, payload=payload) as (content_type, chunks):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, "wb") as file_handle:
             for chunk in chunks:
                 if not chunk:
                     continue
-                bytes_written += len(chunk)
-                if file_handle is not None:
-                    file_handle.write(chunk)
-                if write_stdout_enabled:
-                    try:
-                        sys.stdout.buffer.write(chunk)
-                        sys.stdout.buffer.flush()
-                    except BrokenPipeError:
-                        if output_path is None:
-                            break
-                        write_stdout_enabled = False
-                maybe_update_progress()
-    finally:
-        if file_handle is not None:
-            file_handle.close()
-
-    maybe_update_progress(force=True)
-    if progress and sys.stderr.isatty():
-        sys.stderr.write("\n")
-        sys.stderr.flush()
-
-    return content_type, bytes_written
+                file_handle.write(chunk)
+                reporter.advance(len(chunk))
+    reporter.finish()
+    return content_type, reporter.bytes_written
 
 
 def _post_speech_bytes(*, api_key: str, payload: dict) -> tuple[bytes, Optional[str]]:
@@ -469,17 +440,12 @@ class VeniceSpeech(llm.KeyModel):
             )
 
             if request.use_streaming_download:
-                if request.output_path is not None and not request.write_stdout:
-                    yield f"Writing audio to {request.output_path}\n"
-                elif request.output_path is not None and request.write_stdout:
-                    sys.stderr.write(f"Saving a copy to {request.output_path}\n")
-                    sys.stderr.flush()
+                yield f"Writing audio to {request.output_path}\n"
 
-                content_type, bytes_written = _stream_speech_to_outputs(
+                content_type, bytes_written = _stream_speech_to_file(
                     api_key=api_key,
                     payload=request.payload,
                     output_path=request.output_path,
-                    write_stdout=request.write_stdout,
                     progress=request.progress,
                 )
 
@@ -489,22 +455,9 @@ class VeniceSpeech(llm.KeyModel):
                     content_type=content_type,
                     bytes_written=bytes_written,
                     output_path=request.output_path,
-                    stdout=request.write_stdout,
                 )
-
-                if request.write_stdout:
-                    if request.output_path is not None:
-                        sys.stderr.write(f"Audio saved to {request.output_path}\n")
-                        sys.stderr.flush()
-                    return
-
-                if request.output_path is None:
-                    raise llm.ModelError("No output path available to save audio")
                 yield f"Audio saved to {request.output_path}"
                 return
-
-            if request.output_path is None:
-                raise llm.ModelError("No output path available to save audio")
 
             audio_bytes, content_type = _post_speech_bytes(api_key=api_key, payload=request.payload)
             _write_audio_bytes(output_path=request.output_path, audio_bytes=audio_bytes)
@@ -515,7 +468,6 @@ class VeniceSpeech(llm.KeyModel):
                 content_type=content_type,
                 bytes_written=len(audio_bytes),
                 output_path=request.output_path,
-                stdout=False,
             )
 
             yield f"Audio saved to {request.output_path}"
@@ -560,18 +512,13 @@ class AsyncVeniceSpeech(llm.AsyncKeyModel):
             )
 
             if request.use_streaming_download:
-                if request.output_path is not None and not request.write_stdout:
-                    yield f"Writing audio to {request.output_path}\n"
-                elif request.output_path is not None and request.write_stdout:
-                    sys.stderr.write(f"Saving a copy to {request.output_path}\n")
-                    sys.stderr.flush()
+                yield f"Writing audio to {request.output_path}\n"
 
                 content_type, bytes_written = await asyncio.to_thread(
-                    _stream_speech_to_outputs,
+                    _stream_speech_to_file,
                     api_key=api_key,
                     payload=request.payload,
                     output_path=request.output_path,
-                    write_stdout=request.write_stdout,
                     progress=request.progress,
                 )
 
@@ -581,22 +528,9 @@ class AsyncVeniceSpeech(llm.AsyncKeyModel):
                     content_type=content_type,
                     bytes_written=bytes_written,
                     output_path=request.output_path,
-                    stdout=request.write_stdout,
                 )
-
-                if request.write_stdout:
-                    if request.output_path is not None:
-                        sys.stderr.write(f"Audio saved to {request.output_path}\n")
-                        sys.stderr.flush()
-                    return
-
-                if request.output_path is None:
-                    raise llm.ModelError("No output path available to save audio")
                 yield f"Audio saved to {request.output_path}"
                 return
-
-            if request.output_path is None:
-                raise llm.ModelError("No output path available to save audio")
 
             audio_bytes, content_type = await asyncio.to_thread(
                 _post_speech_bytes, api_key=api_key, payload=request.payload
@@ -611,7 +545,6 @@ class AsyncVeniceSpeech(llm.AsyncKeyModel):
                 content_type=content_type,
                 bytes_written=len(audio_bytes),
                 output_path=request.output_path,
-                stdout=False,
             )
 
             yield f"Audio saved to {request.output_path}"
