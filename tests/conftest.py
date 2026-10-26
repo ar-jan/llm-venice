@@ -12,7 +12,7 @@ from click.testing import CliRunner
 
 
 @pytest.fixture(autouse=True)
-def hermetic_llm_user_path(tmp_path_factory, monkeypatch):
+def hermetic_llm_user_path(request, tmp_path_factory, monkeypatch):
     """Point LLM_USER_PATH at a per-test directory.
 
     Without this, any code path that is not patched would write into the real
@@ -20,6 +20,8 @@ def hermetic_llm_user_path(tmp_path_factory, monkeypatch):
     exempt: they read the real key store. A test can still override the path by
     setting LLM_USER_PATH itself, since that runs after this autouse fixture.
     """
+    if request.node.get_closest_marker("integration"):
+        return
     user_path = tmp_path_factory.mktemp("llm-user-path")
     monkeypatch.setenv("LLM_USER_PATH", str(user_path))
     return user_path
