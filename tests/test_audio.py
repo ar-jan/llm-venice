@@ -1,13 +1,31 @@
-from contextlib import contextmanager
+import asyncio
+import json
 import pathlib
 from unittest.mock import MagicMock, Mock, patch, call
 
+import httpx2
+import llm
 import pytest
 
-from llm_venice import VeniceSpeech
+from llm_venice import AsyncVeniceSpeech, VeniceSpeech
+from llm_venice.constants import ENDPOINT_AUDIO_SPEECH
 
 
-def test_venice_speech_payload_includes_options(mock_venice_api_key, monkeypatch, tmp_path):
+def add_speech_response(httpx2_mock, *, content=b"", status_code=200, is_reusable=False):
+    """Register a mocked POST to the speech endpoint."""
+    httpx2_mock.add_response(
+        method="POST",
+        url=ENDPOINT_AUDIO_SPEECH,
+        status_code=status_code,
+        content=content,
+        headers={"Content-Type": "audio/mpeg"},
+        is_reusable=is_reusable,
+    )
+
+
+def test_venice_speech_payload_includes_options(
+    mock_venice_api_key, monkeypatch, tmp_path, httpx2_mock, request_json
+):
     """Ensure /audio/speech requests include expected parameters."""
     monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
 
@@ -26,23 +44,17 @@ def test_venice_speech_payload_includes_options(mock_venice_api_key, monkeypatch
     }
     prompt.options = options
 
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.content = b"fake-audio-bytes"
-        mock_response.headers = {"Content-Type": "audio/mpeg"}
-        mock_post.return_value = mock_response
-
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            results = list(model.execute(prompt, False, MagicMock(), None))
+    add_speech_response(httpx2_mock, content=b"fake-audio-bytes")
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        results = list(model.execute(prompt, False, MagicMock(), None))
 
     assert options.model_dump.call_args_list == [
         call(by_alias=True),
         call(by_alias=True),
     ]
-    mock_post.assert_called_once()
+    assert len(httpx2_mock.get_requests()) == 1
 
-    payload = mock_post.call_args[1]["json"]
+    payload = request_json()
     assert payload["model"] == "tts-kokoro"
     assert payload["input"] == "Hello from Venice"
     assert payload["voice"] == "af_sky"
@@ -55,7 +67,9 @@ def test_venice_speech_payload_includes_options(mock_venice_api_key, monkeypatch
     assert not saved.with_name(saved.name + ".part").exists()
 
 
-def test_venice_speech_streaming_writes_file(mock_venice_api_key, monkeypatch, tmp_path):
+def test_venice_speech_streaming_writes_file(
+    mock_venice_api_key, monkeypatch, tmp_path, httpx2_mock
+):
     """stream=True should download audio via httpx2.stream and write a file."""
     monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
 
@@ -66,25 +80,13 @@ def test_venice_speech_streaming_writes_file(mock_venice_api_key, monkeypatch, t
 
     chunks = [b"chunk-1", b"chunk-2"]
 
-    @contextmanager
-    def fake_stream(*_args, **_kwargs):
-        response = Mock()
-        response.raise_for_status.return_value = None
-        response.headers = {"Content-Type": "audio/mpeg"}
-        response.iter_bytes.return_value = chunks
-        yield response
+    add_speech_response(httpx2_mock, content=b"".join(chunks))
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        response = MagicMock()
+        results = list(model.execute(prompt, True, response, None))
 
-    def stream_side_effect(*args, **kwargs):
-        return fake_stream(*args, **kwargs)
-
-    with patch("httpx2.stream", side_effect=stream_side_effect) as mock_stream:
-        with patch("httpx2.post") as mock_post:
-            with patch.object(model, "get_key", return_value=mock_venice_api_key):
-                response = MagicMock()
-                results = list(model.execute(prompt, True, response, None))
-
-    mock_stream.assert_called_once()
-    mock_post.assert_not_called()
+    assert len(httpx2_mock.get_requests()) == 1
+    assert json.loads(httpx2_mock.get_requests()[0].read())["streaming"] is True
 
     saved_lines = [line for line in results if line.startswith("Audio saved to ")]
     assert len(saved_lines) == 1
@@ -341,10 +343,9 @@ class TestWriteAudioFile:
 
 
 def test_venice_speech_streaming_failure_keeps_partial(
-    mock_venice_api_key, monkeypatch, tmp_path, capsys
+    mock_venice_api_key, monkeypatch, tmp_path, capsys, httpx2_mock
 ):
     """The model path keeps a partial download as .part, not under the final name."""
-    import httpx2
     import llm
 
     model = VeniceSpeech("tts-kokoro")
@@ -352,21 +353,145 @@ def test_venice_speech_streaming_failure_keeps_partial(
     prompt.prompt = "Stream me"
     prompt.options = VeniceSpeech.Options(output_dir=tmp_path, output_filename="out.mp3")
 
-    @contextmanager
-    def fake_stream(*_args, **_kwargs):
-        response = Mock()
-        response.raise_for_status.return_value = None
-        response.headers = {"Content-Type": "audio/mpeg"}
-        response.iter_bytes.return_value = _chunks_then_fail(
-            [b"chunk-1"], httpx2.ReadError("connection lost")
-        )
-        yield response
+    class FailingStream(httpx2.SyncByteStream):
+        def __iter__(self):
+            yield b"chunk-1"
+            raise httpx2.ReadError("connection lost")
 
-    with patch("httpx2.stream", side_effect=lambda *a, **k: fake_stream(*a, **k)):
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            with pytest.raises(llm.ModelError, match="connection lost"):
-                list(model.execute(prompt, True, MagicMock(), None))
+    httpx2_mock.add_response(method="POST", url=ENDPOINT_AUDIO_SPEECH, stream=FailingStream())
+
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        with pytest.raises(llm.ModelError, match="connection lost"):
+            list(model.execute(prompt, True, MagicMock(), None))
 
     assert not (tmp_path / "out.mp3").exists()
     assert (tmp_path / "out.mp3.part").read_bytes() == b"chunk-1"
     assert "partial audio kept at" in capsys.readouterr().err
+
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
+def _async_speech_options(**kwargs):
+    return VeniceSpeech.Options(**kwargs)
+
+
+def test_async_speech_payload_and_file_output(httpx2_mock, mock_venice_api_key, request_json):
+    """ "AsyncVeniceSpeech should send the same payload and save the same file as the sync model."""
+    add_speech_response(httpx2_mock, content=b"async-audio")
+    model = AsyncVeniceSpeech("tts-kokoro")
+    prompt = MagicMock()
+    prompt.prompt = "Hello async"
+    prompt.options = _async_speech_options(voice="af_sky", speed=1.25)
+
+    async def run():
+        return [chunk async for chunk in model.execute(prompt, False, MagicMock(), None)]
+
+    results = _run(run())
+
+    payload = request_json()
+    assert payload == {
+        "model": "tts-kokoro",
+        "input": "Hello async",
+        "voice": "af_sky",
+        "response_format": "mp3",
+        "speed": 1.25,
+        "streaming": False,
+    }
+    saved = pathlib.Path(results[-1].removeprefix("Audio saved to "))
+    assert saved.read_bytes() == b"async-audio"
+    assert not saved.with_name(saved.name + ".part").exists()
+
+
+def test_async_speech_streaming_writes_file(httpx2_mock, mock_venice_api_key, tmp_path):
+    """The async model streams to a file through the same writer as the sync model."""
+    add_speech_response(httpx2_mock, content=b"async-chunked")
+    model = AsyncVeniceSpeech("tts-kokoro")
+    prompt = MagicMock()
+    prompt.prompt = "Stream me"
+    prompt.options = _async_speech_options(output_dir=tmp_path, output_filename="out.mp3")
+
+    async def run():
+        return [chunk async for chunk in model.execute(prompt, True, MagicMock(), None)]
+
+    _run(run())
+
+    assert (tmp_path / "out.mp3").read_bytes() == b"async-chunked"
+    assert not (tmp_path / "out.mp3.part").exists()
+
+
+def test_async_speech_streaming_failure_keeps_partial(
+    httpx2_mock, mock_venice_api_key, tmp_path, capsys
+):
+    """The async model keeps a partial download as .part, like the sync model."""
+
+    class FailingStream(httpx2.SyncByteStream):
+        def __iter__(self):
+            yield b"chunk-1"
+            raise httpx2.ReadError("connection lost")
+
+    httpx2_mock.add_response(method="POST", url=ENDPOINT_AUDIO_SPEECH, stream=FailingStream())
+    model = AsyncVeniceSpeech("tts-kokoro")
+    prompt = MagicMock()
+    prompt.prompt = "Stream me"
+    prompt.options = _async_speech_options(output_dir=tmp_path, output_filename="out.mp3")
+
+    async def run():
+        async for _ in model.execute(prompt, True, MagicMock(), None):
+            pass
+
+    with pytest.raises(llm.ModelError, match="connection lost"):
+        _run(run())
+
+    assert not (tmp_path / "out.mp3").exists()
+    assert (tmp_path / "out.mp3.part").read_bytes() == b"chunk-1"
+    assert "partial audio kept at" in capsys.readouterr().err
+
+
+def test_async_speech_http_error_is_model_error(httpx2_mock, mock_venice_api_key, tmp_path):
+    """API errors become ModelError with the API's detail, sync or async."""
+    httpx2_mock.add_response(
+        method="POST", url=ENDPOINT_AUDIO_SPEECH, status_code=400, json={"error": "Invalid voice"}
+    )
+    model = AsyncVeniceSpeech("tts-kokoro")
+    prompt = MagicMock()
+    prompt.prompt = "Hello"
+    prompt.options = _async_speech_options(output_dir=tmp_path)
+
+    async def run():
+        async for _ in model.execute(prompt, False, MagicMock(), None):
+            pass
+
+    with pytest.raises(llm.ModelError, match="Invalid voice"):
+        _run(run())
+
+
+def test_async_speech_sync_and_async_payloads_match(httpx2_mock, mock_venice_api_key, request_json):
+    """Sync and async speech models build identical API payloads."""
+    add_speech_response(httpx2_mock, content=b"a", is_reusable=True)
+
+    def options():
+        return VeniceSpeech.Options(voice="af_sky", response_format="flac", speed=0.75)
+
+    sync_prompt = MagicMock()
+    sync_prompt.prompt = "Same"
+    sync_prompt.options = options()
+    sync_model = VeniceSpeech("tts-kokoro")
+    with patch.object(sync_model, "get_key", return_value=mock_venice_api_key):
+        list(sync_model.execute(sync_prompt, False, MagicMock(), None))
+    sync_payload = request_json(-1)
+
+    async_prompt = MagicMock()
+    async_prompt.prompt = "Same"
+    async_prompt.options = options()
+    async_model = AsyncVeniceSpeech("tts-kokoro")
+
+    async def run():
+        return [c async for c in async_model.execute(async_prompt, False, MagicMock(), None)]
+
+    with patch.object(async_model, "get_key", return_value=mock_venice_api_key):
+        _run(run())
+    async_payload = request_json(-1)
+
+    assert sync_payload == async_payload
