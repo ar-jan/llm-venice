@@ -1,11 +1,12 @@
 """Venice audio/text-to-speech model implementation."""
 
 import asyncio
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 import datetime
 import os
 import pathlib
 from dataclasses import dataclass
+import stat
 import sys
 import tempfile
 import time
@@ -368,23 +369,55 @@ def partial_path_for(output_path: pathlib.Path) -> pathlib.Path:
     return output_path.with_name(f"{output_path.name}.part")
 
 
-def _reserve_output_path(output_path: pathlib.Path) -> pathlib.Path:
+def _publish_audio_file(
+    part_path: pathlib.Path, output_path: pathlib.Path, *, overwrite: bool
+) -> pathlib.Path:
     """
-    Atomically claim output_path, returning a path nobody else holds.
+    Publish complete audio without replacing another writer's file by default.
 
-    Uses exclusive creation, so two concurrent runs cannot both select the same
-    destination. On collision a timestamped name is used instead. The reserved
-    file is empty; it is replaced on success and removed on failure.
+    A hard link atomically creates the destination or fails if it exists, even
+    for a dangling symlink. Staging lives in the same directory/filesystem.
+    Unsupported hard links fail safely, leaving the completed staging file.
+    Explicit overwrite uses replace and preserves regular-file access modes.
     """
+    if overwrite:
+        try:
+            destination = output_path.lstat()
+        except FileNotFoundError:
+            destination = None
+        try:
+            if destination is not None and stat.S_ISREG(destination.st_mode):
+                # Copy access bits, not special bits such as setuid/setgid. Do not
+                # follow a destination symlink or copy its typically broad mode.
+                part_path.chmod(stat.S_IMODE(destination.st_mode) & 0o777)
+            os.replace(part_path, output_path)
+        except BaseException:
+            # If publication fails after copying a shared destination's mode,
+            # keep the retained staging audio private without masking the error.
+            with suppress(OSError):
+                part_path.chmod(0o600)
+            raise
+        return output_path
+
     candidate = output_path
     for _ in range(5):
         try:
-            os.close(os.open(candidate, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666))
-            return candidate
+            os.link(part_path, candidate)
         except FileExistsError:
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             candidate = output_path.with_name(f"{output_path.stem}_{timestamp}{output_path.suffix}")
-    raise FileExistsError(f"could not reserve an output file name for {output_path}")
+            continue
+        # Publication succeeded. Failure to remove the extra link must not
+        # report a failed download or delete the already published audio.
+        try:
+            part_path.unlink()
+        except OSError as exc:
+            message = (
+                f"audio saved to {candidate}; could not remove staging file {part_path}: {exc}"
+            )
+            print(render_notice(VeniceNotice("warning", message)), file=sys.stderr)
+        return candidate
+    raise FileExistsError(f"could not publish audio without overwriting a file at {output_path}")
 
 
 def _open_staging_file(output_path: pathlib.Path) -> tuple[BinaryIO, pathlib.Path]:
@@ -398,7 +431,7 @@ def _open_staging_file(output_path: pathlib.Path) -> tuple[BinaryIO, pathlib.Pat
     """
     preferred = partial_path_for(output_path)
     try:
-        fd = os.open(preferred, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+        fd = os.open(preferred, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         return os.fdopen(fd, "wb"), preferred
     except FileExistsError:
         pass
@@ -420,29 +453,28 @@ def write_audio_file(
     Write audio chunks to output_path via a staging file.
 
     Staging happens in ``<name>.part`` (or a unique ``.<name>.<random>.part`` when
-    that name is taken), and is renamed over output_path only once every chunk is
-    written. An existing file survives a failed download.
+    that name is taken), with private permissions. The complete file is then
+    published atomically. An overwrite preserves existing regular-file access
+    permissions; new files remain private.
 
-    Unless overwrite is set, the destination is claimed with exclusive creation
-    first as an empty reservation, so overlapping downloads cannot target the
-    same file; a taken name becomes a timestamped one. On failure, a non-empty
-    staging file is kept and a warning names it, an empty one is removed, and
-    the claim is released. The
-    original exception is re-raised unchanged. Return the actual destination,
-    which may differ from output_path after a collision.
+    Unless overwrite is set, publication refuses to replace an existing path;
+    collisions retry with a timestamped name. No destination is reserved or
+    removed during download or failure cleanup. On failure, a non-empty staging
+    file is kept and a warning names it; an empty one is removed. The original
+    exception is re-raised unchanged. Return the actual destination, which may
+    differ from output_path after a collision.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    reserved_path = output_path if overwrite else _reserve_output_path(output_path)
     part_path: Optional[pathlib.Path] = None
     try:
-        file_handle, part_path = _open_staging_file(reserved_path)
+        file_handle, part_path = _open_staging_file(output_path)
         with file_handle:
             for chunk in chunks:
                 if not chunk:
                     continue
                 file_handle.write(chunk)
                 reporter.advance(len(chunk))
-        os.replace(part_path, reserved_path)
+        saved_path = _publish_audio_file(part_path, output_path, overwrite=overwrite)
     except BaseException:
         if reporter.bytes_written and part_path is not None and part_path.exists():
             message = (
@@ -453,12 +485,9 @@ def write_audio_file(
             print(render_notice(VeniceNotice("warning", message)), file=sys.stderr)
         elif part_path is not None:
             part_path.unlink(missing_ok=True)
-        # Remove the empty destination reservation on failure.
-        if not overwrite:
-            reserved_path.unlink(missing_ok=True)
         raise
     reporter.finish()
-    return reserved_path
+    return saved_path
 
 
 def _stream_speech_to_file(

@@ -126,7 +126,7 @@ def _chunks_then_fail(chunks, exc):
 
 
 class TestWriteAudioFile:
-    """write_audio_file writes via <name>.part and renames on success."""
+    """write_audio_file stages audio and publishes complete files atomically."""
 
     def test_success_renames_part_file(self, tmp_path):
         from llm_venice.models.audio import DownloadProgress, write_audio_file
@@ -182,10 +182,9 @@ class TestWriteAudioFile:
                 _chunks_then_fail([b"new"], OSError("disk full")), target, DownloadProgress(False)
             )
 
-        # The taken name is left alone: a timestamped name was used instead.
+        # Publication was never reached, so only our staging file remains.
         assert target.read_bytes() == b"old audio"
-        (part,) = tmp_path.glob("out_*.mp3.part")
-        assert part.read_bytes() == b"new"
+        assert (tmp_path / "out.mp3.part").read_bytes() == b"new"
         assert list(tmp_path.glob("out_*.mp3")) == []
 
     def test_overwrite_replaces_the_target(self, tmp_path):
@@ -257,7 +256,8 @@ class TestWriteAudioFile:
         assert (tmp_path / "out.mp3").read_bytes() == b"audio"
 
     @pytest.mark.parametrize("overwrite", [False, True])
-    def test_overlapping_downloads(self, tmp_path, overwrite):
+    @pytest.mark.parametrize("inner_overwrite", [False, True])
+    def test_overlapping_downloads(self, tmp_path, overwrite, inner_overwrite):
         from llm_venice.models.audio import DownloadProgress, write_audio_file
 
         target = tmp_path / "out.mp3"
@@ -265,9 +265,10 @@ class TestWriteAudioFile:
 
         def first_writer():
             yield b"AAAA"
+            assert not target.exists(), "no destination should be visible before publication"
             # A concurrent run starts while this download is in flight.
             saved = write_audio_file(
-                [b"BBBB"], target, DownloadProgress(False), overwrite=overwrite
+                [b"BBBB"], target, DownloadProgress(False), overwrite=inner_overwrite
             )
             inner.append(saved)
             assert saved.read_bytes() == b"BBBB"
@@ -277,15 +278,16 @@ class TestWriteAudioFile:
             first_writer(), target, DownloadProgress(False), overwrite=overwrite
         )
 
-        assert saved == target
-        assert target.read_bytes() == b"AAAA" + b"AAAA", "published file must hold one download"
+        assert saved.read_bytes() == b"AAAA" + b"AAAA", "published file must hold one download"
         others = [p for p in tmp_path.iterdir() if p != target]
+        assert inner == [target]
         if overwrite:
-            assert inner == [target]
+            assert saved == target
             assert others == []
         else:
-            assert others == inner
-            assert others[0].read_bytes() == b"BBBB"
+            assert saved != target
+            assert others == [saved]
+            assert target.read_bytes() == b"BBBB"
         assert not list(tmp_path.glob("*.part"))
 
     @pytest.mark.parametrize("chunks", [[], [b"partial"]])
@@ -312,7 +314,7 @@ class TestWriteAudioFile:
             assert list(tmp_path.iterdir()) == [stale]
             assert stderr == ""
 
-    def test_staging_open_failure_releases_reservation(self, tmp_path, monkeypatch):
+    def test_staging_open_failure_leaves_no_output(self, tmp_path, monkeypatch):
         from llm_venice.models import audio
 
         def fail_open(output_path):
