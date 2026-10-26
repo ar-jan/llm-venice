@@ -2,12 +2,14 @@
 
 import asyncio
 from contextlib import contextmanager
+import datetime
 import os
 import pathlib
 from dataclasses import dataclass
 import sys
+import tempfile
 import time
-from typing import AsyncGenerator, Iterable, Iterator, Literal, Optional, Union
+from typing import AsyncGenerator, BinaryIO, Iterable, Iterator, Literal, Optional, Union
 
 import httpx2
 import llm
@@ -86,6 +88,7 @@ class _SpeechCLIRequest:
     payload: dict
     output_path: pathlib.Path
     progress: bool
+    overwrite: bool
     use_streaming_download: bool
 
 
@@ -168,6 +171,7 @@ def _prepare_speech_cli_request(
     options_dict = options.model_dump(by_alias=True)
     progress = bool(options_dict.get("progress", False))
 
+    overwrite = bool(options_dict.get("overwrite_files", False))
     payload, resolved_output_path = _prepare_speech_generation(
         input_text=input_text, options_dict=options_dict, model_name=model_name
     )
@@ -178,6 +182,7 @@ def _prepare_speech_cli_request(
         payload=payload,
         output_path=resolved_output_path,
         progress=progress,
+        overwrite=overwrite,
         use_streaming_download=use_streaming_download,
     )
 
@@ -359,44 +364,101 @@ class DownloadProgress:
 
 
 def partial_path_for(output_path: pathlib.Path) -> pathlib.Path:
-    """Return the temporary path audio is written to before it is complete."""
+    """Return the preferred path audio is staged at before it is complete."""
     return output_path.with_name(f"{output_path.name}.part")
 
 
-def write_audio_file(
-    chunks: Iterable[bytes], output_path: pathlib.Path, reporter: DownloadProgress
-) -> None:
+def _reserve_output_path(output_path: pathlib.Path) -> pathlib.Path:
     """
-    Write audio chunks to output_path via a temporary ``<name>.part`` file.
+    Atomically claim output_path, returning a path nobody else holds.
 
-    The part file is renamed over output_path only once every chunk is written,
-    so output_path only ever holds complete audio, and an existing file (with
-    overwrite) survives a failed download. On failure, a non-empty part file is
-    kept and a warning is printed on stderr; an empty one is removed. The
-    original exception is re-raised unchanged.
+    Uses exclusive creation, so two concurrent runs cannot both select the same
+    destination. On collision a timestamped name is used instead. The reserved
+    file is empty; it is replaced on success and removed on failure.
     """
-    part_path = partial_path_for(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    candidate = output_path
+    for _ in range(5):
+        try:
+            os.close(os.open(candidate, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666))
+            return candidate
+        except FileExistsError:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            candidate = output_path.with_name(f"{output_path.stem}_{timestamp}{output_path.suffix}")
+    raise FileExistsError(f"could not reserve an output file name for {output_path}")
+
+
+def _open_staging_file(output_path: pathlib.Path) -> tuple[BinaryIO, pathlib.Path]:
+    """
+    Open a private staging file next to output_path.
+
+    The preferred ``<name>.part`` name is claimed with exclusive creation, which
+    also refuses to follow a symlink planted at that path. If it is already
+    taken, a unique temporary name is used, so concurrent downloads never share
+    a staging file and no other writer's file is ever truncated or removed.
+    """
+    preferred = partial_path_for(output_path)
     try:
-        with open(part_path, "wb") as file_handle:
+        fd = os.open(preferred, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+        return os.fdopen(fd, "wb"), preferred
+    except FileExistsError:
+        pass
+
+    fd, temp_name = tempfile.mkstemp(
+        dir=output_path.parent, prefix=f".{output_path.name}.", suffix=".part"
+    )
+    return os.fdopen(fd, "wb"), pathlib.Path(temp_name)
+
+
+def write_audio_file(
+    chunks: Iterable[bytes],
+    output_path: pathlib.Path,
+    reporter: DownloadProgress,
+    *,
+    overwrite: bool = False,
+) -> pathlib.Path:
+    """
+    Write audio chunks to output_path via a staging file.
+
+    Staging happens in ``<name>.part`` (or a unique ``.<name>.<random>.part`` when
+    that name is taken), and is renamed over output_path only once every chunk is
+    written. An existing file survives a failed download.
+
+    Unless overwrite is set, the destination is claimed with exclusive creation
+    first as an empty reservation, so overlapping downloads cannot target the
+    same file; a taken name becomes a timestamped one. On failure, a non-empty
+    staging file is kept and a warning names it, an empty one is removed, and
+    the claim is released. The
+    original exception is re-raised unchanged. Return the actual destination,
+    which may differ from output_path after a collision.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    reserved_path = output_path if overwrite else _reserve_output_path(output_path)
+    part_path: Optional[pathlib.Path] = None
+    try:
+        file_handle, part_path = _open_staging_file(reserved_path)
+        with file_handle:
             for chunk in chunks:
                 if not chunk:
                     continue
                 file_handle.write(chunk)
                 reporter.advance(len(chunk))
-        os.replace(part_path, output_path)
+        os.replace(part_path, reserved_path)
     except BaseException:
-        if reporter.bytes_written and part_path.exists():
+        if reporter.bytes_written and part_path is not None and part_path.exists():
             message = (
                 "download interrupted; partial audio kept at "
                 f"{part_path} ({_format_bytes(reporter.bytes_written)})"
             )
             # Stay click-free here: library modules must not depend on the CLI layer.
             print(render_notice(VeniceNotice("warning", message)), file=sys.stderr)
-        else:
+        elif part_path is not None:
             part_path.unlink(missing_ok=True)
+        # Remove the empty destination reservation on failure.
+        if not overwrite:
+            reserved_path.unlink(missing_ok=True)
         raise
     reporter.finish()
+    return reserved_path
 
 
 def _stream_speech_to_file(
@@ -405,12 +467,13 @@ def _stream_speech_to_file(
     payload: dict,
     output_path: pathlib.Path,
     progress: bool,
-) -> tuple[Optional[str], int]:
+    overwrite: bool = False,
+) -> tuple[Optional[str], int, pathlib.Path]:
     """Download speech audio and write it to output_path."""
     reporter = DownloadProgress(progress)
     with _stream_speech_bytes(api_key=api_key, payload=payload) as (content_type, chunks):
-        write_audio_file(chunks, output_path, reporter)
-    return content_type, reporter.bytes_written
+        saved_path = write_audio_file(chunks, output_path, reporter, overwrite=overwrite)
+    return content_type, reporter.bytes_written, saved_path
 
 
 def _post_speech_bytes(*, api_key: str, payload: dict) -> tuple[bytes, Optional[str]]:
@@ -434,9 +497,13 @@ def _post_speech_bytes(*, api_key: str, payload: dict) -> tuple[bytes, Optional[
     return r.content, r.headers.get("Content-Type")
 
 
-def _write_audio_bytes(*, output_path: pathlib.Path, audio_bytes: bytes) -> None:
-    """Write audio bytes to disk via a part file, creating the directory if needed."""
-    write_audio_file([audio_bytes], output_path, DownloadProgress(False))
+def _write_audio_bytes(
+    *, output_path: pathlib.Path, audio_bytes: bytes, overwrite: bool = False
+) -> pathlib.Path:
+    """Write audio bytes to a path the caller chose, creating the directory if needed."""
+    return write_audio_file(
+        [audio_bytes], output_path, DownloadProgress(False), overwrite=overwrite
+    )
 
 
 class VeniceSpeech(llm.KeyModel):
@@ -476,11 +543,12 @@ class VeniceSpeech(llm.KeyModel):
             if request.use_streaming_download:
                 yield f"Writing audio to {request.output_path}\n"
 
-                content_type, bytes_written = _stream_speech_to_file(
+                content_type, bytes_written, saved_path = _stream_speech_to_file(
                     api_key=api_key,
                     payload=request.payload,
                     output_path=request.output_path,
                     progress=request.progress,
+                    overwrite=request.overwrite,
                 )
 
                 _set_speech_response_json(
@@ -488,23 +556,27 @@ class VeniceSpeech(llm.KeyModel):
                     payload=request.payload,
                     content_type=content_type,
                     bytes_written=bytes_written,
-                    output_path=request.output_path,
+                    output_path=saved_path,
                 )
-                yield f"Audio saved to {request.output_path}"
+                yield f"Audio saved to {saved_path}"
                 return
 
             audio_bytes, content_type = _post_speech_bytes(api_key=api_key, payload=request.payload)
-            _write_audio_bytes(output_path=request.output_path, audio_bytes=audio_bytes)
+            saved_path = _write_audio_bytes(
+                output_path=request.output_path,
+                audio_bytes=audio_bytes,
+                overwrite=request.overwrite,
+            )
 
             _set_speech_response_json(
                 response,
                 payload=request.payload,
                 content_type=content_type,
                 bytes_written=len(audio_bytes),
-                output_path=request.output_path,
+                output_path=saved_path,
             )
 
-            yield f"Audio saved to {request.output_path}"
+            yield f"Audio saved to {saved_path}"
         except (OSError, ValueError, VeniceAPIError, httpx2.RequestError) as exc:
             raise llm.ModelError(str(exc)) from exc
 
@@ -548,12 +620,13 @@ class AsyncVeniceSpeech(llm.AsyncKeyModel):
             if request.use_streaming_download:
                 yield f"Writing audio to {request.output_path}\n"
 
-                content_type, bytes_written = await asyncio.to_thread(
+                content_type, bytes_written, saved_path = await asyncio.to_thread(
                     _stream_speech_to_file,
                     api_key=api_key,
                     payload=request.payload,
                     output_path=request.output_path,
                     progress=request.progress,
+                    overwrite=request.overwrite,
                 )
 
                 _set_speech_response_json(
@@ -561,16 +634,19 @@ class AsyncVeniceSpeech(llm.AsyncKeyModel):
                     payload=request.payload,
                     content_type=content_type,
                     bytes_written=bytes_written,
-                    output_path=request.output_path,
+                    output_path=saved_path,
                 )
-                yield f"Audio saved to {request.output_path}"
+                yield f"Audio saved to {saved_path}"
                 return
 
             audio_bytes, content_type = await asyncio.to_thread(
                 _post_speech_bytes, api_key=api_key, payload=request.payload
             )
-            await asyncio.to_thread(
-                _write_audio_bytes, output_path=request.output_path, audio_bytes=audio_bytes
+            saved_path = await asyncio.to_thread(
+                _write_audio_bytes,
+                output_path=request.output_path,
+                audio_bytes=audio_bytes,
+                overwrite=request.overwrite,
             )
 
             _set_speech_response_json(
@@ -578,9 +654,9 @@ class AsyncVeniceSpeech(llm.AsyncKeyModel):
                 payload=request.payload,
                 content_type=content_type,
                 bytes_written=len(audio_bytes),
-                output_path=request.output_path,
+                output_path=saved_path,
             )
 
-            yield f"Audio saved to {request.output_path}"
+            yield f"Audio saved to {saved_path}"
         except (OSError, ValueError, VeniceAPIError, httpx2.RequestError) as exc:
             raise llm.ModelError(str(exc)) from exc

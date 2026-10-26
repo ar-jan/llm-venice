@@ -148,19 +148,41 @@ def test_output_file(user_dir, speech_response, mock_venice_api_key, cli_runner,
     assert not target.with_name("hello.mp3.part").exists()
 
 
+@pytest.mark.parametrize("exists", [False, True])
 def test_output_directory_gets_generated_name(
-    user_dir, speech_response, mock_venice_api_key, cli_runner, tmp_path
+    user_dir, speech_response, mock_venice_api_key, cli_runner, tmp_path, exists
 ):
     out_dir = tmp_path / "clips"
-    out_dir.mkdir()
+    if exists:
+        out_dir.mkdir()
 
-    result = tts(cli_runner, "Hello", "-m", "tts-kokoro", "--format", "wav", "-o", str(out_dir))
+    output = str(out_dir) if exists else f"{out_dir}/"
+    result = tts(cli_runner, "Hello", "-m", "tts-kokoro", "--format", "wav", "-o", output)
 
     assert result.exit_code == 0, result.output
     saved = pathlib.Path(result.stdout.strip())
     assert saved.parent == out_dir
     assert saved.name.endswith("_venice_tts-kokoro.wav")
     assert saved.read_bytes() == AUDIO
+
+
+def test_output_reports_path_after_racing_writer(
+    user_dir, httpx2_mock, mock_venice_api_key, cli_runner, tmp_path
+):
+    target = tmp_path / "hello.mp3"
+
+    def concurrent_download(request):
+        target.write_bytes(b"other download")
+        return httpx2.Response(200, content=AUDIO)
+
+    httpx2_mock.add_callback(concurrent_download, method="POST", url=SPEECH_URL)
+    result = tts(cli_runner, "Hello", "-o", str(target))
+
+    assert result.exit_code == 0, result.output
+    saved = pathlib.Path(result.stdout.strip())
+    assert saved != target
+    assert saved.read_bytes() == AUDIO
+    assert target.read_bytes() == b"other download"
 
 
 def test_default_output_under_llm_user_dir(

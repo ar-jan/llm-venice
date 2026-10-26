@@ -86,11 +86,16 @@ def _build_options(
 def _split_output_path(
     output: Optional[str],
 ) -> tuple[Optional[pathlib.Path], Optional[str]]:
-    """Split -o PATH into (output_dir, output_filename)."""
+    """Split -o PATH into (output_dir, output_filename).
+
+    A trailing separator means the path is a directory even when it does not
+    exist yet, since Path() drops it and is_dir() would then say file.
+    """
     if output is None:
         return None, None
+    directory_intent = output.endswith(("/", os.sep))
     path = pathlib.Path(output).expanduser()
-    if path.is_dir():
+    if directory_intent or path.is_dir():
         return path, None
     return path.parent, path.name
 
@@ -231,9 +236,11 @@ def create_tts_command():
                     return
                 if result.output_path is None:
                     raise ValueError("No output path available to save audio")
-                write_audio_file(result.chunks, result.output_path, reporter)
+                saved_path = write_audio_file(
+                    result.chunks, result.output_path, reporter, overwrite=overwrite
+                )
         except (VeniceAPIError, ValueError, OSError, httpx2.RequestError) as e:
             handle_cli_error(e)
-        click.echo(str(result.output_path))
+        click.echo(str(saved_path))
 
     return tts

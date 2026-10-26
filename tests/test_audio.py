@@ -171,7 +171,7 @@ class TestWriteAudioFile:
         assert not (tmp_path / "out.mp3.part").exists()
         assert capsys.readouterr().err == ""
 
-    def test_failure_keeps_existing_file(self, tmp_path):
+    def test_existing_file_is_never_touched_without_overwrite(self, tmp_path):
         from llm_venice.models.audio import DownloadProgress, write_audio_file
 
         target = tmp_path / "out.mp3"
@@ -180,6 +180,37 @@ class TestWriteAudioFile:
         with pytest.raises(OSError):
             write_audio_file(
                 _chunks_then_fail([b"new"], OSError("disk full")), target, DownloadProgress(False)
+            )
+
+        # The taken name is left alone: a timestamped name was used instead.
+        assert target.read_bytes() == b"old audio"
+        (part,) = tmp_path.glob("out_*.mp3.part")
+        assert part.read_bytes() == b"new"
+        assert list(tmp_path.glob("out_*.mp3")) == []
+
+    def test_overwrite_replaces_the_target(self, tmp_path):
+        from llm_venice.models.audio import DownloadProgress, write_audio_file
+
+        target = tmp_path / "out.mp3"
+        target.write_bytes(b"old audio")
+
+        write_audio_file([b"new audio"], target, DownloadProgress(False), overwrite=True)
+
+        assert target.read_bytes() == b"new audio"
+        assert list(tmp_path.glob("*.part")) == []
+
+    def test_overwrite_failure_keeps_the_old_target(self, tmp_path):
+        from llm_venice.models.audio import DownloadProgress, write_audio_file
+
+        target = tmp_path / "out.mp3"
+        target.write_bytes(b"old audio")
+
+        with pytest.raises(OSError):
+            write_audio_file(
+                _chunks_then_fail([b"new"], OSError("disk full")),
+                target,
+                DownloadProgress(False),
+                overwrite=True,
             )
 
         assert target.read_bytes() == b"old audio"
@@ -197,16 +228,114 @@ class TestWriteAudioFile:
 
         assert (tmp_path / "out.mp3.part").read_bytes() == b"x"
 
-    def test_stale_part_file_is_replaced(self, tmp_path):
+    def test_stale_part_file_is_left_alone(self, tmp_path):
         from llm_venice.models.audio import DownloadProgress, write_audio_file
 
         target = tmp_path / "out.mp3"
-        (tmp_path / "out.mp3.part").write_bytes(b"stale leftover")
+        stale = tmp_path / "out.mp3.part"
+        stale.write_bytes(b"stale leftover")
 
         write_audio_file([b"fresh"], target, DownloadProgress(False))
 
+        # A taken staging name is skipped rather than reused or deleted: it may
+        # belong to another writer.
         assert target.read_bytes() == b"fresh"
-        assert not (tmp_path / "out.mp3.part").exists()
+        assert stale.read_bytes() == b"stale leftover"
+        assert [p for p in tmp_path.glob("*.part") if p != stale] == []
+        assert len(list(tmp_path.glob(".*.part"))) == 0
+
+    def test_planted_symlink_is_not_followed(self, tmp_path):
+        from llm_venice.models.audio import DownloadProgress, write_audio_file
+
+        victim = tmp_path / "victim.txt"
+        victim.write_text("IMPORTANT")
+        (tmp_path / "out.mp3.part").symlink_to(victim)
+
+        write_audio_file([b"audio"], tmp_path / "out.mp3", DownloadProgress(False))
+
+        assert victim.read_text() == "IMPORTANT"
+        assert (tmp_path / "out.mp3").read_bytes() == b"audio"
+
+    @pytest.mark.parametrize("overwrite", [False, True])
+    def test_overlapping_downloads(self, tmp_path, overwrite):
+        from llm_venice.models.audio import DownloadProgress, write_audio_file
+
+        target = tmp_path / "out.mp3"
+        inner: list[pathlib.Path] = []
+
+        def first_writer():
+            yield b"AAAA"
+            # A concurrent run starts while this download is in flight.
+            saved = write_audio_file(
+                [b"BBBB"], target, DownloadProgress(False), overwrite=overwrite
+            )
+            inner.append(saved)
+            assert saved.read_bytes() == b"BBBB"
+            yield b"AAAA"
+
+        saved = write_audio_file(
+            first_writer(), target, DownloadProgress(False), overwrite=overwrite
+        )
+
+        assert saved == target
+        assert target.read_bytes() == b"AAAA" + b"AAAA", "published file must hold one download"
+        others = [p for p in tmp_path.iterdir() if p != target]
+        if overwrite:
+            assert inner == [target]
+            assert others == []
+        else:
+            assert others == inner
+            assert others[0].read_bytes() == b"BBBB"
+        assert not list(tmp_path.glob("*.part"))
+
+    @pytest.mark.parametrize("chunks", [[], [b"partial"]])
+    def test_failure_with_stale_part_preserves_only_owned_partial(self, tmp_path, capsys, chunks):
+        from llm_venice.models.audio import DownloadProgress, write_audio_file
+
+        target = tmp_path / "out.mp3"
+        stale = tmp_path / "out.mp3.part"
+        stale.write_bytes(b"stale")
+        error = OSError("connection lost")
+
+        with pytest.raises(OSError) as excinfo:
+            write_audio_file(_chunks_then_fail(chunks, error), target, DownloadProgress(False))
+
+        assert excinfo.value is error
+        assert not target.exists()
+        assert stale.read_bytes() == b"stale"
+        stderr = capsys.readouterr().err
+        if chunks:
+            (partial,) = tmp_path.glob(".out.mp3.*.part")
+            assert partial.read_bytes() == b"partial"
+            assert str(partial) in stderr
+        else:
+            assert list(tmp_path.iterdir()) == [stale]
+            assert stderr == ""
+
+    def test_staging_open_failure_releases_reservation(self, tmp_path, monkeypatch):
+        from llm_venice.models import audio
+
+        def fail_open(output_path):
+            raise OSError("cannot create staging file")
+
+        monkeypatch.setattr(audio, "_open_staging_file", fail_open)
+        with pytest.raises(OSError, match="cannot create staging file"):
+            audio.write_audio_file([b"audio"], tmp_path / "out.mp3", audio.DownloadProgress(False))
+        assert list(tmp_path.iterdir()) == []
+
+    def test_dangling_destination_symlink_is_left_alone(self, tmp_path):
+        from llm_venice.models.audio import DownloadProgress, write_audio_file
+
+        target = tmp_path / "out.mp3"
+        missing = tmp_path / "missing.mp3"
+        target.symlink_to(missing)
+
+        saved = write_audio_file([b"audio"], target, DownloadProgress(False))
+
+        assert saved != target
+        assert saved.read_bytes() == b"audio"
+        assert target.is_symlink()
+        assert not missing.exists()
 
 
 def test_venice_speech_streaming_failure_keeps_partial(
