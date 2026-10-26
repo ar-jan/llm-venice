@@ -1,12 +1,17 @@
 """Platform bindings for publishing files without replacing an existing path."""
 
+from collections.abc import Iterable
+from contextlib import suppress
+from dataclasses import dataclass
 import ctypes
 import errno
 from functools import lru_cache
 import os
 import pathlib
 import sys
-from typing import Callable, Optional
+import stat
+import tempfile
+from typing import BinaryIO, Callable, Optional
 
 
 _UNSUPPORTED = {errno.ENOSYS, errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP}
@@ -75,3 +80,91 @@ def try_rename_no_replace(source: pathlib.Path, destination: pathlib.Path) -> bo
         if error in _UNSUPPORTED:
             return False
         raise OSError(error, os.strerror(error), os.fspath(source), None, os.fspath(destination))
+
+
+@dataclass(frozen=True)
+class Publication:
+    """Completed publication, possibly with a harmless extra staging link."""
+
+    path: pathlib.Path
+    cleanup_error: OSError | None = None
+    staging_path: pathlib.Path | None = None
+
+
+def open_staging_file(output_path: pathlib.Path) -> tuple[BinaryIO, pathlib.Path]:
+    """Claim private staging in the destination directory, never following links."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    preferred = output_path.with_name(f"{output_path.name}.part")
+    try:
+        fd = os.open(preferred, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        fd, name = tempfile.mkstemp(
+            dir=output_path.parent, prefix=f".{output_path.name}.", suffix=".part"
+        )
+        preferred = pathlib.Path(name)
+    return os.fdopen(fd, "wb"), preferred
+
+
+def publish_file(
+    staging: pathlib.Path, destination: pathlib.Path, *, overwrite: bool = False
+) -> Publication:
+    """Publish once, atomically. Filename retries belong to the adapter caller."""
+    if overwrite:
+        try:
+            existing = destination.lstat()
+        except FileNotFoundError:
+            existing = None
+        try:
+            if existing is not None and stat.S_ISREG(existing.st_mode):
+                staging.chmod(stat.S_IMODE(existing.st_mode) & 0o777)
+            os.replace(staging, destination)
+        except BaseException:
+            with suppress(OSError):
+                staging.chmod(0o600)
+            raise
+        return Publication(destination)
+    if try_rename_no_replace(staging, destination):
+        return Publication(destination)
+    os.link(staging, destination)
+    try:
+        staging.unlink()
+    except OSError as exc:
+        return Publication(destination, exc, staging)
+    return Publication(destination)
+
+
+def retain_partial(staging: pathlib.Path, error: BaseException) -> None:
+    """Remove empty staging; attach nonempty/unknown-size staging to the error."""
+    try:
+        if staging.stat().st_size == 0:
+            staging.unlink()
+            return
+    except FileNotFoundError:
+        return
+    except OSError:
+        pass
+    error.partial_path = staging  # type: ignore[attr-defined]
+
+
+def write_chunks(
+    chunks: Iterable[bytes],
+    path: str | os.PathLike[str],
+    *,
+    overwrite: bool = False,
+    publish: Callable[..., Publication] = publish_file,
+) -> Publication:
+    """Write privately, then publish. Preserve the original error and retained bytes."""
+    destination = pathlib.Path(path)
+    if destination.is_dir():
+        raise IsADirectoryError(str(destination))
+    handle, staging = open_staging_file(destination)
+    try:
+        for chunk in chunks:
+            handle.write(chunk)
+        handle.close()
+        return publish(staging, destination, overwrite=overwrite)
+    except BaseException as exc:
+        with suppress(OSError, ValueError):
+            handle.close()
+        retain_partial(staging, exc)
+        raise

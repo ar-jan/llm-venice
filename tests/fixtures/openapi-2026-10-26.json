@@ -1,0 +1,1365 @@
+{
+  "retrieved": "2026-10-26",
+  "source": "https://api.venice.ai/api/v1/swagger.yaml",
+  "schemas": {
+    "GenerateImageRequest": {
+      "type": "object",
+      "properties": {
+        "anon_user_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[\\x20-\\x7E]+$",
+          "description": "Optional identifier for the API customer's end user. Combined with the Venice user id when attributing the request to upstream providers. Distinct from the discarded OpenAI `user` field. Must be printable ASCII and must not contain `||`.",
+          "example": "end-user-123"
+        },
+        "cfg_scale": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMinimum": true,
+          "maximum": 20,
+          "description": "CFG scale parameter. Higher values lead to more adherence to the prompt.",
+          "example": 7.5
+        },
+        "embed_exif_metadata": {
+          "type": "boolean",
+          "default": false,
+          "description": "Embed prompt generation information into the image's EXIF metadata.",
+          "example": false
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "jpeg",
+            "png",
+            "webp"
+          ],
+          "default": "webp",
+          "description": "The image format to return. WebP are smaller and optimized for web use. PNG are higher quality but larger in file size. ",
+          "example": "webp"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 0,
+          "exclusiveMinimum": true,
+          "maximum": 1280,
+          "default": 1024,
+          "description": "Height of the generated image.",
+          "example": 1024
+        },
+        "hide_watermark": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to hide the Venice watermark. Venice may ignore this parameter for certain generated content.",
+          "example": false
+        },
+        "inpaint": {
+          "nullable": true,
+          "description": "This feature is deprecated and was disabled on May 19th, 2025. A revised in-painting API will be launched in the near future.",
+          "deprecated": true
+        },
+        "lora_strength": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Lora strength for the model. Only applies if the model uses additional Loras.",
+          "example": 50
+        },
+        "model": {
+          "type": "string",
+          "description": "The model to use for image generation.",
+          "example": "grok-imagine-image"
+        },
+        "negative_prompt": {
+          "type": "string",
+          "maxLength": 7500,
+          "description": "A description of what should not be in the image. Character limit is model specific and is listed in the promptCharacterLimit constraint in the model list endpoint.",
+          "example": "Clouds, Rain, Snow"
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 7500,
+          "description": "The description for the image. Character limit is model specific and is listed in the promptCharacterLimit setting in the model list endpoint.",
+          "example": "A beautiful sunset over a mountain range"
+        },
+        "return_binary": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to return binary image data instead of base64.",
+          "example": false
+        },
+        "variants": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4,
+          "description": "Number of images to generate (1\u20134). Only supported when return_binary is false. Variants the model provider explicitly rejects under its content policy are omitted from a successful partial response. Other moderation outcomes can still return blacked-out images; check `x-venice-is-content-violation`.",
+          "example": 3
+        },
+        "safe_mode": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to blur images classified as adult content. Defaults to true. Set to false to receive unblurred output. No Pro subscription is required, and the mature filter setting in the Venice app does not affect this. The x-venice-is-blurred response header reports whether the returned image was blurred.",
+          "example": false
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": -999999999,
+          "maximum": 999999999,
+          "default": 0,
+          "description": "Random seed for generation. If not provided, a random seed will be used.",
+          "example": 123456789
+        },
+        "steps": {
+          "type": "integer",
+          "default": 8,
+          "description": "Number of inference steps. This model does not support steps - this field is ignored.",
+          "example": 8
+        },
+        "style_preset": {
+          "type": "string",
+          "description": "An image style to apply to the image. Visit https://docs.venice.ai/api-reference/endpoint/image/styles for more details.",
+          "example": "3D Model"
+        },
+        "aspect_ratio": {
+          "type": "string",
+          "description": "Aspect ratio (utilized by certain image models including Nano Banana). Examples: \"1:1\", \"16:9\".",
+          "example": 61
+        },
+        "resolution": {
+          "type": "string",
+          "description": "Resolution (utilized by certain image models including Nano Banana). Examples: \"1K\", \"2K\", \"4K\".",
+          "example": "1K"
+        },
+        "quality": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "description": "Output quality for supported models (e.g. GPT Image 2 / GPT Image 2 Edit). Higher values can increase the final request charge. See the model list for supported options.",
+          "example": "high"
+        },
+        "transparent_background": {
+          "type": "boolean",
+          "description": "Return the image with a transparent background (alpha channel). Only supported by models with `supportsTransparentBackground: true` in their constraints (see GET /api/v1/models), and requires `format` png or webp; otherwise the request is rejected. Omit or set to false to keep the model default background.",
+          "example": false
+        },
+        "enable_web_search": {
+          "type": "boolean",
+          "description": "Enable web search for the image generation task. This will allow the model to use the latest information from the web to generate the image. Only supported by certain models. If web search is used, additional credits are getting charged.",
+          "example": false
+        },
+        "disable_prompt_optimization_thinking": {
+          "type": "boolean",
+          "description": "Skip the model's prompt-optimization thinking step for faster generation. Only supported by models with `supportsOptimizePromptThinking`; ignored by others. Omit to use the model default.",
+          "example": false
+        },
+        "enhance_prompt": {
+          "type": "boolean",
+          "description": "Rewrite the prompt before generation to add clarifying visual detail. Additional credits are charged when a rewrite is generated. Adds up to ~30 seconds before generation starts. When enhancement is applied, the final prompt is returned URL-encoded in the `x-venice-enhanced-prompt` response header. Defaults to false.",
+          "example": false
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 0,
+          "exclusiveMinimum": true,
+          "maximum": 1280,
+          "default": 1024,
+          "description": "Width of the generated image.",
+          "example": 1024
+        },
+        "style_references": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                ],
+                "description": "A style reference image as a base64-encoded string (raw or data URI) or a URL starting with http:// or https://. Must be less than 8MB.",
+                "example": "https://example.com/style-reference.png"
+              },
+              "strength": {
+                "type": "number",
+                "minimum": 0.1,
+                "maximum": 1,
+                "description": "How strongly the reference guides the output (0.1\u20131). Defaults to 0.5. Ignored by models where supportsStyleReferenceStrength is false.",
+                "example": 0.5
+              }
+            },
+            "required": [
+              "image"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Style reference images that guide the aesthetic of the generated image. Only supported by models with `supportsStyleReferences: true` (see GET /api/v1/models for the per-model `maxStyleReferences` limit).",
+          "example": [
+            {
+              "image": "https://example.com/style-reference.png",
+              "strength": 0.5
+            }
+          ]
+        }
+      },
+      "required": [
+        "model",
+        "prompt"
+      ],
+      "additionalProperties": false
+    },
+    "CreateSpeechRequestSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "The text to generate audio for. The maximum length is 4096 characters.",
+          "example": "Hello, this is a test of the text to speech system."
+        },
+        "language": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 32,
+          "description": "Optional language hint. Accepted values are model-specific: Qwen 3 accepts full names (English, Chinese, ...); xAI/ElevenLabs accept ISO 639-1 codes (en, ja, ...); MiniMax accepts full names. Unsupported values are silently ignored. Omit to let the model auto-detect.",
+          "example": "English"
+        },
+        "model": {
+          "type": "string",
+          "enum": [
+            "tts-kokoro",
+            "tts-qwen3-0-6b",
+            "tts-qwen3-1-7b",
+            "tts-xai-v1",
+            "tts-inworld-1-5-max",
+            "tts-chatterbox-hd",
+            "tts-orpheus",
+            "tts-elevenlabs-turbo-v2-5",
+            "tts-minimax-speech-02-hd",
+            "tts-gemini-3-1-flash",
+            "tts-gradium-v1",
+            "tts-heygen-voice",
+            "tts-heygen-voice-turbo"
+          ],
+          "default": "tts-kokoro",
+          "description": "The model ID of a Venice TTS model.",
+          "example": "tts-xai-v1"
+        },
+        "prompt": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "A style prompt to control the emotion and delivery of the speech. Supported by models advertising `supportsPromptParam` (currently Qwen 3 TTS). Ignored by other models. Examples: \"Very happy.\", \"Sad and slow.\", \"Excited and energetic.\"",
+          "example": "Very happy."
+        },
+        "response_format": {
+          "type": "string",
+          "enum": [
+            "mp3",
+            "opus",
+            "aac",
+            "flac",
+            "wav",
+            "pcm"
+          ],
+          "description": "Requested audio output format. Supported formats and the default when omitted are model-specific; see `model_spec.supported_formats` and `model_spec.default_format` from GET /models?type=tts. An explicit unsupported format returns HTTP 400.",
+          "example": "mp3"
+        },
+        "speed": {
+          "type": "number",
+          "minimum": 0.25,
+          "maximum": 4,
+          "default": 1,
+          "description": "The speed of the generated audio. Select a value from 0.25 to 4.0. 1.0 is the default.",
+          "example": 1
+        },
+        "streaming": {
+          "type": "boolean",
+          "default": false,
+          "description": "Should the content stream back sentence by sentence or be processed and returned as a complete audio file.",
+          "example": true
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Sampling temperature for speech generation. Higher values produce more varied output. Supported by models advertising `supportsTemperatureParam` (Qwen 3, Orpheus, Chatterbox HD). Ignored by other models.",
+          "example": 0.9
+        },
+        "top_p": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Nucleus sampling parameter. Supported by models advertising `supportsTopPParam` (currently Qwen 3 TTS). Ignored by other models.",
+          "example": 1
+        },
+        "voice": {
+          "type": "string",
+          "maxLength": 512,
+          "default": "af_sky",
+          "description": "The voice to use when generating the audio. The maximum length is 512 characters. Voices are model-specific: Kokoro (e.g. af_sky, af_bella, am_adam), Qwen 3 (e.g. Vivian, Serena, Dylan), xAI (26 voices, e.g. eve, ara, rex, sal, leo, luna, orion, carina), Orpheus (tara, leah, jess, leo, dan, mia, zac, zoe), Inworld (Craig, Ashley, ...), Chatterbox (Aurora, Blade, ...), ElevenLabs Turbo (Rachel, Aria, ...), MiniMax (WiseWoman, DeepVoiceMan, ...), Gradium (Emma, Kent, Mia, Maximilian, Valentina, Sergio, Elise, Leo, Alice, Davi \u2014 spanning en/de/es/fr/pt). You can also pass a cloned-voice handle (`vv_<id>`) returned by POST /v1/audio/voices to synthesize in a previously cloned voice; the handle must be paired with the same model used to create it. Models that advertise `supports_custom_voice_id` (e.g. ElevenLabs) additionally accept a raw provider Voice ID here. Using an incompatible voice returns a 400 error. Call GET /models/{id} to list voices for a specific model.",
+          "example": "af_sky"
+        }
+      },
+      "required": [
+        "input"
+      ],
+      "additionalProperties": false,
+      "description": "Request to generate audio from text.",
+      "example": {
+        "input": "Hello, welcome to Venice Voice.",
+        "model": "tts-xai-v1",
+        "response_format": "mp3",
+        "speed": 1,
+        "streaming": false,
+        "voice": "af_sky"
+      }
+    },
+    "UpscaleImageRequest": {
+      "type": "object",
+      "properties": {
+        "creativity": {
+          "type": "number",
+          "nullable": true,
+          "default": 0.01,
+          "description": "How much detail and texture the upscaler adds. Higher values add more; lower values stay closer to the source. Clamped to the 0\u20130.02 range.",
+          "example": 0.01
+        },
+        "image": {
+          "anyOf": [
+            {},
+            {
+              "type": "string"
+            }
+          ],
+          "description": "The image to upscale. Can be either a file upload or a base64-encoded string. Image dimensions must be at least 65536 pixels and final dimensions after scaling must not exceed 16777216 pixels. File size must be less than 25MB."
+        },
+        "scale": {
+          "type": "number",
+          "minimum": 2,
+          "maximum": 4,
+          "default": 2,
+          "description": "The scale factor for upscaling the image. Must be either 2 or 4. A scale of 4 with large images will result in the scale being dynamically reduced to ensure the final image stays within the maximum size limits.",
+          "example": 2
+        }
+      },
+      "required": [
+        "image"
+      ],
+      "description": "Upscale an image to a higher resolution.",
+      "example": {
+        "creativity": 0.01,
+        "image": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAAIGNIUk0A...",
+        "scale": 2
+      }
+    }
+  },
+  "resources": {
+    "GET /api_keys": {
+      "requestBody": null,
+      "response": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "apiKeyType": {
+                        "type": "string",
+                        "enum": [
+                          "INFERENCE",
+                          "ADMIN"
+                        ],
+                        "description": "API Key type",
+                        "example": "ADMIN"
+                      },
+                      "consumptionLimits": {
+                        "type": "object",
+                        "properties": {
+                          "usd": {
+                            "anyOf": [
+                              {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 9999999999
+                              },
+                              {
+                                "nullable": true,
+                                "title": "null"
+                              },
+                              {
+                                "nullable": true,
+                                "title": "null"
+                              }
+                            ],
+                            "description": "USD limit",
+                            "example": 50
+                          },
+                          "diem": {
+                            "anyOf": [
+                              {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 9999999999
+                              },
+                              {
+                                "nullable": true,
+                                "title": "null"
+                              },
+                              {
+                                "nullable": true,
+                                "title": "null"
+                              }
+                            ],
+                            "description": "Diem limit",
+                            "example": 10
+                          },
+                          "vcu": {
+                            "anyOf": [
+                              {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 9999999999
+                              },
+                              {
+                                "nullable": true,
+                                "title": "null"
+                              },
+                              {
+                                "nullable": true,
+                                "title": "null"
+                              }
+                            ],
+                            "description": "VCU limit (deprecated - use Diem instead)",
+                            "deprecated": true,
+                            "example": 100
+                          }
+                        },
+                        "description": "The API Key consumption limits, evaluated against the window selected by `limitPeriod`.",
+                        "example": {
+                          "usd": 50,
+                          "diem": 10,
+                          "vcu": 30
+                        }
+                      },
+                      "limitPeriod": {
+                        "type": "string",
+                        "enum": [
+                          "EPOCH",
+                          "MONTH",
+                          "LIFETIME"
+                        ],
+                        "description": "Reset window the consumption limits apply to. `EPOCH` resets every UTC day (legacy default). `MONTH` resets on the 1st of each UTC calendar month. `LIFETIME` never resets, so the limit acts as a permanent cap on the key.",
+                        "example": "MONTH"
+                      },
+                      "modelPrivacy": {
+                        "type": "string",
+                        "enum": [
+                          "ALL",
+                          "PRIVATE_TEXT",
+                          "PRIVATE_ONLY"
+                        ],
+                        "description": "Which models this key may call, by privacy tier. `ALL` allows every model. `PRIVATE_TEXT` requires text and embedding models to be Private, TEE, or E2EE while other modalities may be Anonymous or Private. `PRIVATE_ONLY` requires every model to be Private, TEE, or E2EE; Anonymous models are rejected.",
+                        "example": "ALL"
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "API Key creation date",
+                        "example": "2023-10-01 12:00:00+00:00"
+                      },
+                      "description": {
+                        "type": "string",
+                        "description": "API Key description",
+                        "example": "Example API Key"
+                      },
+                      "expiresAt": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "API Key expiration date",
+                        "example": "2023-10-01 12:00:00+00:00"
+                      },
+                      "id": {
+                        "type": "string",
+                        "description": "API Key ID",
+                        "example": "e28e82dc-9df2-4b47-b726-d0a222ef2ab5"
+                      },
+                      "ipAllowlist": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 100,
+                        "description": "Globally reachable IPv4 or IPv6 addresses and CIDR subnets allowed to use this key. An empty list allows requests from any IP address. Entries are returned in canonical CIDR notation.",
+                        "example": [
+                          "11.22.33.44/32",
+                          "11.22.33.0/24",
+                          "2a00:1::/48"
+                        ]
+                      },
+                      "last6Chars": {
+                        "type": "string",
+                        "description": "Last 6 characters of the API Key",
+                        "example": "2V2jNW"
+                      },
+                      "lastUsedAt": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "API Key last used date",
+                        "example": "2023-10-01 12:00:00+00:00"
+                      },
+                      "usage": {
+                        "type": "object",
+                        "properties": {
+                          "trailingSevenDays": {
+                            "type": "object",
+                            "properties": {
+                              "usd": {
+                                "type": "string",
+                                "description": "USD budget usage in the trailing 7 days, including bundled credits",
+                                "example": "10.2424"
+                              },
+                              "vcu": {
+                                "type": "string",
+                                "description": "VCU usage in the trailing 7 days (deprecated - use Diem instead)",
+                                "deprecated": true,
+                                "example": "42.2315"
+                              },
+                              "diem": {
+                                "type": "string",
+                                "description": "Diem usage in the trailing 7 days",
+                                "example": "4.2231"
+                              }
+                            },
+                            "required": [
+                              "usd",
+                              "vcu",
+                              "diem"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "trailingSevenDays"
+                        ]
+                      },
+                      "currentPeriodUsage": {
+                        "type": "object",
+                        "properties": {
+                          "usd": {
+                            "type": "string",
+                            "description": "USD budget usage in the current limit period, including bundled credits",
+                            "example": "5.1234"
+                          },
+                          "diem": {
+                            "type": "string",
+                            "description": "Diem usage in the current limit period",
+                            "example": "2.5000"
+                          }
+                        },
+                        "required": [
+                          "usd",
+                          "diem"
+                        ],
+                        "description": "Usage within the current limit period window. Only present for keys that have consumption limits set."
+                      }
+                    },
+                    "required": [
+                      "apiKeyType",
+                      "consumptionLimits",
+                      "limitPeriod",
+                      "modelPrivacy",
+                      "createdAt",
+                      "expiresAt",
+                      "id",
+                      "ipAllowlist",
+                      "last6Chars",
+                      "lastUsedAt"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "description": "List of active API keys"
+                },
+                "object": {
+                  "type": "string",
+                  "enum": [
+                    "list"
+                  ]
+                }
+              },
+              "required": [
+                "data",
+                "object"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      }
+    },
+    "POST /api_keys": {
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "apiKeyType": {
+                  "type": "string",
+                  "enum": [
+                    "INFERENCE",
+                    "ADMIN"
+                  ],
+                  "description": "The API Key type. Admin keys have full access to the API while inference keys are only able to call inference endpoints.",
+                  "example": "ADMIN"
+                },
+                "consumptionLimit": {
+                  "type": "object",
+                  "properties": {
+                    "usd": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 9999999999
+                        },
+                        {
+                          "nullable": true,
+                          "title": "null"
+                        },
+                        {
+                          "nullable": true,
+                          "title": "null"
+                        }
+                      ],
+                      "description": "USD limit",
+                      "example": 50
+                    },
+                    "diem": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 9999999999
+                        },
+                        {
+                          "nullable": true,
+                          "title": "null"
+                        },
+                        {
+                          "nullable": true,
+                          "title": "null"
+                        }
+                      ],
+                      "description": "Diem limit",
+                      "example": 10
+                    },
+                    "vcu": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 9999999999
+                        },
+                        {
+                          "nullable": true,
+                          "title": "null"
+                        },
+                        {
+                          "nullable": true,
+                          "title": "null"
+                        }
+                      ],
+                      "description": "VCU limit (deprecated - use Diem instead)",
+                      "deprecated": true,
+                      "example": 100
+                    }
+                  },
+                  "description": "The API Key consumption limits, evaluated against the window selected by `limitPeriod`.",
+                  "example": {
+                    "usd": 50,
+                    "diem": 10,
+                    "vcu": 30
+                  }
+                },
+                "limitPeriod": {
+                  "type": "string",
+                  "enum": [
+                    "EPOCH",
+                    "MONTH",
+                    "LIFETIME"
+                  ],
+                  "description": "Reset window the consumption limits apply to. `EPOCH` resets every UTC day (legacy default). `MONTH` resets on the 1st of each UTC calendar month. `LIFETIME` never resets, so the limit acts as a permanent cap on the key.",
+                  "example": "MONTH"
+                },
+                "modelPrivacy": {
+                  "type": "string",
+                  "enum": [
+                    "ALL",
+                    "PRIVATE_TEXT",
+                    "PRIVATE_ONLY"
+                  ],
+                  "description": "Which models this key may call, by privacy tier. `ALL` allows every model. `PRIVATE_TEXT` requires text and embedding models to be Private, TEE, or E2EE while other modalities may be Anonymous or Private. `PRIVATE_ONLY` requires every model to be Private, TEE, or E2EE; Anonymous models are rejected.",
+                  "example": "ALL"
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "description": "The API Key description (max 64 characters)",
+                  "example": "Example API Key"
+                },
+                "expiresAt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        ""
+                      ]
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{3})?Z$"
+                    }
+                  ],
+                  "description": "The API Key expiration date. If not provided, the key will not expire.",
+                  "example": "2023-10-01 12:00:00+00:00"
+                },
+                "ipAllowlist": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "maxItems": 100,
+                  "description": "Globally reachable IPv4 or IPv6 addresses and CIDR subnets allowed to use this key. An empty list allows requests from any IP address.",
+                  "example": [
+                    "11.22.33.44",
+                    "11.22.33.0/24",
+                    "2a00:1::/48"
+                  ]
+                }
+              },
+              "required": [
+                "apiKeyType",
+                "description"
+              ],
+              "additionalProperties": false,
+              "description": "The request body for creating a new API key. API key creation is rate limited to 20 requests per minute and a maximum of 500 active API keys per user. VCU (Legacy Diem) is being deprecated in favor of tokenized Diem. Please update your API calls to use Diem instead."
+            }
+          }
+        }
+      },
+      "response": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "apiKey": {
+                      "type": "string",
+                      "description": "The API Key. This is only shown once, so make sure to save it somewhere safe."
+                    },
+                    "apiKeyType": {
+                      "type": "string",
+                      "enum": [
+                        "INFERENCE",
+                        "ADMIN"
+                      ],
+                      "description": "The API Key type",
+                      "example": "ADMIN"
+                    },
+                    "consumptionLimit": {
+                      "type": "object",
+                      "properties": {
+                        "usd": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 9999999999
+                            },
+                            {
+                              "nullable": true,
+                              "title": "null"
+                            },
+                            {
+                              "nullable": true,
+                              "title": "null"
+                            }
+                          ],
+                          "description": "USD limit",
+                          "example": 50
+                        },
+                        "diem": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 9999999999
+                            },
+                            {
+                              "nullable": true,
+                              "title": "null"
+                            },
+                            {
+                              "nullable": true,
+                              "title": "null"
+                            }
+                          ],
+                          "description": "Diem limit",
+                          "example": 10
+                        },
+                        "vcu": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 9999999999
+                            },
+                            {
+                              "nullable": true,
+                              "title": "null"
+                            },
+                            {
+                              "nullable": true,
+                              "title": "null"
+                            }
+                          ],
+                          "description": "VCU limit (deprecated - use Diem instead)",
+                          "deprecated": true,
+                          "example": 100
+                        }
+                      },
+                      "description": "The API Key consumption limits, evaluated against the window selected by `limitPeriod`.",
+                      "example": {
+                        "usd": 50,
+                        "diem": 10,
+                        "vcu": 30
+                      }
+                    },
+                    "limitPeriod": {
+                      "type": "string",
+                      "enum": [
+                        "EPOCH",
+                        "MONTH",
+                        "LIFETIME"
+                      ],
+                      "description": "Reset window the consumption limits apply to. `EPOCH` resets every UTC day (legacy default). `MONTH` resets on the 1st of each UTC calendar month. `LIFETIME` never resets, so the limit acts as a permanent cap on the key.",
+                      "example": "MONTH"
+                    },
+                    "modelPrivacy": {
+                      "type": "string",
+                      "enum": [
+                        "ALL",
+                        "PRIVATE_TEXT",
+                        "PRIVATE_ONLY"
+                      ],
+                      "description": "Which models this key may call, by privacy tier. `ALL` allows every model. `PRIVATE_TEXT` requires text and embedding models to be Private, TEE, or E2EE while other modalities may be Anonymous or Private. `PRIVATE_ONLY` requires every model to be Private, TEE, or E2EE; Anonymous models are rejected.",
+                      "example": "ALL"
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "The API Key description",
+                      "example": "Example API Key"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "The API Key expiration date",
+                      "example": "2023-10-01 12:00:00+00:00"
+                    },
+                    "id": {
+                      "type": "string",
+                      "description": "The API Key ID",
+                      "example": "e28e82dc-9df2-4b47-b726-d0a222ef2ab5"
+                    },
+                    "ipAllowlist": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 100,
+                      "description": "Globally reachable IPv4 or IPv6 addresses and CIDR subnets allowed to use this key. An empty list allows requests from any IP address. Entries are returned in canonical CIDR notation.",
+                      "example": [
+                        "11.22.33.44/32",
+                        "11.22.33.0/24",
+                        "2a00:1::/48"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "apiKey",
+                    "apiKeyType",
+                    "consumptionLimit",
+                    "limitPeriod",
+                    "modelPrivacy",
+                    "expiresAt",
+                    "id",
+                    "ipAllowlist"
+                  ],
+                  "additionalProperties": false
+                },
+                "success": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "data",
+                "success"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      }
+    },
+    "GET /api_keys/rate_limits": {
+      "requestBody": null,
+      "response": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "accessPermitted": {
+                      "type": "boolean",
+                      "description": "Does the API key have access to consume the inference APIs?",
+                      "example": true
+                    },
+                    "apiTier": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "The ID of the API tier.",
+                          "example": "paid"
+                        },
+                        "isCharged": {
+                          "type": "boolean",
+                          "description": "Is the API key pay per use (in Diem or USD).",
+                          "example": true
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "isCharged"
+                      ]
+                    },
+                    "balances": {
+                      "type": "object",
+                      "properties": {
+                        "USD": {
+                          "type": "number",
+                          "description": "The USD balance of the key.",
+                          "example": 50.23
+                        },
+                        "DIEM": {
+                          "type": "number",
+                          "description": "The Diem balance of the key.",
+                          "example": 100.023
+                        },
+                        "BUNDLED_CREDITS": {
+                          "type": "number",
+                          "description": "The API key's remaining bundled credit balance, denominated in USD. Returns zero if the user's plan does not include bundled credits.",
+                          "example": 25
+                        }
+                      }
+                    },
+                    "keyExpiration": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "The timestamp the API key expires. If null, the key never expires.",
+                      "example": "2025-06-01 00:00:00+00:00"
+                    },
+                    "nextEpochBegins": {
+                      "type": "string",
+                      "description": "The timestamp when the next epoch begins. This is relevant for rate limits that reset at the start of each epoch.",
+                      "example": "2025-05-07 00:00:00+00:00"
+                    },
+                    "rateLimits": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "apiModelId": {
+                            "type": "string",
+                            "description": "The ID of the API model.",
+                            "example": "zai-org-glm-5-1"
+                          },
+                          "rateLimits": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "amount": {
+                                  "type": "number",
+                                  "description": "The rate limit for the API model.",
+                                  "example": 100
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "description": "The time period for the rate limit. Can be Requests Per Minute (RPM), Requests Per Day (RPD), or Tokens Per Minute (TPM).",
+                                  "example": "RPM"
+                                }
+                              },
+                              "required": [
+                                "amount",
+                                "type"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "rateLimits"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "accessPermitted",
+                    "apiTier",
+                    "balances",
+                    "keyExpiration",
+                    "nextEpochBegins",
+                    "rateLimits"
+                  ]
+                }
+              },
+              "required": [
+                "data"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "GET /api_keys/rate_limits/log": {
+      "requestBody": null,
+      "response": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "apiKeyId": {
+                        "type": "string",
+                        "description": "The ID of the API key that exceeded the limit."
+                      },
+                      "modelId": {
+                        "type": "string",
+                        "default": "zai-org-glm-5-1",
+                        "description": "The ID of the model that was used when the rate limit was exceeded."
+                      },
+                      "rateLimitTier": {
+                        "type": "string",
+                        "description": "The API tier of the rate limit.",
+                        "example": "paid"
+                      },
+                      "rateLimitType": {
+                        "type": "string",
+                        "enum": [
+                          "RPD",
+                          "RPM",
+                          "TPM",
+                          "FAILED_REQUESTS",
+                          "UNSUPPORTED_FEATURE_REQUESTS"
+                        ],
+                        "description": "The type of rate limit that was exceeded. RPM, TPM, and RPD are throughput limits (requests per minute, tokens per minute, requests per day). FAILED_REQUESTS means too many requests returned a non-success status code within the window. UNSUPPORTED_FEATURE_REQUESTS means too many requests asked a model for a feature it does not support.",
+                        "example": "RPM"
+                      },
+                      "timestamp": {
+                        "type": "string",
+                        "description": "The timestamp when the rate limit was exceeded.",
+                        "example": "2023-10-01 12:00:00+00:00"
+                      }
+                    },
+                    "required": [
+                      "apiKeyId",
+                      "modelId",
+                      "rateLimitTier",
+                      "rateLimitType",
+                      "timestamp"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "description": "The last 50 rate limit logs for the account."
+                },
+                "object": {
+                  "type": "string",
+                  "enum": [
+                    "list"
+                  ]
+                }
+              },
+              "required": [
+                "data",
+                "object"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      }
+    },
+    "GET /characters": {
+      "requestBody": null,
+      "response": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "adult": {
+                        "type": "boolean",
+                        "description": "Whether the character is considered adult content",
+                        "example": false
+                      },
+                      "author": {
+                        "type": "string",
+                        "description": "Short anonymized identifier derived from the character author",
+                        "example": "k3x9q"
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "description": "Date when the character was created",
+                        "example": "2024-12-20 21:28:08.934000+00:00"
+                      },
+                      "description": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Description of the character",
+                        "example": "Alan Watts (6 January 1915 \u2013 16 November 1973) was a British and American writer, speaker, and self-styled \"philosophical entertainer\", known for interpreting and popularizing Buddhist, Taoist, and Hindu philosophy for a Western audience."
+                      },
+                      "featured": {
+                        "type": "boolean",
+                        "description": "Whether the character is featured in public discovery surfaces",
+                        "example": false
+                      },
+                      "id": {
+                        "type": "string",
+                        "description": "Unique ID of the character",
+                        "example": "2f460055-7595-4640-9cb6-c442c4c869b0"
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "Name of the character",
+                        "example": "Alan Watts"
+                      },
+                      "shareUrl": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Share URL of the character",
+                        "example": "https://venice.ai/c/alan-watts"
+                      },
+                      "photoUrl": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "URL of the character photo",
+                        "example": "https://outerface.venice.ai/api/characters/2f460055-7595-4640-9cb6-c442c4c869b0/photo"
+                      },
+                      "slug": {
+                        "type": "string",
+                        "description": "Slug of the character to be used in the completions API",
+                        "example": "alan-watts"
+                      },
+                      "stats": {
+                        "type": "object",
+                        "properties": {
+                          "averageRating": {
+                            "type": "number",
+                            "description": "Average rating for the character",
+                            "example": 4.7
+                          },
+                          "imports": {
+                            "type": "number",
+                            "description": "Number of imports for the character",
+                            "example": 112
+                          },
+                          "ratingCount": {
+                            "type": "number",
+                            "description": "Number of ratings for the character",
+                            "example": 24
+                          },
+                          "ratingSum": {
+                            "type": "number",
+                            "description": "Sum of all rating values for the character",
+                            "example": 113
+                          },
+                          "userRating": {
+                            "type": "number",
+                            "nullable": true,
+                            "description": "The authenticated user rating for the character when available"
+                          }
+                        },
+                        "required": [
+                          "averageRating",
+                          "imports",
+                          "ratingCount",
+                          "ratingSum",
+                          "userRating"
+                        ]
+                      },
+                      "tags": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Tags associated with the character",
+                        "example": [
+                          "AlanWatts",
+                          "Philosophy",
+                          "Buddhism",
+                          "Taoist",
+                          "Hindu"
+                        ]
+                      },
+                      "updatedAt": {
+                        "type": "string",
+                        "description": "Date when the character was last updated",
+                        "example": "2025-02-09 03:23:53.708000+00:00"
+                      },
+                      "webEnabled": {
+                        "type": "boolean",
+                        "description": "Whether the character is enabled for web use",
+                        "example": true
+                      },
+                      "modelId": {
+                        "type": "string",
+                        "description": "API model ID for the character",
+                        "example": "venice-uncensored-1-2"
+                      }
+                    },
+                    "required": [
+                      "adult",
+                      "author",
+                      "createdAt",
+                      "description",
+                      "featured",
+                      "id",
+                      "name",
+                      "shareUrl",
+                      "photoUrl",
+                      "slug",
+                      "stats",
+                      "tags",
+                      "updatedAt",
+                      "webEnabled",
+                      "modelId"
+                    ]
+                  }
+                },
+                "object": {
+                  "type": "string",
+                  "enum": [
+                    "list"
+                  ]
+                }
+              },
+              "required": [
+                "data",
+                "object"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "GET /models": {
+      "requestBody": null,
+      "response": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelResponse"
+                  },
+                  "description": "List of available models"
+                },
+                "object": {
+                  "type": "string",
+                  "enum": [
+                    "list"
+                  ]
+                },
+                "type": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "asr",
+                        "decision",
+                        "embedding",
+                        "image",
+                        "music",
+                        "text",
+                        "tts",
+                        "upscale",
+                        "inpaint",
+                        "video"
+                      ]
+                    },
+                    {
+                      "type": "string",
+                      "enum": [
+                        "all",
+                        "code"
+                      ]
+                    }
+                  ],
+                  "description": "Type of models returned.",
+                  "example": "text"
+                }
+              },
+              "required": [
+                "data",
+                "object",
+                "type"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
