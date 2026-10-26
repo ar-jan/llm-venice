@@ -171,6 +171,7 @@ llm venice tts [TEXT] [-m MODEL] [--voice VOICE] [--format FORMAT] [--speed SPEE
 - `--voice`, `--format` (the API's `response_format`) and `--speed` accept the same values as the `voice`, `response_format` and `speed` options of `llm -m venice/<tts-model>`.
 - `-o` is this command's own output option, unrelated to llm's `-o/--option KEY VALUE`. `-o FILE` writes a file, `-o DIR` writes a generated file name into a directory, and `-o -` writes only the raw audio bytes to stdout (status and `--progress` go to stderr). Without `-o`, audio is saved under the LLM user directory in `audio/`. In file mode the saved path is printed on stdout.
 - Existing files are not overwritten unless `--overwrite` is given; a timestamped file name is used instead.
+- Audio is written to `<name>.part` and renamed when complete. If a download is interrupted, the partial audio is kept as `<name>.part` with a warning, and an existing file is left untouched. `llm -m venice/<tts-model>` behaves the same.
 - The command does not log to llm's logs database.
 
 Examples:

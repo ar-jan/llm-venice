@@ -18,6 +18,7 @@ from llm_venice.models.audio import (
     DownloadProgress,
     VeniceSpeech,
     stream_speech_result,
+    write_audio_file,
 )
 from llm_venice.utils import get_venice_key
 
@@ -150,24 +151,6 @@ def _write_to_stdout(chunks: Iterable[bytes], reporter: DownloadProgress) -> Non
     reporter.finish()
 
 
-def _write_to_file(
-    chunks: Iterable[bytes], output_path: pathlib.Path, reporter: DownloadProgress
-) -> None:
-    """Write audio bytes to output_path, removing a partial file on failure."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with open(output_path, "wb") as file_handle:
-            for chunk in chunks:
-                if not chunk:
-                    continue
-                file_handle.write(chunk)
-                reporter.advance(len(chunk))
-    except BaseException:
-        output_path.unlink(missing_ok=True)
-        raise
-    reporter.finish()
-
-
 def create_tts_command():
     """
     Create the tts command.
@@ -248,7 +231,7 @@ def create_tts_command():
                     return
                 if result.output_path is None:
                     raise ValueError("No output path available to save audio")
-                _write_to_file(result.chunks, result.output_path, reporter)
+                write_audio_file(result.chunks, result.output_path, reporter)
         except (VeniceAPIError, ValueError, OSError, httpx2.RequestError) as e:
             handle_cli_error(e)
         click.echo(str(result.output_path))

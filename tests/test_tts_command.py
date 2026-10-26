@@ -3,10 +3,14 @@
 import io
 import json
 import pathlib
+from contextlib import contextmanager
 from unittest.mock import patch
 
+import httpx2
 import pytest
 from llm.cli import cli
+
+from llm_venice.models.audio import SpeechStreamResult
 
 SPEECH_URL = "https://api.venice.ai/api/v1/audio/speech"
 MODELS_URL = "https://api.venice.ai/api/v1/models?type=all"
@@ -141,6 +145,7 @@ def test_output_file(user_dir, speech_response, mock_venice_api_key, cli_runner,
     assert result.exit_code == 0, result.output
     assert result.stdout == f"{target}\n"
     assert target.read_bytes() == AUDIO
+    assert not target.with_name("hello.mp3.part").exists()
 
 
 def test_output_directory_gets_generated_name(
@@ -312,6 +317,47 @@ def test_missing_key_is_clean(user_dir, httpx2_mock, cli_runner):
     assert result.exit_code == 1
     assert "No key found for Venice" in result.stderr
     assert httpx2_mock.get_requests() == []
+
+
+@contextmanager
+def _failing_stream(**kwargs):
+    from llm_venice.models.audio import _prepare_speech_generation
+
+    _, output_path = _prepare_speech_generation(
+        input_text=kwargs["input_text"],
+        options_dict=kwargs["options"].model_dump(by_alias=True),
+        model_name=kwargs["model_name"],
+    )
+
+    def chunks():
+        yield b"first-chunk"
+        raise httpx2.ReadError("connection lost")
+
+    yield SpeechStreamResult(chunks=chunks(), output_path=output_path)
+
+
+@pytest.mark.parametrize("overwrite", [False, True])
+def test_interrupted_download_keeps_partial(
+    user_dir, httpx2_mock, mock_venice_api_key, cli_runner, tmp_path, overwrite
+):
+    target = tmp_path / "hello.mp3"
+    if overwrite:
+        target.write_bytes(b"old audio")
+
+    args = ["Hello", "-o", str(target)] + (["--overwrite"] if overwrite else [])
+    with patch("llm_venice.cli.tts.stream_speech_result", _failing_stream):
+        result = tts(cli_runner, *args)
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "Warning: download interrupted; partial audio kept at" in result.stderr
+    assert "Error: connection lost" in result.stderr
+    assert "Traceback" not in result.output
+    assert (tmp_path / "hello.mp3.part").read_bytes() == b"first-chunk"
+    if overwrite:
+        assert target.read_bytes() == b"old audio"
+    else:
+        assert not target.exists()
 
 
 # removed -o stdout option

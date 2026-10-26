@@ -17,6 +17,7 @@ from pydantic import Field
 from llm_venice.api.client import get_auth_headers_with_content_type
 from llm_venice.api.errors import VeniceAPIError, raise_api_error
 from llm_venice.constants import ENDPOINT_AUDIO_SPEECH
+from llm_venice.notices import VeniceNotice, render_notice
 from llm_venice.utils import (
     generate_timestamp_filename,
     get_unique_filepath,
@@ -357,6 +358,47 @@ class DownloadProgress:
         self._last_update = now
 
 
+def partial_path_for(output_path: pathlib.Path) -> pathlib.Path:
+    """Return the temporary path audio is written to before it is complete."""
+    return output_path.with_name(f"{output_path.name}.part")
+
+
+def write_audio_file(
+    chunks: Iterable[bytes], output_path: pathlib.Path, reporter: DownloadProgress
+) -> None:
+    """
+    Write audio chunks to output_path via a temporary ``<name>.part`` file.
+
+    The part file is renamed over output_path only once every chunk is written,
+    so output_path only ever holds complete audio, and an existing file (with
+    overwrite) survives a failed download. On failure, a non-empty part file is
+    kept and a warning is printed on stderr; an empty one is removed. The
+    original exception is re-raised unchanged.
+    """
+    part_path = partial_path_for(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(part_path, "wb") as file_handle:
+            for chunk in chunks:
+                if not chunk:
+                    continue
+                file_handle.write(chunk)
+                reporter.advance(len(chunk))
+        os.replace(part_path, output_path)
+    except BaseException:
+        if reporter.bytes_written and part_path.exists():
+            message = (
+                "download interrupted; partial audio kept at "
+                f"{part_path} ({_format_bytes(reporter.bytes_written)})"
+            )
+            # Stay click-free here: library modules must not depend on the CLI layer.
+            print(render_notice(VeniceNotice("warning", message)), file=sys.stderr)
+        else:
+            part_path.unlink(missing_ok=True)
+        raise
+    reporter.finish()
+
+
 def _stream_speech_to_file(
     *,
     api_key: str,
@@ -367,14 +409,7 @@ def _stream_speech_to_file(
     """Download speech audio and write it to output_path."""
     reporter = DownloadProgress(progress)
     with _stream_speech_bytes(api_key=api_key, payload=payload) as (content_type, chunks):
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, "wb") as file_handle:
-            for chunk in chunks:
-                if not chunk:
-                    continue
-                file_handle.write(chunk)
-                reporter.advance(len(chunk))
-    reporter.finish()
+        write_audio_file(chunks, output_path, reporter)
     return content_type, reporter.bytes_written
 
 
@@ -400,9 +435,8 @@ def _post_speech_bytes(*, api_key: str, payload: dict) -> tuple[bytes, Optional[
 
 
 def _write_audio_bytes(*, output_path: pathlib.Path, audio_bytes: bytes) -> None:
-    """Write audio bytes to disk, ensuring the destination directory exists."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(audio_bytes)
+    """Write audio bytes to disk via a part file, creating the directory if needed."""
+    write_audio_file([audio_bytes], output_path, DownloadProgress(False))
 
 
 class VeniceSpeech(llm.KeyModel):
@@ -471,7 +505,7 @@ class VeniceSpeech(llm.KeyModel):
             )
 
             yield f"Audio saved to {request.output_path}"
-        except (OSError, ValueError, VeniceAPIError) as exc:
+        except (OSError, ValueError, VeniceAPIError, httpx2.RequestError) as exc:
             raise llm.ModelError(str(exc)) from exc
 
 
@@ -548,5 +582,5 @@ class AsyncVeniceSpeech(llm.AsyncKeyModel):
             )
 
             yield f"Audio saved to {request.output_path}"
-        except (OSError, ValueError, VeniceAPIError) as exc:
+        except (OSError, ValueError, VeniceAPIError, httpx2.RequestError) as exc:
             raise llm.ModelError(str(exc)) from exc
