@@ -9,6 +9,7 @@ from typing import Any, Literal, Optional, cast
 
 import httpx2
 import llm
+from llm_venice._options import CatalogOptionsMixin, normalize_policy, validate_request
 from ._common import initialize_model, warn_deprecated, model_error_boundary
 from llm_venice.client import VeniceClient, AsyncVeniceClient
 from llm_venice.params import ImageParams, copy_params
@@ -337,14 +338,11 @@ def _image_options(model, prompt):
     warn_deprecated(model)
     opts = cast(VeniceImageOptions, model.Options.model_validate(prompt.options.model_dump()))
     validate_output_directory(opts.output_dir)
+    validate_request(model.catalog_policy, prompt.prompt, opts)
     params = copy_params(ImageParams, opts)
     if params.enable_web_search and not model.supports_web_search:
         raise ValueError(f"Model {model.model_id} does not support web search")
-    values = params.model_dump()
-    notices = normalize_image_options_for_model(
-        model_name=model.model_name, options_dict=values, image_constraints=model.image_constraints
-    )
-    return opts, ImageParams.model_validate(values), notices
+    return opts, params, []
 
 
 def _save_adapter_images(model, opts, result):
@@ -391,7 +389,7 @@ def _image_notices(result, notices):
     return render_notices_for_output(notices)
 
 
-class VeniceImage(llm.KeyModel):
+class VeniceImage(CatalogOptionsMixin, llm.KeyModel):
     """Venice image adapter, with file naming and moderation output policy."""
 
     can_stream = False
@@ -410,6 +408,7 @@ class VeniceImage(llm.KeyModel):
         model_spec=None,
     ):
         initialize_model(self, model_id, model_name, model_spec)
+        self.catalog_policy = normalize_policy("image", model_spec, image_constraints)
         self.image_constraints = image_constraints
         self.supports_web_search = supports_web_search
 
@@ -436,7 +435,7 @@ class VeniceImage(llm.KeyModel):
                 yield render_saved_paths_for_output(paths)
 
 
-class AsyncVeniceImage(llm.AsyncKeyModel):
+class AsyncVeniceImage(CatalogOptionsMixin, llm.AsyncKeyModel):
     """Venice image adapter using native async network I/O."""
 
     can_stream = False
@@ -455,14 +454,14 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
         model_spec=None,
     ):
         initialize_model(self, model_id, model_name, model_spec)
+        self.catalog_policy = normalize_policy("image", model_spec, image_constraints)
         self.image_constraints = image_constraints
         self.supports_web_search = supports_web_search
 
     def __str__(self):
         return f"Venice Image: {self.model_id}"
 
-    class Options(VeniceImageOptions):  # type: ignore[reportIncompatibleVariableOverride]
-        pass
+    Options: type[VeniceImage.Options] = VeniceImage.Options  # type: ignore[reportIncompatibleVariableOverride]
 
     async def execute(self, prompt, stream, response, conversation=None, key=None):
         with model_error_boundary():

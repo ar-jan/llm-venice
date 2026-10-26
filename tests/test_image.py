@@ -906,10 +906,10 @@ def test_venice_image_options_defaults_and_validation():
         VeniceImage.Options.model_validate({"return_binary": True, "variants": 2})
 
 
-def test_venice_image_drops_aspect_ratio_for_unsupported_model(
+def test_venice_image_keeps_aspect_ratio_when_support_is_unknown(
     mock_venice_api_key, tmp_path, httpx2_mock, request_json
 ):
-    """Test aspect_ratio is dropped with an info message when unsupported."""
+    """Missing aspect-ratio metadata retains endpoint validation."""
     model = VeniceImage(
         "test-model",
         image_constraints={"resolutions": ["1K", "2K"]},
@@ -925,15 +925,14 @@ def test_venice_image_drops_aspect_ratio_for_unsupported_model(
             results = list(model.execute(prompt, False, MagicMock(), None))
 
     payload = request_json()
-    assert "aspect_ratio" not in payload
-    assert results[0] == "Info: dropped unsupported options for model 'test-model': aspect_ratio\n"
-    assert results[1].startswith("Image saved to ")
+    assert payload["aspect_ratio"] == "9:16"
+    assert results[0].startswith("Image saved to ")
 
 
-def test_venice_image_drops_resolution_for_unsupported_model(
+def test_venice_image_keeps_resolution_when_support_is_unknown(
     mock_venice_api_key, tmp_path, httpx2_mock, request_json
 ):
-    """Test resolution is dropped with an info message when unsupported."""
+    """Missing resolution metadata retains endpoint validation."""
     model = VeniceImage(
         "test-model",
         image_constraints={"aspectRatios": ["1:1", "16:9"]},
@@ -949,9 +948,8 @@ def test_venice_image_drops_resolution_for_unsupported_model(
             results = list(model.execute(prompt, False, MagicMock(), None))
 
     payload = request_json()
-    assert "resolution" not in payload
-    assert results[0] == "Info: dropped unsupported options for model 'test-model': resolution\n"
-    assert results[1].startswith("Image saved to ")
+    assert payload["resolution"] == "4K"
+    assert results[0].startswith("Image saved to ")
 
 
 def test_image_generation_result_exposes_structured_notices():
@@ -1034,7 +1032,7 @@ def test_venice_image_rejects_invalid_aspect_ratio_for_supported_model(mock_veni
     with patch.object(model, "get_key", return_value=mock_venice_api_key):
         with pytest.raises(
             llm.ModelError,
-            match="Invalid aspect_ratio '9:16' for model 'test-model'",
+            match="aspect_ratio",
         ):
             list(model.execute(prompt, False, MagicMock(), None))
 
@@ -1053,6 +1051,6 @@ def test_venice_image_rejects_invalid_resolution_for_supported_model(mock_venice
     with patch.object(model, "get_key", return_value=mock_venice_api_key):
         with pytest.raises(
             llm.ModelError,
-            match="Invalid resolution '4K' for model 'test-model'",
+            match="resolution",
         ):
             list(model.execute(prompt, False, MagicMock(), None))

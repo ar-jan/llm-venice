@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from llm_venice.errors import VeniceError
 from llm_venice.client import VeniceClient
 from llm_venice.params import SpeechParams, copy_params
+from llm_venice._options import validate_request
 from llm_venice.catalog import catalog_path
 from llm_venice.cli.errors import handle_cli_error
 from llm_venice.models import _load_or_fetch_models
@@ -56,6 +57,7 @@ def _read_text(text: Optional[str]) -> str:
 
 def _build_options(
     *,
+    model: VeniceSpeech,
     voice: Optional[str],
     response_format: Optional[str],
     speed: Optional[float],
@@ -73,7 +75,7 @@ def _build_options(
         "overwrite_files": overwrite,
     }
     try:
-        return VeniceSpeech.Options(**{k: v for k, v in values.items() if v is not None})
+        return model.Options(**{k: v for k, v in values.items() if v is not None})
     except ValidationError as exc:
         messages = []
         for error in exc.errors():
@@ -100,7 +102,7 @@ def _split_output_path(
     return path.parent, path.name
 
 
-def _resolve_model(requested: Optional[str]) -> str:
+def _resolve_model(requested: Optional[str]) -> VeniceSpeech:
     """Return the API model ID, defaulting to the first tts model in the catalog."""
     catalog = [m for m in (_load_or_fetch_models(catalog_path()) or []) if isinstance(m, dict)]
 
@@ -111,11 +113,13 @@ def _resolve_model(requested: Optional[str]) -> str:
             raise click.UsageError(
                 f"Model '{model_id}' is a {entry.get('type')} model, not a text-to-speech model."
             )
-        return model_id
+        return VeniceSpeech(model_id, model_spec=entry.get("model_spec") if entry else None)
 
     for entry in catalog:
         if entry.get("type") == "tts" and isinstance(entry.get("id"), str):
-            return entry["id"]
+            if entry.get("model_spec", {}).get("offline") is True:
+                continue
+            return VeniceSpeech(entry["id"], model_spec=entry.get("model_spec"))
 
     if not catalog:
         raise click.ClickException(
@@ -207,7 +211,9 @@ def create_tts_command():
         """
         to_stdout = output == "-"
         output_dir, output_filename = _split_output_path(None if to_stdout else output)
+        resolved_model = _resolve_model(model)
         options = _build_options(
+            model=resolved_model,
             voice=voice,
             response_format=response_format,
             speed=speed,
@@ -221,10 +227,11 @@ def create_tts_command():
                 "Redirect stdout (e.g. '> out.mp3') or use -o FILE."
             )
         input_text = _read_text(text)
-        model_id = _resolve_model(model)
+        model_id = resolved_model.model_name
 
         reporter = DownloadProgress(progress)
         try:
+            validate_request(resolved_model.catalog_policy, input_text, options)
             with (
                 VeniceClient() as client,
                 client.stream_speech(

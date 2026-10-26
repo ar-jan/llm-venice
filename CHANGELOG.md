@@ -10,3 +10,6 @@
 - Saving creates requested parent directories without an interactive confirmation.
 - Parameter validation follows endpoint bounds; upscale scale must be 2 or 4.
 - Speech filenames follow the returned media format, including model-specific defaults.
+- Model Options now expose published limits and choices. Explicit unsupported
+  values fail locally; missing metadata retains endpoint validation. Prompt/text
+  limits also apply. Speech accepts cloned and custom voice IDs.

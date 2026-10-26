@@ -1,0 +1,157 @@
+"""Normalize catalog constraints once and lazily specialize adapter Options."""
+
+from copy import deepcopy
+from functools import lru_cache
+import json
+import math
+from typing import Annotated, Any, Literal, cast
+
+from pydantic import BaseModel, Field, TypeAdapter, create_model
+from pydantic.fields import FieldInfo
+
+
+class CatalogOptionsMixin:
+    """Expose base Options on classes and lazily cached model Options on instances."""
+
+    def __getattribute__(self, name: str) -> Any:
+        if name == "Options":
+            base: type[BaseModel] = getattr(type(self), "Options")
+            policy: dict[str, Any] = object.__getattribute__(self, "catalog_policy")
+            return options_class(base, json.dumps(policy, sort_keys=True))
+        return super().__getattribute__(name)
+
+
+def _object(value: Any) -> dict[str, Any]:
+    return cast(dict[str, Any], value) if isinstance(value, dict) else {}
+
+
+def _choices(value: Any) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+    values = cast(list[Any], value)
+    if not all(isinstance(item, str) and item for item in values):
+        return None
+    return sorted(set(cast(list[str], values)))
+
+
+def _positive_int(value: Any) -> int | None:
+    return value if type(value) is int and value > 0 else None
+
+
+def _bounds(
+    value: Any, floor: float | None = None, ceiling: float | None = None
+) -> dict[str, float]:
+    raw = _object(value)
+    bounds: dict[str, float] = {}
+    for key, alias in (("min", "ge"), ("max", "le")):
+        item: Any = raw.get(key)
+        if type(item) in {int, float} and math.isfinite(item):
+            bounds[alias] = float(item)
+    if "ge" in bounds and floor is not None:
+        bounds["ge"] = max(bounds["ge"], floor)
+    if "le" in bounds and ceiling is not None:
+        bounds["le"] = min(bounds["le"], ceiling)
+    if bounds.get("ge", floor or -math.inf) > bounds.get("le", ceiling or math.inf):
+        return {}
+    return bounds
+
+
+def normalize_policy(kind: str, spec: Any, image_constraints: Any = None) -> dict[str, Any]:
+    metadata = _object(spec)
+    constraints = _object(
+        image_constraints if image_constraints is not None else metadata.get("constraints")
+    )
+    capabilities = _object(metadata.get("capabilities"))
+    fields: dict[str, Any] = {}
+    policy: dict[str, Any] = {"kind": kind, "fields": fields}
+    if kind == "image":
+        fields["steps"] = _bounds(constraints.get("steps"))
+        divisor = _positive_int(constraints.get("widthHeightDivisor"))
+        if divisor and divisor <= 1280:
+            for name in ("width", "height"):
+                fields[name] = {"multiple_of": divisor}
+        for name, key in (
+            ("aspect_ratio", "aspectRatios"),
+            ("resolution", "resolutions"),
+            ("quality", "qualities"),
+        ):
+            values = _choices(constraints.get(key))
+            if values is not None:
+                if name == "quality" and any(
+                    value not in {"low", "medium", "high"} for value in values
+                ):
+                    continue
+                fields[name] = {"choices": values}
+        if constraints.get("supportsTransparentBackground") is False:
+            fields["transparent_background"] = {"choices": [False]}
+        policy["text_limit"] = _positive_int(constraints.get("promptCharacterLimit"))
+    elif kind == "tts":
+        formats = _choices(metadata.get("supported_formats"))
+        known = {"mp3", "opus", "aac", "flac", "wav", "pcm"}
+        if formats and all(value in known for value in formats):
+            format_rules: dict[str, Any] = {"choices": formats}
+            fields["response_format"] = format_rules
+            if "mp3" not in formats:
+                default = metadata.get("default_format")
+                format_rules["default"] = default if default in formats else formats[0]
+        speed_rules: dict[str, Any] = dict(_bounds(constraints.get("speed"), 0.25, 4.0))
+        if not speed_rules.get("ge", 0.25) <= 1.0 <= speed_rules.get("le", 4.0):
+            speed_rules["default"] = None
+        fields["speed"] = speed_rules
+        policy["text_limit"] = _positive_int(constraints.get("inputCharacterLimit"))
+        # Stock voice lists do not establish a closed set: cloned handles and
+        # custom provider voice IDs remain valid strings, and omission stays None.
+    elif kind == "text":
+        if capabilities.get("supportsReasoningEffort") is False:
+            fields["reasoning_effort"] = {"choices": []}
+        else:
+            values = _choices(
+                capabilities.get(
+                    "reasoningEffortOptions", constraints.get("reasoningEffortOptions")
+                )
+            )
+            if values is not None:
+                fields["reasoning_effort"] = {"choices": values}
+    return policy
+
+
+@lru_cache(maxsize=128)
+def options_class(base: type[BaseModel], policy_json: str) -> type[BaseModel]:
+    policy: dict[str, Any] = json.loads(policy_json)
+    definitions: dict[str, Any] = {}
+    for name, raw in cast(dict[str, dict[str, Any]], policy["fields"]).items():
+        info: FieldInfo = deepcopy(base.model_fields[name])
+        annotation: Any = info.annotation
+        rules = dict(raw)
+        descriptions: list[str] = []
+        if "choices" in rules:
+            descriptions.append(
+                "Allowed values: "
+                + (", ".join(map(str, rules["choices"])) or "none (unsupported)")
+                + "."
+            )
+        for key, label in (("ge", "Minimum"), ("le", "Maximum"), ("multiple_of", "Multiple of")):
+            if key in rules:
+                descriptions.append(f"{label}: {rules[key]:g}.")
+        info.description = " ".join([info.description or "", *descriptions]).strip() or None
+        if "choices" in rules:
+            choices = rules.pop("choices")
+            # Dynamic Literal construction preserves useful llm option/schema output.
+            annotation = getattr(Literal, "__getitem__")(tuple([*choices, None]))
+        if "default" in rules:
+            info.default = rules.pop("default")
+        info.metadata.extend(Field(**rules).metadata)
+        definitions[name] = (annotation, info)
+    return create_model(f"{base.__name__}ForModel", __base__=base, **definitions)
+
+
+def validate_request(policy: dict[str, Any], text: str, options: BaseModel) -> None:
+    """Validate positional input lengths with the same normalized model policy."""
+    limit: Any = policy.get("text_limit")
+    if limit is not None:
+        validator = TypeAdapter(Annotated[str, Field(max_length=limit)])
+        validator.validate_python(text)
+        if policy["kind"] == "image":
+            negative: Any = getattr(options, "negative_prompt", None)
+            if negative is not None:
+                validator.validate_python(negative)
