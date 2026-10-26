@@ -25,7 +25,7 @@ venice = "llm_venice"
 
 [project.optional-dependencies]
 test = [
-    "httpx2-pytest>=1.0.1",
+    "httpx2-pytest>=2.0.0",
     "jsonschema",
     "pytest",
     "sqlite_utils",
