@@ -5,15 +5,36 @@ from unittest.mock import Mock, MagicMock, patch, call
 import pytest
 
 import click
-import httpx2
 import llm
 from pydantic import ValidationError
 from click.testing import CliRunner
 
 from llm_venice import AsyncVeniceImage, VeniceImage
+from llm_venice.constants import ENDPOINT_IMAGE_GENERATE
 from llm_venice.models.image import ImageGenerationResult
 from llm_venice.notices import VeniceNotice
 from llm_venice.cli.notices import emit_cli_notices
+
+
+def add_image_response(
+    httpx2_mock,
+    *,
+    json_data=None,
+    content=b"",
+    headers=None,
+    status_code=200,
+    is_reusable=False,
+):
+    """Register a mocked POST to the image generation endpoint."""
+    kwargs = {"json": json_data} if json_data is not None else {"content": content}
+    httpx2_mock.add_response(
+        method="POST",
+        url=ENDPOINT_IMAGE_GENERATE,
+        status_code=status_code,
+        headers=headers or {},
+        is_reusable=is_reusable,
+        **kwargs,
+    )
 
 
 @pytest.mark.parametrize("model_cls", [VeniceImage, AsyncVeniceImage])
@@ -30,36 +51,33 @@ def test_venice_image_model_name_defaults_to_model_id(model_cls):
     assert model.model_name == "test-model"
 
 
-def test_venice_image_sends_model_name_in_payload(mock_venice_api_key, tmp_path):
+def test_venice_image_sends_model_name_in_payload(
+    mock_venice_api_key, tmp_path, httpx2_mock, request_json
+):
     """The request payload uses model_name, not the registered model_id."""
     model = VeniceImage("my-alias", model_name="real-model")
     prompt = MagicMock()
     prompt.prompt = "Test prompt"
     prompt.options = VeniceImage.Options(output_dir=str(tmp_path))
 
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.json.return_value = {
-            "images": ["YmFzZTY0ZGF0YQ=="],
-            "request": {"model": "real-model"},
-            "timing": {},
-        }
-        mock_post.return_value = mock_response
-
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            list(model.execute(prompt, False, MagicMock(), None))
-
-    assert mock_post.call_args.kwargs["json"]["model"] == "real-model"
+    image_json = {
+        "images": ["YmFzZTY0ZGF0YQ=="],
+        "request": {"model": "real-model"},
+        "timing": {},
+    }
+    add_image_response(httpx2_mock, json_data=image_json)
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        list(model.execute(prompt, False, MagicMock(), None))
+    assert request_json()["model"] == "real-model"
 
 
 @pytest.mark.parametrize("model_cls", [VeniceImage, AsyncVeniceImage])
-def test_venice_image_empty_key_raises_needs_key(model_cls):
+def test_venice_image_empty_key_raises_needs_key(model_cls, httpx2_mock):
     """An empty key is rejected before any request is made."""
     model = model_cls("test-model")
     prompt = MagicMock()
 
-    with patch.object(model, "get_key", return_value=""), patch("httpx2.post") as mock_post:
+    with patch.object(model, "get_key", return_value=""):
         with pytest.raises(llm.NeedsKeyException):
             result = model.execute(prompt, False, MagicMock(), None)
             if hasattr(result, "__anext__"):
@@ -71,10 +89,10 @@ def test_venice_image_empty_key_raises_needs_key(model_cls):
             else:
                 list(result)
 
-    mock_post.assert_not_called()
+    assert httpx2_mock.get_requests() == []
 
 
-def test_venice_image_format_in_payload(mock_venice_api_key):
+def test_venice_image_format_in_payload(mock_venice_api_key, httpx2_mock, request_json):
     """Test that image format is correctly included in the API payload."""
     # Create a VeniceImage model instance
     model = VeniceImage("test-model")
@@ -82,6 +100,15 @@ def test_venice_image_format_in_payload(mock_venice_api_key):
     # Create a prompt object with the format option
     prompt = MagicMock()
     prompt.prompt = "Test prompt"
+
+    image_json = {
+        "images": [
+            "YmFzZTY0ZGF0YQ=="  # "base64data" encoded with padding
+        ],
+        "request": {"model": "test-model"},
+        "timing": {},
+    }
+    add_image_response(httpx2_mock, json_data=image_json, is_reusable=True)
 
     # Test with different format options
     for format_value in ["png", "jpeg", "webp"]:
@@ -94,40 +121,23 @@ def test_venice_image_format_in_payload(mock_venice_api_key):
         }
         prompt.options = options
 
-        # Mock the API call
-        with patch("httpx2.post") as mock_post:
-            # Configure the mock response
-            mock_response = Mock()
-            mock_response.raise_for_status.return_value = None
-            mock_response.json.return_value = {
-                "images": [
-                    "YmFzZTY0ZGF0YQ=="  # "base64data" encoded with padding
-                ],
-                "request": {"model": "test-model"},
-                "timing": {},
-            }
-            mock_post.return_value = mock_response
+        with patch.object(model, "get_key", return_value=mock_venice_api_key):
+            list(model.execute(prompt, False, MagicMock(), None))
 
-            # Mock file operations
-            with patch("pathlib.Path.write_bytes"):
-                with patch.object(model, "get_key", return_value=mock_venice_api_key):
-                    list(model.execute(prompt, False, MagicMock(), None))
+            # Ensure the alias "format" is used instead of "image_format"
+            assert options.model_dump.call_args_list == [
+                call(by_alias=True),
+                call(by_alias=True),
+            ]
 
-                    # Ensure the alias "format" is used instead of "image_format"
-                    assert options.model_dump.call_args_list == [
-                        call(by_alias=True),
-                        call(by_alias=True),
-                    ]
-
-                    mock_post.assert_called_once()
-                    call_args = mock_post.call_args
-
-                    # Extract and verify the payload
-                    payload = call_args[1]["json"]
-                    assert payload["format"] == format_value
+            # Extract and verify the payload
+            payload = request_json()
+            assert payload["format"] == format_value
 
 
-def test_venice_image_aspect_ratio_and_resolution_in_payload(mock_venice_api_key):
+def test_venice_image_aspect_ratio_and_resolution_in_payload(
+    mock_venice_api_key, httpx2_mock, request_json
+):
     """Test that aspect_ratio and resolution are included in the API payload."""
     model = VeniceImage("test-model")
 
@@ -139,23 +149,16 @@ def test_venice_image_aspect_ratio_and_resolution_in_payload(mock_venice_api_key
         return_binary=True,
     )
 
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.content = b"\x89PNG\r\n\x1a\n"
-        mock_post.return_value = mock_response
+    add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        list(model.execute(prompt, False, MagicMock(), None))
 
-        with patch("pathlib.Path.write_bytes"):
-            with patch.object(model, "get_key", return_value=mock_venice_api_key):
-                list(model.execute(prompt, False, MagicMock(), None))
-
-        payload = mock_post.call_args[1]["json"]
-        assert payload["aspect_ratio"] == "16:9"
-        assert payload["resolution"] == "1K"
+    payload = request_json()
+    assert payload["aspect_ratio"] == "16:9"
+    assert payload["resolution"] == "1K"
 
 
-def test_venice_image_enable_web_search_in_payload(mock_venice_api_key):
+def test_venice_image_enable_web_search_in_payload(mock_venice_api_key, httpx2_mock, request_json):
     """Test that enable_web_search is included as a top-level image payload field."""
     model = VeniceImage("test-model", supports_web_search=True)
 
@@ -163,22 +166,15 @@ def test_venice_image_enable_web_search_in_payload(mock_venice_api_key):
     prompt.prompt = "Test prompt"
     prompt.options = VeniceImage.Options(enable_web_search=True, return_binary=True)
 
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.content = b"\x89PNG\r\n\x1a\n"
-        mock_post.return_value = mock_response
+    add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        list(model.execute(prompt, False, MagicMock(), None))
 
-        with patch("pathlib.Path.write_bytes"):
-            with patch.object(model, "get_key", return_value=mock_venice_api_key):
-                list(model.execute(prompt, False, MagicMock(), None))
-
-        payload = mock_post.call_args[1]["json"]
-        assert payload["enable_web_search"] is True
+    payload = request_json()
+    assert payload["enable_web_search"] is True
 
 
-def test_venice_image_variants_in_payload(mock_venice_api_key):
+def test_venice_image_variants_in_payload(mock_venice_api_key, httpx2_mock, request_json):
     """Test that variants is included for JSON image responses."""
     model = VeniceImage("test-model")
 
@@ -188,26 +184,22 @@ def test_venice_image_variants_in_payload(mock_venice_api_key):
 
     base64_encoded = base64.b64encode(b"\x89PNG\r\n\x1a\n").decode("utf-8")
 
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.json.return_value = {
-            "images": [base64_encoded, base64_encoded, base64_encoded],
-            "request": {"model": "test-model"},
-            "timing": {},
-        }
-        mock_post.return_value = mock_response
+    image_json = {
+        "images": [base64_encoded, base64_encoded, base64_encoded],
+        "request": {"model": "test-model"},
+        "timing": {},
+    }
+    add_image_response(httpx2_mock, json_data=image_json)
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        list(model.execute(prompt, False, MagicMock(), None))
 
-        with patch("pathlib.Path.write_bytes"):
-            with patch.object(model, "get_key", return_value=mock_venice_api_key):
-                list(model.execute(prompt, False, MagicMock(), None))
-
-        payload = mock_post.call_args[1]["json"]
-        assert payload["variants"] == 3
+    payload = request_json()
+    assert payload["variants"] == 3
 
 
-def test_venice_image_omits_unset_dimensions_from_payload(mock_venice_api_key):
+def test_venice_image_omits_unset_dimensions_from_payload(
+    mock_venice_api_key, httpx2_mock, request_json
+):
     """Test that unset width and height are omitted from the API payload."""
     model = VeniceImage("test-model")
 
@@ -219,23 +211,16 @@ def test_venice_image_omits_unset_dimensions_from_payload(mock_venice_api_key):
         return_binary=True,
     )
 
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.content = b"\x89PNG\r\n\x1a\n"
-        mock_post.return_value = mock_response
+    add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        list(model.execute(prompt, False, MagicMock(), None))
 
-        with patch("pathlib.Path.write_bytes"):
-            with patch.object(model, "get_key", return_value=mock_venice_api_key):
-                list(model.execute(prompt, False, MagicMock(), None))
-
-        payload = mock_post.call_args[1]["json"]
-        assert "width" not in payload
-        assert "height" not in payload
+    payload = request_json()
+    assert "width" not in payload
+    assert "height" not in payload
 
 
-def test_venice_image_content_violation_handling(mock_venice_api_key):
+def test_venice_image_content_violation_handling(mock_venice_api_key, httpx2_mock):
     """Test that content violation responses are detected and reported."""
     # Create a VeniceImage model instance
     model = VeniceImage("test-model")
@@ -253,25 +238,18 @@ def test_venice_image_content_violation_handling(mock_venice_api_key):
     prompt.options = options
 
     # Mock the API call with content violation response
-    with patch("httpx2.post") as mock_post:
-        # Configure the mock response with content violation header
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {"x-venice-is-content-violation": "true"}
-        mock_post.return_value = mock_response
+    add_image_response(httpx2_mock, content=b"", headers={"x-venice-is-content-violation": "true"})
+    response = MagicMock()
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        # Execute and collect results
+        results = list(model.execute(prompt, False, response, None))
 
-        # Mock the response object and get_key
-        response = MagicMock()
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            # Execute and collect results
-            results = list(model.execute(prompt, False, response, None))
+        # Verify the appropriate error message was yielded
+        assert len(results) == 1
+        assert results[0] == "Response marked as content violation; no image was returned."
 
-            # Verify the appropriate error message was yielded
-            assert len(results) == 1
-            assert results[0] == "Response marked as content violation; no image was returned."
-
-            # Verify the API was called
-            mock_post.assert_called_once()
+        # Verify the API was called
+        assert len(httpx2_mock.get_requests()) == 1
 
 
 def test_venice_image_web_search_capability_guard():
@@ -286,7 +264,9 @@ def test_venice_image_web_search_capability_guard():
             list(model.execute(prompt, False, MagicMock(), None))
 
 
-def test_venice_image_blurred_header_exposed_for_json_response(mock_venice_api_key, tmp_path):
+def test_venice_image_blurred_header_exposed_for_json_response(
+    mock_venice_api_key, tmp_path, httpx2_mock
+):
     """Blurred image responses should be surfaced via response_json metadata."""
     model = VeniceImage("test-model")
 
@@ -297,35 +277,31 @@ def test_venice_image_blurred_header_exposed_for_json_response(mock_venice_api_k
     raw_binary_content = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
     base64_encoded = base64.b64encode(raw_binary_content).decode("utf-8")
 
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {"x-venice-is-blurred": "true"}
-        mock_response.json.return_value = {
-            "images": [base64_encoded],
-            "request": {"model": "test-model"},
-            "timing": {"inference": 2.5},
-        }
-        mock_post.return_value = mock_response
+    image_json = {
+        "images": [base64_encoded],
+        "request": {"model": "test-model"},
+        "timing": {"inference": 2.5},
+    }
+    add_image_response(httpx2_mock, json_data=image_json, headers={"x-venice-is-blurred": "true"})
+    response = MagicMock()
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
+            results = list(model.execute(prompt, False, response, None))
 
-        response = MagicMock()
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
-                with patch("pathlib.Path.write_bytes"):
-                    results = list(model.execute(prompt, False, response, None))
-
-        assert len(results) == 2
-        assert (
-            results[0]
-            == "Warning: generated image was blurred because Safe Venice filtered adult material\n"
-        )
-        assert results[1].startswith("Image saved to ")
-        assert response.response_json["request"]["model"] == "test-model"
-        assert response.response_json["timing"]["inference"] == 2.5
-        assert response.response_json["is_blurred"] is True
+    assert len(results) == 2
+    assert (
+        results[0]
+        == "Warning: generated image was blurred because Safe Venice filtered adult material\n"
+    )
+    assert results[1].startswith("Image saved to ")
+    assert response.response_json["request"]["model"] == "test-model"
+    assert response.response_json["timing"]["inference"] == 2.5
+    assert response.response_json["is_blurred"] is True
 
 
-def test_venice_image_blurred_header_exposed_for_binary_response(mock_venice_api_key, tmp_path):
+def test_venice_image_blurred_header_exposed_for_binary_response(
+    mock_venice_api_key, tmp_path, httpx2_mock
+):
     """Blurred binary image responses should still expose blur metadata."""
     model = VeniceImage("test-model")
 
@@ -333,28 +309,23 @@ def test_venice_image_blurred_header_exposed_for_binary_response(mock_venice_api
     prompt.prompt = "Test prompt with adult content"
     prompt.options = VeniceImage.Options(return_binary=True)
 
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {"x-venice-is-blurred": "true"}
-        mock_response.content = b"\x89PNG\r\n\x1a\n"
-        mock_post.return_value = mock_response
+    add_image_response(
+        httpx2_mock, content=b"\x89PNG\r\n\x1a\n", headers={"x-venice-is-blurred": "true"}
+    )
+    response = MagicMock()
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
+            results = list(model.execute(prompt, False, response, None))
 
-        response = MagicMock()
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
-                with patch("pathlib.Path.write_bytes"):
-                    results = list(model.execute(prompt, False, response, None))
-
-        assert (
-            results[0]
-            == "Warning: generated image was blurred because Safe Venice filtered adult material\n"
-        )
-        assert results[1].startswith("Image saved to ")
-        assert response.response_json == {"is_blurred": True}
+    assert (
+        results[0]
+        == "Warning: generated image was blurred because Safe Venice filtered adult material\n"
+    )
+    assert results[1].startswith("Image saved to ")
+    assert response.response_json == {"is_blurred": True}
 
 
-def test_venice_image_return_binary_vs_json_parsing(mock_venice_api_key, tmp_path):
+def test_venice_image_return_binary_vs_json_parsing(mock_venice_api_key, tmp_path, httpx2_mock):
     """Test return_binary=True uses raw content vs base64 JSON decoding."""
     model = VeniceImage("test-model")
 
@@ -369,63 +340,42 @@ def test_venice_image_return_binary_vs_json_parsing(mock_venice_api_key, tmp_pat
     # Test Case 1: return_binary=True - should use raw content
     prompt.options = VeniceImage.Options(return_binary=True)
 
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.content = raw_binary_content  # Raw binary
-        mock_post.return_value = mock_response
+    add_image_response(httpx2_mock, content=raw_binary_content)
+    response = MagicMock()
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
+            list(model.execute(prompt, False, response, None))
 
-        response = MagicMock()
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
-                with patch("pathlib.Path.write_bytes") as mock_write:
-                    list(model.execute(prompt, False, response, None))
-
-                    # Verify raw content was written directly
-                    mock_write.assert_called_once()
-                    written_data = mock_write.call_args[0][0]
-                    assert written_data == raw_binary_content
-
-                    # Verify JSON parsing was NOT called
-                    mock_response.json.assert_not_called()
-
+    # Verify raw content was written directly, without JSON parsing
+    (saved,) = list((tmp_path / "images").iterdir())
+    assert saved.read_bytes() == raw_binary_content
     # Test Case 2: return_binary=False - should parse JSON and decode base64
     prompt.options = VeniceImage.Options(return_binary=False)
 
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.json.return_value = {
-            "images": [base64_encoded],
-            "request": {"model": "test-model", "seed": 12345},
-            "timing": {"inference": 2.5},
-        }
-        mock_post.return_value = mock_response
+    image_json = {
+        "images": [base64_encoded],
+        "request": {"model": "test-model", "seed": 12345},
+        "timing": {"inference": 2.5},
+    }
+    add_image_response(httpx2_mock, json_data=image_json)
+    response = MagicMock()
+    case2_dir = tmp_path / "case2"
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        with patch("llm_venice.models.image.llm.user_dir", return_value=case2_dir):
+            list(model.execute(prompt, False, response, None))
 
-        response = MagicMock()
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
-                with patch("pathlib.Path.write_bytes") as mock_write:
-                    list(model.execute(prompt, False, response, None))
+    # Verify base64 was decoded and written
+    (saved,) = list((case2_dir / "images").iterdir())
+    assert saved.read_bytes() == raw_binary_content
 
-                    # Verify JSON was parsed
-                    mock_response.json.assert_called_once()
-
-                    # Verify base64 was decoded and written
-                    mock_write.assert_called_once()
-                    written_data = mock_write.call_args[0][0]
-                    assert written_data == raw_binary_content
-
-                    # Verify response metadata was stored
-                    assert response.response_json["request"]["seed"] == 12345
-                    assert response.response_json["timing"]["inference"] == 2.5
-                    assert response.response_json["is_blurred"] is False
+    # Verify response metadata was stored
+    assert response.response_json["request"]["seed"] == 12345
+    assert response.response_json["timing"]["inference"] == 2.5
+    assert response.response_json["is_blurred"] is False
 
 
 def test_venice_image_variants_save_all_images_and_expose_response_json(
-    mock_venice_api_key, tmp_path
+    mock_venice_api_key, tmp_path, httpx2_mock
 ):
     """JSON image responses with variants should save every returned image."""
     model = VeniceImage("test-model")
@@ -444,21 +394,15 @@ def test_venice_image_variants_save_all_images_and_expose_response_json(
     first_encoded = base64.b64encode(first_image).decode("utf-8")
     second_encoded = base64.b64encode(second_image).decode("utf-8")
 
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.json.return_value = {
-            "images": [first_encoded, second_encoded],
-            "request": {"model": "test-model"},
-            "timing": {"inference": 2.5},
-        }
-        mock_post.return_value = mock_response
-
-        response = MagicMock()
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            results = list(model.execute(prompt, False, response, None))
-
+    image_json = {
+        "images": [first_encoded, second_encoded],
+        "request": {"model": "test-model"},
+        "timing": {"inference": 2.5},
+    }
+    add_image_response(httpx2_mock, json_data=image_json)
+    response = MagicMock()
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        results = list(model.execute(prompt, False, response, None))
     first_path = tmp_path / "variant_1.png"
     second_path = tmp_path / "variant_2.png"
 
@@ -472,7 +416,7 @@ def test_venice_image_variants_save_all_images_and_expose_response_json(
     assert response.response_json["is_blurred"] is False
 
 
-def test_venice_image_default_output_directory_creation(mock_venice_api_key, tmp_path):
+def test_venice_image_default_output_directory_creation(mock_venice_api_key, tmp_path, httpx2_mock):
     """Test that default output directory is created from llm.user_dir() when not specified."""
     model = VeniceImage("test-model")
 
@@ -488,27 +432,20 @@ def test_venice_image_default_output_directory_creation(mock_venice_api_key, tmp
     }
     prompt.options = options
 
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.content = b"\x89PNG\r\n\x1a\n"
-        mock_post.return_value = mock_response
+    add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
+    response = MagicMock()
 
-        response = MagicMock()
-
-        with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
-            with patch.object(model, "get_key", return_value=mock_venice_api_key):
-                list(model.execute(prompt, False, response, None))
-
+    with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
+        with patch.object(model, "get_key", return_value=mock_venice_api_key):
+            list(model.execute(prompt, False, response, None))
     images_dir = tmp_path / "images"
     assert images_dir.exists()
     saved_files = list(images_dir.glob("*"))
     assert len(saved_files) == 1
-    assert saved_files[0].read_bytes() == mock_response.content
+    assert saved_files[0].read_bytes() == b"\x89PNG\r\n\x1a\n"
 
 
-def test_venice_image_default_filename_path(mock_venice_api_key, tmp_path):
+def test_venice_image_default_filename_path(mock_venice_api_key, tmp_path, httpx2_mock):
     """Test that default filename path is generated under llm.user_dir()/images."""
     model = VeniceImage("test-model")
 
@@ -522,34 +459,27 @@ def test_venice_image_default_filename_path(mock_venice_api_key, tmp_path):
     }
     prompt.options = options
 
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.content = b"\x89PNG\r\n\x1a\n"
-        mock_post.return_value = mock_response
+    add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
+    fixed_now = datetime.datetime(2025, 10, 6, 18, 7, 5)
 
-        fixed_now = datetime.datetime(2025, 10, 6, 18, 7, 5)
+    with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
+        with patch("llm_venice.utils.datetime.datetime") as mock_datetime:
+            mock_datetime.now.return_value = fixed_now
+            with patch.object(model, "get_key", return_value=mock_venice_api_key):
+                results = list(model.execute(prompt, False, MagicMock(), None))
 
-        with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
-            with patch("llm_venice.utils.datetime.datetime") as mock_datetime:
-                mock_datetime.now.return_value = fixed_now
-                with patch.object(model, "get_key", return_value=mock_venice_api_key):
-                    results = list(model.execute(prompt, False, MagicMock(), None))
-
-        mock_post.assert_called_once()
-
+    assert len(httpx2_mock.get_requests()) == 1
     expected_dir = tmp_path / "images"
     expected_filename = f"{fixed_now.strftime('%Y-%m-%dT%H-%M-%S')}_venice_{model.model_name}.png"
     expected_path = expected_dir / expected_filename
 
     assert expected_dir.exists()
     assert expected_path.exists()
-    assert expected_path.read_bytes() == mock_response.content
+    assert expected_path.read_bytes() == b"\x89PNG\r\n\x1a\n"
     assert results == [f"Image saved to {expected_path}"]
 
 
-def test_existing_file_no_overwrite_adds_timestamp(mock_venice_api_key, tmp_path):
+def test_existing_file_no_overwrite_adds_timestamp(mock_venice_api_key, tmp_path, httpx2_mock):
     """Test that existing file with overwrite_files=False gets timestamp appended."""
     model = VeniceImage("test-model")
 
@@ -574,36 +504,30 @@ def test_existing_file_no_overwrite_adds_timestamp(mock_venice_api_key, tmp_path
 
     # Mock API response
     new_content = b"\x89PNG\r\n\x1a\nnew image content"
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.content = new_content
-        mock_post.return_value = mock_response
+    add_image_response(httpx2_mock, content=new_content)
+    response = MagicMock()
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        # Mock datetime to get predictable timestamp
+        mock_datetime = Mock()
+        mock_datetime.now.return_value.strftime.return_value = "20250101_120000_123456"
 
-        response = MagicMock()
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            # Mock datetime to get predictable timestamp
-            mock_datetime = Mock()
-            mock_datetime.now.return_value.strftime.return_value = "20250101_120000_123456"
+        with patch("llm_venice.utils.datetime.datetime", mock_datetime):
+            results = list(model.execute(prompt, False, response, None))
 
-            with patch("llm_venice.utils.datetime.datetime", mock_datetime):
-                results = list(model.execute(prompt, False, response, None))
+    # Verify original file is unchanged
+    assert existing_file.read_bytes() == b"existing content"
 
-        # Verify original file is unchanged
-        assert existing_file.read_bytes() == b"existing content"
+    # Verify new file was created with timestamp
+    expected_new_file = tmp_path / "test_image_20250101_120000_123456.png"
+    assert expected_new_file.exists()
+    assert expected_new_file.read_bytes() == new_content
 
-        # Verify new file was created with timestamp
-        expected_new_file = tmp_path / "test_image_20250101_120000_123456.png"
-        assert expected_new_file.exists()
-        assert expected_new_file.read_bytes() == new_content
-
-        # Verify the success message includes the new filename
-        assert len(results) == 1
-        assert str(expected_new_file) in results[0]
+    # Verify the success message includes the new filename
+    assert len(results) == 1
+    assert str(expected_new_file) in results[0]
 
 
-def test_existing_file_with_overwrite_replaces_file(mock_venice_api_key, tmp_path):
+def test_existing_file_with_overwrite_replaces_file(mock_venice_api_key, tmp_path, httpx2_mock):
     """Test that existing file with overwrite_files=True gets replaced."""
     model = VeniceImage("test-model")
 
@@ -628,31 +552,25 @@ def test_existing_file_with_overwrite_replaces_file(mock_venice_api_key, tmp_pat
 
     # Mock API response
     new_content = b"\x89PNG\r\n\x1a\nnew overwritten content"
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.content = new_content
-        mock_post.return_value = mock_response
+    add_image_response(httpx2_mock, content=new_content)
+    response = MagicMock()
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        results = list(model.execute(prompt, False, response, None))
 
-        response = MagicMock()
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            results = list(model.execute(prompt, False, response, None))
+    # Verify the file was replaced with new content
+    assert existing_file.read_bytes() == new_content
 
-        # Verify the file was replaced with new content
-        assert existing_file.read_bytes() == new_content
+    # Verify only one file exists (no timestamp version)
+    files_in_dir = list(tmp_path.glob("test_image*.png"))
+    assert len(files_in_dir) == 1
+    assert files_in_dir[0] == existing_file
 
-        # Verify only one file exists (no timestamp version)
-        files_in_dir = list(tmp_path.glob("test_image*.png"))
-        assert len(files_in_dir) == 1
-        assert files_in_dir[0] == existing_file
-
-        # Verify the success message
-        assert len(results) == 1
-        assert str(existing_file) in results[0]
+    # Verify the success message
+    assert len(results) == 1
+    assert str(existing_file) in results[0]
 
 
-def test_non_writable_directory_raises_model_error(mock_venice_api_key, tmp_path):
+def test_non_writable_directory_raises_model_error(mock_venice_api_key, tmp_path, httpx2_mock):
     """Test that non-writable directory raises ModelError."""
     model = VeniceImage("test-model")
 
@@ -677,26 +595,18 @@ def test_non_writable_directory_raises_model_error(mock_venice_api_key, tmp_path
     prompt.options = options
 
     # Mock API response
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.content = b"\x89PNG\r\n\x1a\n"
-        mock_post.return_value = mock_response
+    response = MagicMock()
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        # Should raise ModelError before making API call
+        with pytest.raises(llm.ModelError, match="is not a writable directory"):
+            list(model.execute(prompt, False, response, None))
 
-        response = MagicMock()
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            # Should raise ModelError before making API call
-            with pytest.raises(llm.ModelError, match="is not a writable directory"):
-                list(model.execute(prompt, False, response, None))
-
-        mock_post.assert_not_called()
-
+    assert httpx2_mock.get_requests() == []
     # Clean up: restore permissions so pytest can clean up tmp_path
     non_writable_dir.chmod(0o755)
 
 
-def test_nonexistent_directory_is_created_when_saving(mock_venice_api_key, tmp_path):
+def test_nonexistent_directory_is_created_when_saving(mock_venice_api_key, tmp_path, httpx2_mock):
     """Nonexistent output_dir should be created automatically when saving."""
     model = VeniceImage("test-model")
 
@@ -719,26 +629,21 @@ def test_nonexistent_directory_is_created_when_saving(mock_venice_api_key, tmp_p
     prompt.options = options
 
     # Mock API response
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.content = b"\x89PNG\r\n\x1a\n"
-        mock_post.return_value = mock_response
+    add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
+    response = MagicMock()
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        results = list(model.execute(prompt, False, response, None))
 
-        response = MagicMock()
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            results = list(model.execute(prompt, False, response, None))
-
-        mock_post.assert_called_once()
-
+    assert len(httpx2_mock.get_requests()) == 1
     expected_output = nonexistent_dir / "test_image.png"
     assert expected_output.exists()
-    assert expected_output.read_bytes() == mock_response.content
+    assert expected_output.read_bytes() == b"\x89PNG\r\n\x1a\n"
     assert any(str(expected_output) in line for line in results)
 
 
-def test_file_path_instead_of_directory_raises_model_error(mock_venice_api_key, tmp_path):
+def test_file_path_instead_of_directory_raises_model_error(
+    mock_venice_api_key, tmp_path, httpx2_mock
+):
     """Test that passing a file path instead of directory raises ModelError."""
     model = VeniceImage("test-model")
 
@@ -762,23 +667,16 @@ def test_file_path_instead_of_directory_raises_model_error(mock_venice_api_key, 
     prompt.options = options
 
     # Mock API response
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.content = b"\x89PNG\r\n\x1a\n"
-        mock_post.return_value = mock_response
+    response = MagicMock()
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        # Should raise ModelError for file path instead of directory
+        with pytest.raises(llm.ModelError, match="is not a writable directory"):
+            list(model.execute(prompt, False, response, None))
 
-        response = MagicMock()
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            # Should raise ModelError for file path instead of directory
-            with pytest.raises(llm.ModelError, match="is not a writable directory"):
-                list(model.execute(prompt, False, response, None))
-
-        mock_post.assert_not_called()
+    assert httpx2_mock.get_requests() == []
 
 
-def test_timestamp_format_in_appended_filename(mock_venice_api_key, tmp_path):
+def test_timestamp_format_in_appended_filename(mock_venice_api_key, tmp_path, httpx2_mock):
     """Test that the timestamp format is correct when appending to existing file."""
     model = VeniceImage("test-model")
 
@@ -802,38 +700,32 @@ def test_timestamp_format_in_appended_filename(mock_venice_api_key, tmp_path):
     prompt.options = options
 
     # Mock API response
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.content = b"new content"
-        mock_post.return_value = mock_response
+    add_image_response(httpx2_mock, content=b"new content")
+    response = MagicMock()
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        list(model.execute(prompt, False, response, None))
 
-        response = MagicMock()
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            list(model.execute(prompt, False, response, None))
+    # Find the new file (should have timestamp pattern)
+    new_files = [f for f in tmp_path.glob("myimage_*.png") if f != existing_file]
+    assert len(new_files) == 1
 
-        # Find the new file (should have timestamp pattern)
-        new_files = [f for f in tmp_path.glob("myimage_*.png") if f != existing_file]
-        assert len(new_files) == 1
+    new_file = new_files[0]
+    # Verify timestamp format: myimage_YYYYMMDD_HHMMSS_ffffff.png
+    # Extract just the timestamp part
+    timestamp_part = new_file.stem.replace("myimage_", "")
 
-        new_file = new_files[0]
-        # Verify timestamp format: myimage_YYYYMMDD_HHMMSS_ffffff.png
-        # Extract just the timestamp part
-        timestamp_part = new_file.stem.replace("myimage_", "")
+    # Should have format: YYYYMMDD_HHMMSS_ffffff
+    parts = timestamp_part.split("_")
+    assert len(parts) == 3
+    assert len(parts[0]) == 8  # YYYYMMDD
+    assert len(parts[1]) == 6  # HHMMSS
+    assert len(parts[2]) == 6  # ffffff (microseconds)
 
-        # Should have format: YYYYMMDD_HHMMSS_ffffff
-        parts = timestamp_part.split("_")
-        assert len(parts) == 3
-        assert len(parts[0]) == 8  # YYYYMMDD
-        assert len(parts[1]) == 6  # HHMMSS
-        assert len(parts[2]) == 6  # ffffff (microseconds)
-
-        # Verify all parts are numeric
-        assert all(part.isdigit() for part in parts)
+    # Verify all parts are numeric
+    assert all(part.isdigit() for part in parts)
 
 
-def test_no_existing_file_no_timestamp(mock_venice_api_key, tmp_path):
+def test_no_existing_file_no_timestamp(mock_venice_api_key, tmp_path, httpx2_mock):
     """Test that when file doesn't exist, no timestamp is added even with overwrite_files=False."""
     model = VeniceImage("test-model")
 
@@ -854,29 +746,25 @@ def test_no_existing_file_no_timestamp(mock_venice_api_key, tmp_path):
 
     # Mock API response
     content = b"new file content"
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.content = content
-        mock_post.return_value = mock_response
+    add_image_response(httpx2_mock, content=content)
+    response = MagicMock()
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        list(model.execute(prompt, False, response, None))
 
-        response = MagicMock()
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            list(model.execute(prompt, False, response, None))
+    # Verify file was created without timestamp
+    expected_file = tmp_path / "newfile.png"
+    assert expected_file.exists()
+    assert expected_file.read_bytes() == content
 
-        # Verify file was created without timestamp
-        expected_file = tmp_path / "newfile.png"
-        assert expected_file.exists()
-        assert expected_file.read_bytes() == content
-
-        # Verify no other files were created
-        files_in_dir = list(tmp_path.glob("newfile*.png"))
-        assert len(files_in_dir) == 1
-        assert files_in_dir[0] == expected_file
+    # Verify no other files were created
+    files_in_dir = list(tmp_path.glob("newfile*.png"))
+    assert len(files_in_dir) == 1
+    assert files_in_dir[0] == expected_file
 
 
-def test_multiple_collisions_create_multiple_timestamped_files(mock_venice_api_key, tmp_path):
+def test_multiple_collisions_create_multiple_timestamped_files(
+    mock_venice_api_key, tmp_path, httpx2_mock
+):
     """Test that multiple executions with same filename create multiple timestamped files."""
     model = VeniceImage("test-model")
 
@@ -899,16 +787,10 @@ def test_multiple_collisions_create_multiple_timestamped_files(mock_venice_api_k
         }
         prompt.options = options
 
-        with patch("httpx2.post") as mock_post:
-            mock_response = Mock()
-            mock_response.raise_for_status.return_value = None
-            mock_response.headers = {}
-            mock_response.content = content
-            mock_post.return_value = mock_response
-
-            response = MagicMock()
-            with patch.object(model, "get_key", return_value=mock_venice_api_key):
-                list(model.execute(prompt, False, response, None))
+        add_image_response(httpx2_mock, content=content)
+        response = MagicMock()
+        with patch.object(model, "get_key", return_value=mock_venice_api_key):
+            list(model.execute(prompt, False, response, None))
 
     # Execute twice more
     execute_model(b"second")
@@ -926,7 +808,7 @@ def test_multiple_collisions_create_multiple_timestamped_files(mock_venice_api_k
     assert len(timestamped_files) == 2
 
 
-def test_http_error_raises_model_error(mock_venice_api_key):
+def test_http_error_raises_model_error(mock_venice_api_key, httpx2_mock):
     """Test that HTTP errors from the API are raised as ModelError."""
     model = VeniceImage("test-model")
 
@@ -937,32 +819,22 @@ def test_http_error_raises_model_error(mock_venice_api_key):
     # Setup options with actual Pydantic model so payload is serialized via model_dump
     prompt.options = VeniceImage.Options(return_binary=True)
 
-    # Mock the API call with HTTP error
-    with patch("httpx2.post") as mock_post:
-        # Configure the mock response to raise HTTPStatusError
-        mock_response = Mock()
-        mock_response.text = "API Error: Rate limit exceeded"
-        mock_response.status_code = 429
-        mock_response.reason_phrase = "Too Many Requests"
-        mock_response.json.side_effect = ValueError
+    # The API returns a non-JSON error body
+    httpx2_mock.add_response(
+        method="POST",
+        url=ENDPOINT_IMAGE_GENERATE,
+        status_code=429,
+        content=b"API Error: Rate limit exceeded",
+    )
 
-        # Create an HTTPStatusError
-        http_error = httpx2.HTTPStatusError(
-            "429 Client Error",
-            request=Mock(),
-            response=mock_response,
-        )
-        mock_response.raise_for_status.side_effect = http_error
-        mock_post.return_value = mock_response
-
-        response = MagicMock()
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            # Should raise ModelError with API error message
-            with pytest.raises(llm.ModelError, match="429.*Rate limit exceeded"):
-                list(model.execute(prompt, False, response, None))
+    response = MagicMock()
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        # Should raise ModelError with API error message
+        with pytest.raises(llm.ModelError, match="429.*Rate limit exceeded"):
+            list(model.execute(prompt, False, response, None))
 
 
-def test_invalid_base64_data_raises_model_error(mock_venice_api_key):
+def test_invalid_base64_data_raises_model_error(mock_venice_api_key, httpx2_mock):
     """Test that invalid base64 data from JSON response raises ModelError."""
     model = VeniceImage("test-model")
 
@@ -980,27 +852,22 @@ def test_invalid_base64_data_raises_model_error(mock_venice_api_key):
 
     # Mock the API call with invalid base64 data - using non-string type
     # which will cause base64.b64decode to raise TypeError
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.json.return_value = {
-            "images": [
-                12345  # Invalid: integer instead of base64 string - will cause TypeError
-            ],
-            "request": {"model": "test-model"},
-            "timing": {},
-        }
-        mock_post.return_value = mock_response
-
-        response = MagicMock()
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            # Should raise ModelError about base64 decoding failure
-            with pytest.raises(llm.ModelError, match="Failed to decode base64 image data"):
-                list(model.execute(prompt, False, response, None))
+    image_json = {
+        "images": [
+            12345  # Invalid: integer instead of base64 string - will cause TypeError
+        ],
+        "request": {"model": "test-model"},
+        "timing": {},
+    }
+    add_image_response(httpx2_mock, json_data=image_json)
+    response = MagicMock()
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        # Should raise ModelError about base64 decoding failure
+        with pytest.raises(llm.ModelError, match="Failed to decode base64 image data"):
+            list(model.execute(prompt, False, response, None))
 
 
-def test_file_write_failure_raises_model_error(mock_venice_api_key, tmp_path):
+def test_file_write_failure_raises_model_error(mock_venice_api_key, tmp_path, httpx2_mock):
     """Test that file write failures are caught and raised as ModelError."""
     model = VeniceImage("test-model")
 
@@ -1008,36 +875,28 @@ def test_file_write_failure_raises_model_error(mock_venice_api_key, tmp_path):
     prompt = MagicMock()
     prompt.prompt = "Test prompt"
 
-    # Setup options
+    # Overwriting with an existing directory as the file name fails for real
+    (tmp_path / "test.png").mkdir()
+
     options = Mock()
     options.model_dump.return_value = {
         "output_dir": str(tmp_path),
         "output_filename": "test.png",
+        "overwrite_files": True,
         "return_binary": True,
         "format": "png",
     }
     prompt.options = options
 
-    # Mock the API call with valid response
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.content = b"\x89PNG\r\n\x1a\n"
-        mock_post.return_value = mock_response
-
-        response = MagicMock()
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            # Mock write_bytes to raise an error
-            with patch("pathlib.Path.write_bytes") as mock_write:
-                mock_write.side_effect = PermissionError("Permission denied")
-
-                # Should raise ModelError about file write failure
-                with pytest.raises(llm.ModelError, match="Failed to write image file"):
-                    list(model.execute(prompt, False, response, None))
+    add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
+    response = MagicMock()
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        # Should raise ModelError about file write failure
+        with pytest.raises(llm.ModelError, match="Failed to write image file"):
+            list(model.execute(prompt, False, response, None))
 
 
-def test_http_500_error_with_json_body(mock_venice_api_key):
+def test_http_500_error_with_json_body(mock_venice_api_key, httpx2_mock):
     """Test handling of 500 Internal Server Error with JSON error details."""
     model = VeniceImage("test-model")
 
@@ -1053,26 +912,16 @@ def test_http_500_error_with_json_body(mock_venice_api_key):
     }
     prompt.options = options
 
-    # Mock the API call with 500 error
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.text = '{"error": "Internal server error", "code": "server_error"}'
-        mock_response.status_code = 500
-        mock_response.reason_phrase = "Internal Server Error"
-        mock_response.json.return_value = {"error": "Internal server error", "code": "server_error"}
+    add_image_response(
+        httpx2_mock,
+        status_code=500,
+        json_data={"error": "Internal server error", "code": "server_error"},
+    )
 
-        http_error = httpx2.HTTPStatusError(
-            "500 Server Error",
-            request=Mock(),
-            response=mock_response,
-        )
-        mock_response.raise_for_status.side_effect = http_error
-        mock_post.return_value = mock_response
-
-        response = MagicMock()
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            with pytest.raises(llm.ModelError, match="500.*server_error"):
-                list(model.execute(prompt, False, response, None))
+    response = MagicMock()
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        with pytest.raises(llm.ModelError, match="500.*server_error"):
+            list(model.execute(prompt, False, response, None))
 
 
 def test_venice_image_options_defaults_and_validation():
@@ -1152,7 +1001,9 @@ def test_venice_image_options_defaults_and_validation():
         VeniceImage.Options(return_binary=True, variants=2)
 
 
-def test_venice_image_drops_aspect_ratio_for_unsupported_model(mock_venice_api_key, tmp_path):
+def test_venice_image_drops_aspect_ratio_for_unsupported_model(
+    mock_venice_api_key, tmp_path, httpx2_mock, request_json
+):
     """Test aspect_ratio is dropped with an info message when unsupported."""
     model = VeniceImage(
         "test-model",
@@ -1163,26 +1014,20 @@ def test_venice_image_drops_aspect_ratio_for_unsupported_model(mock_venice_api_k
     prompt.prompt = "Test prompt"
     prompt.options = VeniceImage.Options(aspect_ratio="9:16", return_binary=True)
 
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.content = b"\x89PNG\r\n\x1a\n"
-        mock_post.return_value = mock_response
+    add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
+            results = list(model.execute(prompt, False, MagicMock(), None))
 
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
-                results = list(model.execute(prompt, False, MagicMock(), None))
-
-        payload = mock_post.call_args[1]["json"]
-        assert "aspect_ratio" not in payload
-        assert (
-            results[0] == "Info: dropped unsupported options for model 'test-model': aspect_ratio\n"
-        )
-        assert results[1].startswith("Image saved to ")
+    payload = request_json()
+    assert "aspect_ratio" not in payload
+    assert results[0] == "Info: dropped unsupported options for model 'test-model': aspect_ratio\n"
+    assert results[1].startswith("Image saved to ")
 
 
-def test_venice_image_drops_resolution_for_unsupported_model(mock_venice_api_key, tmp_path):
+def test_venice_image_drops_resolution_for_unsupported_model(
+    mock_venice_api_key, tmp_path, httpx2_mock, request_json
+):
     """Test resolution is dropped with an info message when unsupported."""
     model = VeniceImage(
         "test-model",
@@ -1193,23 +1038,15 @@ def test_venice_image_drops_resolution_for_unsupported_model(mock_venice_api_key
     prompt.prompt = "Test prompt"
     prompt.options = VeniceImage.Options(resolution="4K", return_binary=True)
 
-    with patch("httpx2.post") as mock_post:
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.headers = {}
-        mock_response.content = b"\x89PNG\r\n\x1a\n"
-        mock_post.return_value = mock_response
+    add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
+            results = list(model.execute(prompt, False, MagicMock(), None))
 
-        with patch.object(model, "get_key", return_value=mock_venice_api_key):
-            with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
-                results = list(model.execute(prompt, False, MagicMock(), None))
-
-        payload = mock_post.call_args[1]["json"]
-        assert "resolution" not in payload
-        assert (
-            results[0] == "Info: dropped unsupported options for model 'test-model': resolution\n"
-        )
-        assert results[1].startswith("Image saved to ")
+    payload = request_json()
+    assert "resolution" not in payload
+    assert results[0] == "Info: dropped unsupported options for model 'test-model': resolution\n"
+    assert results[1].startswith("Image saved to ")
 
 
 def test_image_generation_result_exposes_structured_notices():
@@ -1350,18 +1187,17 @@ def test_venice_image_logging_client_usage(mock_venice_api_key, monkeypatch):
     with patch("llm_venice.models.image.logging_client", mock_logging_client):
         with patch("llm_venice.models.image.httpx2.post") as mock_httpx_post:
             with patch.object(model, "get_key", return_value=mock_venice_api_key):
-                with patch("pathlib.Path.write_bytes"):
-                    list(model.execute(prompt, False, response, None))
+                list(model.execute(prompt, False, response, None))
 
-                    # Verify logging_client was called
-                    mock_logging_client.assert_called_once()
+                # Verify logging_client was called
+                mock_logging_client.assert_called_once()
 
-                    # Verify the logging client's post method was called instead of httpx2.post
-                    mock_client_instance.post.assert_called_once()
-                    call_args = mock_client_instance.post.call_args
+                # Verify the logging client's post method was called instead of httpx2.post
+                mock_client_instance.post.assert_called_once()
+                call_args = mock_client_instance.post.call_args
 
-                    # httpx2.post should not be used when logging client is enabled
-                    mock_httpx_post.assert_not_called()
+                # httpx2.post should not be used when logging client is enabled
+                mock_httpx_post.assert_not_called()
 
                 # Verify the call had the correct parameters
                 assert call_args[0][0] == "https://api.venice.ai/api/v1/image/generate"
@@ -1395,8 +1231,7 @@ def test_venice_image_honors_explicit_key(monkeypatch):
     monkeypatch.setattr("llm_venice.models.image.httpx2.post", fake_post)
 
     with patch.object(model, "get_key", return_value="explicit-key"):
-        with patch("pathlib.Path.write_bytes"):
-            list(model.execute(prompt, False, MagicMock(), None, key="provided"))
+        list(model.execute(prompt, False, MagicMock(), None, key="provided"))
 
     assert captured_headers["Authorization"] == "Bearer explicit-key"
 
