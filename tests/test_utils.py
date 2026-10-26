@@ -3,7 +3,7 @@ import llm
 import pytest
 
 import llm_venice.utils as utils
-from llm_venice.utils import get_venice_key, validate_output_directory
+from llm_venice.utils import get_venice_key, require_model_key, validate_output_directory
 
 
 def test_get_venice_key_defaults_to_needs_key(monkeypatch):
@@ -12,6 +12,26 @@ def test_get_venice_key_defaults_to_needs_key(monkeypatch):
 
     with pytest.raises(llm.NeedsKeyException):
         get_venice_key()
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_require_model_key_rejects_missing_key(value):
+    """require_model_key narrows get_key()'s Optional[str] result to str."""
+
+    class FakeModel:
+        def get_key(self, explicit_key=None):
+            return value
+
+    with pytest.raises(llm.NeedsKeyException, match="No key found for Venice"):
+        require_model_key(FakeModel(), None)  # type: ignore[arg-type]
+
+
+def test_require_model_key_passes_explicit_key():
+    class FakeModel:
+        def get_key(self, explicit_key=None):
+            return explicit_key
+
+    assert require_model_key(FakeModel(), "sk-test") == "sk-test"  # type: ignore[arg-type]
 
 
 def test_get_venice_key_click_mode(monkeypatch):

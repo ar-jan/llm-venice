@@ -5,6 +5,10 @@ on:
   pull_request:
   workflow_dispatch: # Allow manual triggering
   workflow_call:
+  schedule:
+    # Weekly, so drift in llm's internals shows up before a release even when
+    # no pull request has run the compatibility job.
+    - cron: "23 5 * * 1"
 
 permissions:
   contents: read
@@ -26,16 +30,55 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -e '.[test,dev]'
-    # TODO: fix Python env discovery in CI?
-    #   - name: Type check
-    #     run: |
-    #       ty check --output-format=github
       - name: Check formatting
         run: |
           ruff format --check .
       - name: Run lint
         run: |
           ruff check --output-format=github .
+      - name: Run tests
+        run: |
+          pytest
+
+  type-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v6
+        with:
+          # The lowest supported version (requires-python >= 3.10), so the
+          # check guards the floor. [tool.pyright] pythonVersion matches it.
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install dependencies
+        run: |
+          pip install -e '.[test,dev]'
+      - name: Type check
+        # --pythonpath is required: [tool.pyright] points at a .venv that only
+        # exists locally, so without it pyright resolves no installed package.
+        run: |
+          pyright --pythonpath "$(command -v python)"
+
+  test-against-llm-main: # Non-blocking: upstream breakage must not block pull requests
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install dependencies
+        run: |
+          pip install -e '.[test]'
+      - name: Upgrade llm to main
+        run: |
+          pip install --upgrade "llm @ git+https://github.com/simonw/llm.git@main"
+          python -c "import importlib.metadata as m; print('llm', m.version('llm'))"
       - name: Run tests
         run: |
           pytest

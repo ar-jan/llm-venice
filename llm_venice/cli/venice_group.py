@@ -8,6 +8,7 @@ from llm_venice.api.errors import VeniceAPIError
 from llm_venice.cli.api_keys import create_api_keys_group
 from llm_venice.cli.characters import create_characters_command
 from llm_venice.cli.errors import handle_cli_error
+from llm_venice.cli.tts import create_tts_command
 from llm_venice.cli.upscale import create_upscale_command
 from llm_venice.utils import get_venice_key
 
@@ -38,6 +39,7 @@ def create_venice_group():
 
     venice.add_command(create_api_keys_group())
     venice.add_command(create_characters_command())
+    venice.add_command(create_tts_command())
     venice.add_command(create_upscale_command())
 
     return venice

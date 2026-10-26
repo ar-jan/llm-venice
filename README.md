@@ -153,17 +153,46 @@ Disable streaming (wait for the full audio before writing the file):
 
 `llm --no-stream -m venice/tts-kokoro "First sentence. Second sentence. Third sentence."`
 
-Write audio bytes to stdout (progress/status go to stderr):
-
-`llm -m venice/tts-kokoro "Hello." -o stdout true -o response_format mp3 > out.mp3`
-
-You can also save a copy while writing to stdout by providing `output_dir` and/or `output_filename`:
-
-`llm -m venice/tts-kokoro "Hello." -o stdout true -o output_dir . -o output_filename out.mp3`
-
 To see all available options:
 
 `llm models list --query tts-kokoro --options`
+
+#### `llm venice tts`
+
+The `llm venice tts` command writes audio to a file or, byte-exact, to stdout. Use it for pipelines: `llm -m venice/tts-...` always adds llm's own output (such as a trailing newline) to stdout, so it can only save files.
+
+```
+llm venice tts [TEXT] [-m MODEL] [--voice VOICE] [--format FORMAT] [--speed SPEED]
+               [-o PATH | -o -] [--overwrite] [--progress]
+```
+
+- `TEXT` is read from stdin when it is omitted or `-`.
+- `-m` takes the model ID with or without the `venice/` prefix. The default is the first text-to-speech model in the Venice model catalog.
+- `--voice`, `--format` (the API's `response_format`) and `--speed` accept the same values as the `voice`, `response_format` and `speed` options of `llm -m venice/<tts-model>`.
+- `-o` is this command's own output option, unrelated to llm's `-o/--option KEY VALUE`. `-o FILE` writes a file, `-o DIR` writes a generated file name into a directory, and `-o -` writes only the raw audio bytes to stdout (status and `--progress` go to stderr). Without `-o`, audio is saved under the LLM user directory in `audio/`. In file mode the saved path is printed on stdout.
+- Use a trailing separator for a directory that does not exist yet: `-o new-clips/` creates it and saves audio under a generated file name.
+- Existing files are not overwritten unless `--overwrite` is given; a timestamped file name is used instead.
+- Audio is written to an exclusively created `<name>.part`. If that staging name is taken, a unique `.<name>.<random>.part` is used; existing partial files and symlinks are left alone. The destination appears only when the download is complete. Without `--overwrite`, publication atomically refuses to replace an existing path and retries with a timestamped name on collision. A failed download keeps any partial audio with a warning naming its path, leaving completed output from other writers untouched. With `--overwrite`, an existing file is replaced only after a successful download. `llm -m venice/<tts-model>` behaves the same.
+- Staging and new audio files request private permissions (`0600`, subject to umask); overwrites preserve existing regular-file Unix access permissions where supported. FAT32/exFAT do not store per-file Unix permissions, so access protection depends on the platform and mount settings.
+- Saving without overwrite prefers the platform's rename-without-replacement operation, with hard links as a fallback when that operation is unavailable or unsupported. Hard links are not required when native exclusive rename works (including FAT32/exFAT with compatible OS drivers). If neither safe publication method works, the completed audio remains in the `.part` file named in the warning.
+- A request the API rejects (for example an unknown model or voice) fails before any audio arrives and writes nothing at all, not even an empty `.part` file.
+- The command does not log to llm's logs database.
+
+Examples:
+
+```sh
+llm venice tts "Hello." --format mp3 -o - > out.mp3
+llm venice tts "Hello." -o out.mp3
+echo "Hello." | llm venice tts --voice af_sky -o - | mpv -
+llm venice tts "Hello." -o - | tee out.mp3 | mpv -   # play and keep a copy
+```
+
+The former `-o stdout true` option of `llm -m venice/tts-...` has been removed:
+
+| Old | New |
+|---|---|
+| `llm -m venice/tts-kokoro "Hello." -o stdout true -o response_format mp3 > out.mp3` | `llm venice tts "Hello." --format mp3 -o - > out.mp3` |
+| `llm -m venice/tts-kokoro "Hello." -o stdout true -o output_dir . -o output_filename out.mp3` | `llm venice tts "Hello." -o - \| tee out.mp3`, or just `-o out.mp3` |
 
 ### Image generation
 
@@ -190,13 +219,14 @@ You can check the available parameters for a model by filtering the model list w
 ### Image upscaling
 
 You can upscale existing images.
-The following example saves the returned image as `image_upscaled.png` in the same directory as the original file:
+The following example saves the returned image as `image_upscaled.<ext>` in the same directory as the original file, where `<ext>` matches the format the API returns (`png`, `jpg` or `webp`):
 
 `llm venice upscale /path/to/image.jpg`.
 
 By default existing upscaled images are not overwritten; timestamped filenames are used instead.
 
-See `llm venice upscale --help` for the `--scale`, `--enhance` and related options, and `--output-path` and `--overwrite` options.
+See `llm venice upscale --help` for the `--scale` (default `2.0`), `--enhance` and related options, and `--output-path` and `--overwrite` options.
+A file name passed to `--output-path` is used as given, even if its extension differs from the returned format.
 
 ### Venice commands
 
@@ -220,7 +250,25 @@ You can call the library helpers directly from Python (minimally tested):
 - `generate_speech_result()` → `SpeechGenerationResult` with bytes/metadata/output path for TTS generation; persist with `save_speech_result(result)`
 - `stream_speech_result()` (context manager) yields `SpeechStreamResult` with an iterator of audio chunks and a resolved output path
 
-All helpers accept an optional `key=` argument if you do not want to rely on the stored `LLM_VENICE_KEY`.
+The helpers take the API key in one of three ways:
+
+| Argument | Helpers |
+|---|---|
+| optional `key=`; falls back to the stored key or `LLM_VENICE_KEY` | `fetch_models()`, `list_characters()`, `perform_image_upscale()` |
+| required `headers` dict as the first argument | `list_api_keys()`, `get_rate_limits()`, `get_rate_limits_log()`, `create_api_key()`, `delete_api_key()` |
+| required keyword `api_key=` | `generate_image_result()`, `generate_speech_result()`, `stream_speech_result()` |
+
+The `persist_*`, `save_*` and `write_upscaled_image()` helpers only write to disk and take no key.
+
+To build `headers` or resolve the stored key yourself:
+
+```python
+from llm_venice.api.client import get_auth_headers
+from llm_venice.utils import get_venice_key
+
+headers = get_auth_headers()  # or get_auth_headers("sk-...")
+api_key = get_venice_key()  # raises llm.NeedsKeyException if no key is set
+```
 
 ### Async usage
 

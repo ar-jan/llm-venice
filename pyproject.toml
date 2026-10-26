@@ -25,7 +25,7 @@ venice = "llm_venice"
 
 [project.optional-dependencies]
 test = [
-    "httpx2-pytest>=1.0.1",
+    "httpx2-pytest>=2.0.0",
     "jsonschema",
     "pytest",
     "sqlite_utils",
@@ -74,7 +74,7 @@ defineConstant = { DEBUG = true }
 
 reportMissingImports = "error"
 
-pythonVersion = "3.12"
+pythonVersion = "3.10"
 pythonPlatform = "Linux"
 venvPath = "."
 venv = ".venv"

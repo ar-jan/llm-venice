@@ -3,11 +3,28 @@
 import json
 import shutil
 from unittest.mock import patch
+from typing import Any, Callable, Optional
 
 import llm
 from llm import get_key
 import pytest
 from click.testing import CliRunner
+
+
+@pytest.fixture(autouse=True)
+def hermetic_llm_user_path(request, tmp_path_factory, monkeypatch):
+    """Point LLM_USER_PATH at a per-test directory.
+
+    Without this, any code path that is not patched would write into the real
+    user directory (images, audio, logs.db, model cache). Integration tests are
+    exempt: they read the real key store. A test can still override the path by
+    setting LLM_USER_PATH itself, since that runs after this autouse fixture.
+    """
+    if request.node.get_closest_marker("integration"):
+        return
+    user_path = tmp_path_factory.mktemp("llm-user-path")
+    monkeypatch.setenv("LLM_USER_PATH", str(user_path))
+    return user_path
 
 
 @pytest.fixture
@@ -148,3 +165,38 @@ def isolated_llm_dir(tmp_path, monkeypatch):
 
     monkeypatch.setenv("LLM_USER_PATH", str(test_llm_dir))
     return test_llm_dir
+
+
+@pytest.fixture
+def request_json(
+    httpx2_mock,
+) -> Callable[..., Any]:
+    """Return a helper that decodes the JSON body of a recorded request.
+
+    Usage: ``payload = request_json()`` for the last request, or
+    ``request_json(0)`` for the first.
+    """
+
+    def decode(index: int = -1) -> Any:
+        request = httpx2_mock.get_requests()[index]
+        return json.loads(request.read().decode())
+
+    return decode
+
+
+@pytest.fixture
+def hermetic_venice_catalog(hermetic_llm_user_path):
+    """Provide a factory that writes a Venice model catalog anywhere in the model list.
+
+    Usage: ``install([{"id": "img", "type": "image", "model_spec": {...}}])``
+    returns the model IDs prefixed with ``venice/``.
+    """
+
+    def install(models: Optional[list] = None) -> list[str]:
+        models = models or [
+            {"id": "test-model", "type": "text", "model_spec": {"capabilities": {}}}
+        ]
+        (hermetic_llm_user_path / "venice_models.json").write_text(json.dumps(models))
+        return [f"venice/{model['id']}" for model in models]
+
+    return install

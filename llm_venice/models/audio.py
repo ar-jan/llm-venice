@@ -1,25 +1,31 @@
 """Venice audio/text-to-speech model implementation."""
 
 import asyncio
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
+import datetime
 import os
 import pathlib
 from dataclasses import dataclass
+import stat
 import sys
+import tempfile
 import time
-from typing import AsyncGenerator, Iterable, Iterator, Literal, Optional, Union
+from typing import AsyncGenerator, BinaryIO, Iterable, Iterator, Literal, Optional, Union
 
 import httpx2
 import llm
 from llm.utils import logging_client
 from pydantic import Field
 
+from llm_venice._files import try_rename_no_replace
 from llm_venice.api.client import get_auth_headers_with_content_type
 from llm_venice.api.errors import VeniceAPIError, raise_api_error
 from llm_venice.constants import ENDPOINT_AUDIO_SPEECH
+from llm_venice.notices import VeniceNotice, render_notice
 from llm_venice.utils import (
     generate_timestamp_filename,
     get_unique_filepath,
+    require_model_key,
     validate_output_directory,
 )
 
@@ -61,12 +67,6 @@ class VeniceSpeechOptions(llm.Options):
         description="Show download progress on stderr",
         default=False,
     )
-    stdout: Optional[bool] = Field(
-        description=(
-            "Write audio bytes to stdout. When set, progress and status messages are written to stderr."
-        ),
-        default=False,
-    )
 
 
 @dataclass
@@ -88,9 +88,9 @@ class SpeechStreamResult:
 @dataclass(frozen=True)
 class _SpeechCLIRequest:
     payload: dict
-    output_path: Optional[pathlib.Path]
-    write_stdout: bool
+    output_path: pathlib.Path
     progress: bool
+    overwrite: bool
     use_streaming_download: bool
 
 
@@ -141,14 +141,13 @@ def _prepare_speech_generation(
     """
     Prepare a speech request payload and a resolved output path.
 
-    Removes CLI-only options (stdout/progress) and output-path options from the payload.
+    Removes the CLI-only progress option and output-path options from the payload.
     Does not write anything to disk.
     """
     output_dir = options_dict.pop("output_dir", None)
     output_filename = options_dict.pop("output_filename", None)
     overwrite_files = options_dict.pop("overwrite_files", False)
     options_dict.pop("progress", None)
-    options_dict.pop("stdout", None)
 
     response_format = options_dict.get("response_format") or "mp3"
     output_path = _resolve_speech_output_path(
@@ -172,27 +171,20 @@ def _prepare_speech_cli_request(
     stream: bool,
 ) -> _SpeechCLIRequest:
     options_dict = options.model_dump(by_alias=True)
-
-    write_stdout = bool(options_dict.get("stdout", False))
     progress = bool(options_dict.get("progress", False))
 
-    requested_file_output = (
-        _normalize_output_dir(options_dict.get("output_dir")) is not None
-        or _normalize_output_filename(options_dict.get("output_filename")) is not None
-    )
-    save_to_file = (not write_stdout) or requested_file_output
-
+    overwrite = bool(options_dict.get("overwrite_files", False))
     payload, resolved_output_path = _prepare_speech_generation(
         input_text=input_text, options_dict=options_dict, model_name=model_name
     )
 
     payload["streaming"] = stream
-    use_streaming_download = write_stdout or progress or stream
+    use_streaming_download = progress or stream
     return _SpeechCLIRequest(
         payload=payload,
-        output_path=resolved_output_path if save_to_file else None,
-        write_stdout=write_stdout,
+        output_path=resolved_output_path,
         progress=progress,
+        overwrite=overwrite,
         use_streaming_download=use_streaming_download,
     )
 
@@ -203,15 +195,13 @@ def _set_speech_response_json(
     payload: dict,
     content_type: Optional[str],
     bytes_written: int,
-    output_path: Optional[pathlib.Path],
-    stdout: bool,
+    output_path: pathlib.Path,
 ) -> None:
     response.response_json = {
         "request": payload,
         "content_type": content_type,
         "bytes_written": bytes_written,
-        "output_path": str(output_path) if output_path else None,
-        "stdout": stdout,
+        "output_path": str(output_path),
     }
 
 
@@ -333,75 +323,210 @@ def _stream_speech_bytes(
         try:
             r.raise_for_status()
         except httpx2.HTTPStatusError as exc:
+            # A streamed body is unread; read it so the error detail can be extracted.
+            r.read()
             raise_api_error("Generating speech", exc)
         yield r.headers.get("Content-Type"), r.iter_bytes()
 
 
-def _stream_speech_to_outputs(
-    *,
-    api_key: str,
-    payload: dict,
-    output_path: Optional[pathlib.Path],
-    write_stdout: bool,
-    progress: bool,
-) -> tuple[Optional[str], int]:
-    """Download speech audio and write to file and/or stdout."""
-    bytes_written = 0
-    start_time = time.monotonic()
-    last_update = start_time
-    write_stdout_enabled = write_stdout
+class DownloadProgress:
+    """Report download progress on stderr, throttled to one update per 0.5 s."""
 
-    def maybe_update_progress(*, force: bool = False) -> None:
-        nonlocal last_update
-        if not progress:
+    def __init__(self, enabled: bool) -> None:
+        self.enabled = enabled
+        self.bytes_written = 0
+        self._start = time.monotonic()
+        self._last_update = self._start
+
+    def advance(self, num_bytes: int) -> None:
+        self.bytes_written += num_bytes
+        self._report()
+
+    def finish(self) -> None:
+        self._report(force=True)
+        if self.enabled and sys.stderr.isatty():
+            sys.stderr.write("\n")
+            sys.stderr.flush()
+
+    def _report(self, *, force: bool = False) -> None:
+        if not self.enabled:
             return
         now = time.monotonic()
-        if not force and (now - last_update) < 0.5:
+        if not force and (now - self._last_update) < 0.5:
             return
-        elapsed = max(now - start_time, 0.001)
-        rate = bytes_written / elapsed
-        message = f"Downloaded {_format_bytes(bytes_written)} ({_format_bytes(int(rate))}/s)"
+        elapsed = max(now - self._start, 0.001)
+        rate = self.bytes_written / elapsed
+        message = f"Downloaded {_format_bytes(self.bytes_written)} ({_format_bytes(int(rate))}/s)"
         if sys.stderr.isatty():
             sys.stderr.write(f"\r{message}")
         else:
             sys.stderr.write(f"{message}\n")
         sys.stderr.flush()
-        last_update = now
+        self._last_update = now
 
-    file_handle = None
-    content_type: Optional[str] = None
 
+def partial_path_for(output_path: pathlib.Path) -> pathlib.Path:
+    """Return the preferred path audio is staged at before it is complete."""
+    return output_path.with_name(f"{output_path.name}.part")
+
+
+def _publish_audio_file(
+    part_path: pathlib.Path, output_path: pathlib.Path, *, overwrite: bool
+) -> pathlib.Path:
+    """
+    Publish complete audio without replacing another writer's file by default.
+
+    Prefer native exclusive rename, falling back to a hard link only when that
+    operation is unsupported. Both refuse existing paths, including dangling
+    symlinks. Staging lives in the same directory/filesystem. If neither method
+    is supported, fail safely and leave the completed staging file.
+    Explicit overwrite uses replace and preserves regular-file access modes.
+    """
+    if overwrite:
+        try:
+            destination = output_path.lstat()
+        except FileNotFoundError:
+            destination = None
+        try:
+            if destination is not None and stat.S_ISREG(destination.st_mode):
+                # Copy access bits, not special bits such as setuid/setgid. Do not
+                # follow a destination symlink or copy its typically broad mode.
+                part_path.chmod(stat.S_IMODE(destination.st_mode) & 0o777)
+            os.replace(part_path, output_path)
+        except BaseException:
+            # If publication fails after copying a shared destination's mode,
+            # keep the retained staging audio private without masking the error.
+            with suppress(OSError):
+                part_path.chmod(0o600)
+            raise
+        return output_path
+
+    candidate = output_path
+    for _ in range(5):
+        try:
+            if try_rename_no_replace(part_path, candidate):
+                return candidate
+            os.link(part_path, candidate)
+        except FileExistsError:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            candidate = output_path.with_name(f"{output_path.stem}_{timestamp}{output_path.suffix}")
+            continue
+        # Publication succeeded. Failure to remove the extra link must not
+        # report a failed download or delete the already published audio.
+        try:
+            part_path.unlink()
+        except OSError as exc:
+            message = (
+                f"audio saved to {candidate}; could not remove staging file {part_path}: {exc}"
+            )
+            print(render_notice(VeniceNotice("warning", message)), file=sys.stderr)
+        return candidate
+    raise FileExistsError(f"could not publish audio without overwriting a file at {output_path}")
+
+
+def _open_staging_file(output_path: pathlib.Path) -> tuple[BinaryIO, pathlib.Path]:
+    """
+    Open a private staging file next to output_path.
+
+    The preferred ``<name>.part`` name is claimed with exclusive creation, which
+    also refuses to follow a symlink planted at that path. If it is already
+    taken, a unique temporary name is used, so concurrent downloads never share
+    a staging file and no other writer's file is ever truncated or removed.
+    """
+    preferred = partial_path_for(output_path)
     try:
-        with _stream_speech_bytes(api_key=api_key, payload=payload) as (content_type, chunks):
-            if output_path is not None:
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                file_handle = open(output_path, "wb")
+        fd = os.open(preferred, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        return os.fdopen(fd, "wb"), preferred
+    except FileExistsError:
+        pass
 
-            for chunk in chunks:
-                if not chunk:
-                    continue
-                bytes_written += len(chunk)
-                if file_handle is not None:
-                    file_handle.write(chunk)
-                if write_stdout_enabled:
-                    try:
-                        sys.stdout.buffer.write(chunk)
-                        sys.stdout.buffer.flush()
-                    except BrokenPipeError:
-                        if output_path is None:
-                            break
-                        write_stdout_enabled = False
-                maybe_update_progress()
-    finally:
+    fd, temp_name = tempfile.mkstemp(
+        dir=output_path.parent, prefix=f".{output_path.name}.", suffix=".part"
+    )
+    return os.fdopen(fd, "wb"), pathlib.Path(temp_name)
+
+
+def _cleanup_failed_audio_file(part_path: pathlib.Path) -> None:
+    """Remove empty staging or report retained bytes; callers preserve the primary error."""
+    try:
+        size = part_path.stat().st_size
+    except FileNotFoundError:
+        return
+    except OSError:
+        # Never delete audio when its size cannot be determined.
+        message = f"download interrupted; staging file may remain at {part_path} (size unavailable)"
+    else:
+        if size == 0:
+            part_path.unlink(missing_ok=True)
+            return
+        message = f"download interrupted; partial audio kept at {part_path} ({_format_bytes(size)})"
+    # Stay click-free here: library modules must not depend on the CLI layer.
+    print(render_notice(VeniceNotice("warning", message)), file=sys.stderr)
+
+
+def write_audio_file(
+    chunks: Iterable[bytes],
+    output_path: pathlib.Path,
+    reporter: DownloadProgress,
+    *,
+    overwrite: bool = False,
+) -> pathlib.Path:
+    """
+    Write audio chunks to output_path via a staging file.
+
+    Staging happens in ``<name>.part`` (or a unique ``.<name>.<random>.part`` when
+    that name is taken), with private permissions. The complete file is then
+    published atomically. An overwrite preserves existing regular-file access
+    permissions; new files remain private.
+
+    Unless overwrite is set, publication refuses to replace an existing path;
+    collisions retry with a timestamped name. No destination is reserved or
+    removed during download or failure cleanup. On failure, a non-empty staging
+    file is kept and a warning names it; an empty one is removed. The original
+    exception is re-raised unchanged. Return the actual destination, which may
+    differ from output_path after a collision.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    part_path: Optional[pathlib.Path] = None
+    file_handle: Optional[BinaryIO] = None
+    try:
+        file_handle, part_path = _open_staging_file(output_path)
+        for chunk in chunks:
+            if not chunk:
+                continue
+            file_handle.write(chunk)
+            reporter.advance(len(chunk))
+        file_handle.close()
+        file_handle = None
+        saved_path = _publish_audio_file(part_path, output_path, overwrite=overwrite)
+    except BaseException:
+        # A buffered close may itself fail while handling a stream error or
+        # KeyboardInterrupt. Preserve that original failure and inspect the
+        # actual on-disk size after attempting to flush/close, not progress.
         if file_handle is not None:
-            file_handle.close()
+            with suppress(OSError, ValueError):
+                file_handle.close()
+        if part_path is not None:
+            with suppress(OSError, ValueError):
+                _cleanup_failed_audio_file(part_path)
+        raise
+    reporter.finish()
+    return saved_path
 
-    maybe_update_progress(force=True)
-    if progress and sys.stderr.isatty():
-        sys.stderr.write("\n")
-        sys.stderr.flush()
 
-    return content_type, bytes_written
+def _stream_speech_to_file(
+    *,
+    api_key: str,
+    payload: dict,
+    output_path: pathlib.Path,
+    progress: bool,
+    overwrite: bool = False,
+) -> tuple[Optional[str], int, pathlib.Path]:
+    """Download speech audio and write it to output_path."""
+    reporter = DownloadProgress(progress)
+    with _stream_speech_bytes(api_key=api_key, payload=payload) as (content_type, chunks):
+        saved_path = write_audio_file(chunks, output_path, reporter, overwrite=overwrite)
+    return content_type, reporter.bytes_written, saved_path
 
 
 def _post_speech_bytes(*, api_key: str, payload: dict) -> tuple[bytes, Optional[str]]:
@@ -425,10 +550,13 @@ def _post_speech_bytes(*, api_key: str, payload: dict) -> tuple[bytes, Optional[
     return r.content, r.headers.get("Content-Type")
 
 
-def _write_audio_bytes(*, output_path: pathlib.Path, audio_bytes: bytes) -> None:
-    """Write audio bytes to disk, ensuring the destination directory exists."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(audio_bytes)
+def _write_audio_bytes(
+    *, output_path: pathlib.Path, audio_bytes: bytes, overwrite: bool = False
+) -> pathlib.Path:
+    """Write audio bytes to a path the caller chose, creating the directory if needed."""
+    return write_audio_file(
+        [audio_bytes], output_path, DownloadProgress(False), overwrite=overwrite
+    )
 
 
 class VeniceSpeech(llm.KeyModel):
@@ -450,9 +578,7 @@ class VeniceSpeech(llm.KeyModel):
 
     def execute(self, prompt, stream, response, conversation=None, key=None):
         """Execute text-to-speech request."""
-        api_key = self.get_key(key)
-        if api_key is None:
-            raise llm.NeedsKeyException("No key found for Venice")
+        api_key = require_model_key(self, key)
 
         try:
             options_dict = prompt.options.model_dump(by_alias=True)
@@ -468,18 +594,14 @@ class VeniceSpeech(llm.KeyModel):
             )
 
             if request.use_streaming_download:
-                if request.output_path is not None and not request.write_stdout:
-                    yield f"Writing audio to {request.output_path}\n"
-                elif request.output_path is not None and request.write_stdout:
-                    sys.stderr.write(f"Saving a copy to {request.output_path}\n")
-                    sys.stderr.flush()
+                yield f"Writing audio to {request.output_path}\n"
 
-                content_type, bytes_written = _stream_speech_to_outputs(
+                content_type, bytes_written, saved_path = _stream_speech_to_file(
                     api_key=api_key,
                     payload=request.payload,
                     output_path=request.output_path,
-                    write_stdout=request.write_stdout,
                     progress=request.progress,
+                    overwrite=request.overwrite,
                 )
 
                 _set_speech_response_json(
@@ -487,38 +609,28 @@ class VeniceSpeech(llm.KeyModel):
                     payload=request.payload,
                     content_type=content_type,
                     bytes_written=bytes_written,
-                    output_path=request.output_path,
-                    stdout=request.write_stdout,
+                    output_path=saved_path,
                 )
-
-                if request.write_stdout:
-                    if request.output_path is not None:
-                        sys.stderr.write(f"Audio saved to {request.output_path}\n")
-                        sys.stderr.flush()
-                    return
-
-                if request.output_path is None:
-                    raise llm.ModelError("No output path available to save audio")
-                yield f"Audio saved to {request.output_path}"
+                yield f"Audio saved to {saved_path}"
                 return
 
-            if request.output_path is None:
-                raise llm.ModelError("No output path available to save audio")
-
             audio_bytes, content_type = _post_speech_bytes(api_key=api_key, payload=request.payload)
-            _write_audio_bytes(output_path=request.output_path, audio_bytes=audio_bytes)
+            saved_path = _write_audio_bytes(
+                output_path=request.output_path,
+                audio_bytes=audio_bytes,
+                overwrite=request.overwrite,
+            )
 
             _set_speech_response_json(
                 response,
                 payload=request.payload,
                 content_type=content_type,
                 bytes_written=len(audio_bytes),
-                output_path=request.output_path,
-                stdout=False,
+                output_path=saved_path,
             )
 
-            yield f"Audio saved to {request.output_path}"
-        except (OSError, ValueError, VeniceAPIError) as exc:
+            yield f"Audio saved to {saved_path}"
+        except (OSError, ValueError, VeniceAPIError, httpx2.RequestError) as exc:
             raise llm.ModelError(str(exc)) from exc
 
 
@@ -543,9 +655,7 @@ class AsyncVeniceSpeech(llm.AsyncKeyModel):
         self, prompt, stream, response, conversation=None, key=None
     ) -> AsyncGenerator[str, None]:
         """Execute text-to-speech request asynchronously."""
-        api_key = self.get_key(key)
-        if api_key is None:
-            raise llm.NeedsKeyException("No key found for Venice")
+        api_key = require_model_key(self, key)
 
         try:
             options_dict = prompt.options.model_dump(by_alias=True)
@@ -561,19 +671,15 @@ class AsyncVeniceSpeech(llm.AsyncKeyModel):
             )
 
             if request.use_streaming_download:
-                if request.output_path is not None and not request.write_stdout:
-                    yield f"Writing audio to {request.output_path}\n"
-                elif request.output_path is not None and request.write_stdout:
-                    sys.stderr.write(f"Saving a copy to {request.output_path}\n")
-                    sys.stderr.flush()
+                yield f"Writing audio to {request.output_path}\n"
 
-                content_type, bytes_written = await asyncio.to_thread(
-                    _stream_speech_to_outputs,
+                content_type, bytes_written, saved_path = await asyncio.to_thread(
+                    _stream_speech_to_file,
                     api_key=api_key,
                     payload=request.payload,
                     output_path=request.output_path,
-                    write_stdout=request.write_stdout,
                     progress=request.progress,
+                    overwrite=request.overwrite,
                 )
 
                 _set_speech_response_json(
@@ -581,29 +687,19 @@ class AsyncVeniceSpeech(llm.AsyncKeyModel):
                     payload=request.payload,
                     content_type=content_type,
                     bytes_written=bytes_written,
-                    output_path=request.output_path,
-                    stdout=request.write_stdout,
+                    output_path=saved_path,
                 )
-
-                if request.write_stdout:
-                    if request.output_path is not None:
-                        sys.stderr.write(f"Audio saved to {request.output_path}\n")
-                        sys.stderr.flush()
-                    return
-
-                if request.output_path is None:
-                    raise llm.ModelError("No output path available to save audio")
-                yield f"Audio saved to {request.output_path}"
+                yield f"Audio saved to {saved_path}"
                 return
-
-            if request.output_path is None:
-                raise llm.ModelError("No output path available to save audio")
 
             audio_bytes, content_type = await asyncio.to_thread(
                 _post_speech_bytes, api_key=api_key, payload=request.payload
             )
-            await asyncio.to_thread(
-                _write_audio_bytes, output_path=request.output_path, audio_bytes=audio_bytes
+            saved_path = await asyncio.to_thread(
+                _write_audio_bytes,
+                output_path=request.output_path,
+                audio_bytes=audio_bytes,
+                overwrite=request.overwrite,
             )
 
             _set_speech_response_json(
@@ -611,10 +707,9 @@ class AsyncVeniceSpeech(llm.AsyncKeyModel):
                 payload=request.payload,
                 content_type=content_type,
                 bytes_written=len(audio_bytes),
-                output_path=request.output_path,
-                stdout=False,
+                output_path=saved_path,
             )
 
-            yield f"Audio saved to {request.output_path}"
-        except (OSError, ValueError, VeniceAPIError) as exc:
+            yield f"Audio saved to {saved_path}"
+        except (OSError, ValueError, VeniceAPIError, httpx2.RequestError) as exc:
             raise llm.ModelError(str(exc)) from exc

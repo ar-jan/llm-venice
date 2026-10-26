@@ -22,7 +22,8 @@ def create_upscale_command():
     @click.option(
         "--scale",
         type=click.FloatRange(1, 4),
-        default="2",
+        default=2.0,
+        show_default=True,
         help="Scale factor (between 1 and 4)",
     )
     @click.option(
