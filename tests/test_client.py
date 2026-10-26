@@ -370,10 +370,17 @@ def test_async_cancel_waits_for_running_file_write(tmp_path, monkeypatch):
             )
         ) as http:
             async with AsyncVeniceClient(key="k", http_client=http) as client:
+                cancellations: list[asyncio.CancelledError] = []
 
                 async def save():
-                    async with client.stream_speech("m", "text") as stream:
-                        await stream.save(tmp_path / "cancelled")
+                    try:
+                        async with client.stream_speech("m", "text") as stream:
+                            await stream.save(tmp_path / "cancelled")
+                    except asyncio.CancelledError as exc:
+                        # Python 3.10 wraps this exception when another task awaits
+                        # the cancelled task. Inspect save's own error metadata.
+                        cancellations.append(exc)
+                        raise
 
                 task = asyncio.create_task(save())
                 assert await asyncio.to_thread(started.wait, 5)
@@ -381,10 +388,12 @@ def test_async_cancel_waits_for_running_file_write(tmp_path, monkeypatch):
                 await asyncio.sleep(0)
                 assert not task.done()
                 release.set()
-                with pytest.raises(asyncio.CancelledError) as caught:
+                with pytest.raises(asyncio.CancelledError):
                     await task
+                assert task.cancelled()
                 assert chunks.closed
-                assert getattr(caught.value, "partial_path").read_bytes() == b"\xff\x00one"
+                assert len(cancellations) == 1
+                assert getattr(cancellations[0], "partial_path").read_bytes() == b"\xff\x00one"
                 assert not (tmp_path / "cancelled").exists()
 
     asyncio.run(run())

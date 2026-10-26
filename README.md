@@ -305,6 +305,9 @@ a later failure. Private staging avoids truncating existing files or following
 planted staging symlinks. Overwrite preserves existing regular-file permissions.
 Errors/cancellation retain nonempty staging and may attach `error.partial_path`;
 empty staging is removed. Library saves print nothing.
+To inspect this metadata on cancellation, catch `asyncio.CancelledError` where
+`stream.save()` is awaited inside the task. Python 3.10 wraps that exception when
+another task awaits the cancelled task.
 
 `content_violation`, `content_policy_violation_count`, and `blurred` are independent
 facts. The library preserves all returned images, including moderated images.

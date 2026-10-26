@@ -2,6 +2,8 @@
 
 Failed saves may attach ``partial_path: Path`` naming retained bytes. This does
 not change the exception's type, message, or original cause.
+For cancellation, inspect the exception where the save is awaited: Python 3.10
+wraps it when another task awaits the cancelled task.
 """
 
 from collections.abc import Mapping
