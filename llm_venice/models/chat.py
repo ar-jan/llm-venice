@@ -5,6 +5,7 @@ import json
 from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Union
 
 import llm
+from ._common import normalize_model_id, warn_deprecated
 from llm.default_plugins.openai_models import AsyncChat, Chat
 from llm_venice.constants import VENICE_PARAMETERS, NON_OPENAI_COMPATIBLE_PARAMS
 from pydantic import Field, field_validator
@@ -367,9 +368,18 @@ class VeniceChat(Chat):
         *args,
         supports_web_search: bool = False,
         supports_x_search: bool = False,
+        model_spec=None,
         **kwargs,
     ):
+        if "model_id" in kwargs:
+            kwargs["model_id"] = f"venice/{normalize_model_id(kwargs['model_id'])}"
+        if "model_name" in kwargs:
+            kwargs["model_name"] = normalize_model_id(kwargs["model_name"])
         super().__init__(*args, **kwargs)
+        self.model_id = f"venice/{normalize_model_id(self.model_id)}"
+        if self.model_name:
+            self.model_name = normalize_model_id(self.model_name)
+        self.model_spec = model_spec or {}
         self.supports_web_search = supports_web_search
         self.supports_x_search = supports_x_search
 
@@ -390,6 +400,7 @@ class VeniceChat(Chat):
         return tuple(tools)
 
     def build_kwargs(self, prompt, stream):
+        warn_deprecated(self)
         prompt, server_side_tools = _split_server_side_tools(prompt)
         base_kwargs = super().build_kwargs(prompt, stream)
         base_kwargs = _apply_server_side_tools(base_kwargs, server_side_tools)
@@ -409,9 +420,18 @@ class AsyncVeniceChat(AsyncChat):
         *args,
         supports_web_search: bool = False,
         supports_x_search: bool = False,
+        model_spec=None,
         **kwargs,
     ):
+        if "model_id" in kwargs:
+            kwargs["model_id"] = f"venice/{normalize_model_id(kwargs['model_id'])}"
+        if "model_name" in kwargs:
+            kwargs["model_name"] = normalize_model_id(kwargs["model_name"])
         super().__init__(*args, **kwargs)
+        self.model_id = f"venice/{normalize_model_id(self.model_id)}"
+        if self.model_name:
+            self.model_name = normalize_model_id(self.model_name)
+        self.model_spec = model_spec or {}
         self.supports_web_search = supports_web_search
         self.supports_x_search = supports_x_search
 
@@ -432,6 +452,7 @@ class AsyncVeniceChat(AsyncChat):
         return tuple(tools)
 
     def build_kwargs(self, prompt, stream):
+        warn_deprecated(self)
         prompt, server_side_tools = _split_server_side_tools(prompt)
         base_kwargs = super().build_kwargs(prompt, stream)
         base_kwargs = _apply_server_side_tools(base_kwargs, server_side_tools)

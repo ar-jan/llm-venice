@@ -14,6 +14,7 @@ from typing import AsyncGenerator, BinaryIO, Iterable, Iterator, Literal, Option
 
 import httpx2
 import llm
+from ._common import initialize_model, warn_deprecated
 from llm.utils import logging_client
 from pydantic import Field
 
@@ -565,10 +566,11 @@ class VeniceSpeech(llm.KeyModel):
     can_stream = True
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
+    model_name: str
+    model_spec: dict
 
-    def __init__(self, model_id, model_name=None):
-        self.model_id = f"venice/{model_id}"
-        self.model_name = model_name or model_id
+    def __init__(self, model_id, model_name=None, model_spec=None):
+        initialize_model(self, model_id, model_name, model_spec)
 
     def __str__(self):
         return f"Venice Speech: {self.model_id}"
@@ -578,6 +580,7 @@ class VeniceSpeech(llm.KeyModel):
 
     def execute(self, prompt, stream, response, conversation=None, key=None):
         """Execute text-to-speech request."""
+        warn_deprecated(self)
         api_key = require_model_key(self, key)
 
         try:
@@ -640,10 +643,11 @@ class AsyncVeniceSpeech(llm.AsyncKeyModel):
     can_stream = True
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
+    model_name: str
+    model_spec: dict
 
-    def __init__(self, model_id, model_name=None):
-        self.model_id = f"venice/{model_id}"
-        self.model_name = model_name or model_id
+    def __init__(self, model_id, model_name=None, model_spec=None):
+        initialize_model(self, model_id, model_name, model_spec)
 
     def __str__(self):
         return f"Venice Speech: {self.model_id}"
@@ -655,6 +659,7 @@ class AsyncVeniceSpeech(llm.AsyncKeyModel):
         self, prompt, stream, response, conversation=None, key=None
     ) -> AsyncGenerator[str, None]:
         """Execute text-to-speech request asynchronously."""
+        warn_deprecated(self)
         api_key = require_model_key(self, key)
 
         try:

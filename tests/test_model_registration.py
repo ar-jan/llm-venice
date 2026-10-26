@@ -94,18 +94,12 @@ def test_register_skips_without_cache_or_key(monkeypatch, tmp_path):
     assert registered == []
 
 
-def test_register_skips_on_request_error_without_cache(monkeypatch, tmp_path):
+def test_register_skips_on_request_error_without_cache(monkeypatch, tmp_path, httpx2_mock):
     """Network failures should never crash plugin loading on first run."""
     monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
     monkeypatch.setattr(llm, "get_key", lambda *_, **__: "test-key")
 
-    def fetch_failure(_key):
-        raise httpx2.RequestError(
-            "Network down",
-            request=httpx2.Request("GET", "https://api.venice.ai/api/v1/models"),
-        )
-
-    monkeypatch.setattr("llm_venice.models.fetch_models", fetch_failure)
+    httpx2_mock.add_exception(httpx2.ReadError("Network down"))
 
     registered = []
 
@@ -229,7 +223,7 @@ def test_corrupt_cache_without_key_warns_and_skips(
 
 
 def test_corrupt_cache_is_rebuilt_when_key_available(
-    monkeypatch, tmp_path, capsys, clear_registration_warnings
+    monkeypatch, tmp_path, capsys, clear_registration_warnings, httpx2_mock
 ):
     """With a key, a corrupt cache is refetched and replaced without warning."""
     monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
@@ -237,7 +231,7 @@ def test_corrupt_cache_is_rebuilt_when_key_available(
     cache.write_text('[{"id": broken')
     monkeypatch.setattr(llm, "get_key", lambda *_, **__: "test-key")
     fresh = [{"id": "fresh-model", "type": "text", "model_spec": {"capabilities": {}}}]
-    monkeypatch.setattr("llm_venice.models.fetch_models", lambda _key: fresh)
+    httpx2_mock.add_response(json={"data": fresh})
 
     registered = []
     register_venice_models(lambda model, async_model=None, aliases=None: registered.append(model))
@@ -248,7 +242,7 @@ def test_corrupt_cache_is_rebuilt_when_key_available(
 
 
 def test_corrupt_cache_and_failed_fetch_warns(
-    monkeypatch, tmp_path, capsys, clear_registration_warnings
+    monkeypatch, tmp_path, capsys, clear_registration_warnings, httpx2_mock
 ):
     """If rebuilding fails too, warn and keep the broken file for inspection."""
     monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
@@ -256,13 +250,7 @@ def test_corrupt_cache_and_failed_fetch_warns(
     cache.write_text("not json")
     monkeypatch.setattr(llm, "get_key", lambda *_, **__: "test-key")
 
-    def fetch_failure(_key):
-        raise httpx2.RequestError(
-            "Network down",
-            request=httpx2.Request("GET", "https://api.venice.ai/api/v1/models"),
-        )
-
-    monkeypatch.setattr("llm_venice.models.fetch_models", fetch_failure)
+    httpx2_mock.add_exception(httpx2.ReadError("Network down"))
 
     registered = []
     register_venice_models(lambda model, async_model=None, aliases=None: registered.append(model))
@@ -290,7 +278,7 @@ def test_malformed_entries_are_skipped(monkeypatch, tmp_path):
     registered = []
     register_venice_models(lambda model, async_model=None, aliases=None: registered.append(model))
 
-    assert [m.model_id for m in registered] == ["venice/null-spec", "venice/ok"]
+    assert [m.model_id for m in registered] == ["venice/ok"]
 
 
 @pytest.mark.parametrize(
@@ -304,8 +292,8 @@ def test_malformed_entries_are_skipped(monkeypatch, tmp_path):
         {"id": "list-constraints", "type": "image", "model_spec": {"constraints": ["broken"]}},
     ],
 )
-def test_malformed_nested_fields_are_skipped(monkeypatch, tmp_path, bad_entry):
-    """Non-dict model_spec, capabilities and constraints values are skipped, not read."""
+def test_malformed_metadata_does_not_break_registration(monkeypatch, tmp_path, bad_entry):
+    """Invalid structures are skipped; optional constraint metadata falls back safely."""
     monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
     (tmp_path / "venice_models.json").write_text(
         json.dumps(
@@ -320,22 +308,25 @@ def test_malformed_nested_fields_are_skipped(monkeypatch, tmp_path, bad_entry):
     registered = []
     register_venice_models(lambda model, async_model=None, aliases=None: registered.append(model))
 
-    assert [m.model_id for m in registered] == ["venice/ok"]
+    expected = ["venice/ok"]
+    if isinstance(bad_entry["model_spec"], dict):
+        expected.insert(0, f"venice/{bad_entry['id']}")
+    assert [m.model_id for m in registered] == expected
 
 
 def test_persist_failure_still_registers(
-    monkeypatch, tmp_path, capsys, clear_registration_warnings
+    monkeypatch, tmp_path, capsys, clear_registration_warnings, httpx2_mock
 ):
     """Failing to write the cache should not prevent registration."""
     monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
     monkeypatch.setattr(llm, "get_key", lambda *_, **__: "test-key")
     fresh = [{"id": "m", "type": "text", "model_spec": {}}]
-    monkeypatch.setattr("llm_venice.models.fetch_models", lambda _key: fresh)
+    httpx2_mock.add_response(json={"data": fresh})
 
     def persist_failure(*_args, **_kwargs):
         raise PermissionError("read-only")
 
-    monkeypatch.setattr("llm_venice.models.persist_models", persist_failure)
+    monkeypatch.setattr("llm_venice.models.save_catalog", persist_failure)
 
     registered = []
     register_venice_models(lambda model, async_model=None, aliases=None: registered.append(model))

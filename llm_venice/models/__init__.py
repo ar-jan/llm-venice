@@ -1,9 +1,9 @@
 """Venice model implementations."""
 
+from typing import Any
 import pathlib
 import sys
 
-import httpx2
 import llm
 
 from llm_venice.models.chat import (
@@ -15,8 +15,10 @@ from llm_venice.models.chat import (
 from llm_venice.models.audio import AsyncVeniceSpeech, VeniceSpeech
 from llm_venice.models.image import AsyncVeniceImage, VeniceImage
 from llm_venice.constants import VENICE_API_BASE
-from llm_venice.api.refresh import default_models_path, fetch_models, load_models, persist_models
-from llm_venice.api.errors import VeniceAPIError
+from llm_venice.catalog import catalog_path, read_catalog, save_catalog
+from llm_venice.client import VeniceClient
+from llm_venice import _catalog_state
+from llm_venice.errors import VeniceError, VeniceResponseError
 from llm_venice.notices import VeniceNotice, render_notice
 
 # Model registration can run several times per process (once per model lookup),
@@ -33,28 +35,33 @@ def _warn_once(message: str) -> None:
 
 
 def _load_or_fetch_models(venice_models_path: pathlib.Path):
-    """
-    Return the Venice model list, or None if it is unavailable.
-
-    Uses the cached file when it is readable. A missing or unreadable cache is
-    (re)built from the API when a key is available. Never raises: a broken
-    cache or network failure must not break unrelated llm commands.
-    """
+    """Cache first; bootstrap once per path/key with a bounded timeout."""
     cache_error = None
-    if venice_models_path.exists():
-        try:
-            return load_models(venice_models_path)
-        except (OSError, ValueError) as exc:
-            cache_error = exc
-
-    key = llm.get_key("", "venice", "LLM_VENICE_KEY")
+    try:
+        return read_catalog(venice_models_path)
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError) as exc:
+        cache_error = exc
+    try:
+        key = llm.get_key(None, "venice", "LLM_VENICE_KEY")
+    except (OSError, ValueError, llm.NeedsKeyException):
+        key = None
+    token = (str(venice_models_path.resolve()), key or "")
+    if token in _catalog_state.fetched_catalogs:
+        return _catalog_state.fetched_catalogs[token]
     models = None
-    if key:
+    if key and token not in _catalog_state.failed_bootstraps:
         try:
-            models = fetch_models(key)
-        except (httpx2.RequestError, ValueError, VeniceAPIError):
+            with VeniceClient(key=key, timeout=5.0) as client:
+                models = client.list_models()
+            if not models:
+                raise VeniceResponseError("Fetching model list", "no usable models returned")
+        except VeniceError as exc:
+            _catalog_state.failed_bootstraps.add(token)
+            if cache_error is None:
+                _warn_once(f"could not fetch Venice model catalog: {exc}; run 'llm venice refresh'")
             models = None
-
     if models is None:
         if cache_error is not None:
             _warn_once(
@@ -62,93 +69,46 @@ def _load_or_fetch_models(venice_models_path: pathlib.Path):
                 f"({cache_error}); run 'llm venice refresh' to rebuild it"
             )
         return None
-
     try:
-        persist_models(models, venice_models_path)
+        save_catalog(models, venice_models_path)
     except OSError as exc:
+        _catalog_state.fetched_catalogs[token] = models
         _warn_once(f"could not write Venice model cache {venice_models_path}: {exc}")
     return models
 
 
 def register_venice_models(register):
-    """
-    Register all Venice models with the LLM plugin system.
-
-    Args:
-        register: The LLM registration function
-    """
-    models = _load_or_fetch_models(default_models_path())
-    if not models:
-        return
-
-    for model in models:
-        if not isinstance(model, dict) or not isinstance(model.get("id"), str):
+    """Register concrete online IDs, using the same metadata for sync and async."""
+    models = _load_or_fetch_models(catalog_path())
+    for model in models or []:
+        spec = model.get("model_spec") or {}
+        if spec.get("offline") is True:
             continue
-        model_id = model["id"]
-        model_spec = model.get("model_spec") or {}
-        if not isinstance(model_spec, dict):
-            continue
-        capabilities = model_spec.get("capabilities") or {}
+        capabilities = spec.get("capabilities") or {}
         if not isinstance(capabilities, dict):
-            continue
-        constraints = model_spec.get("constraints")
-        if constraints is not None and not isinstance(constraints, dict):
-            continue
-        supports_web_search = model_spec.get(
-            "supportsWebSearch",
-            capabilities.get("supportsWebSearch", False),
-        )
-        supports_x_search = model_spec.get(
-            "supportsXSearch",
-            capabilities.get("supportsXSearch", False),
-        )
-
-        if model.get("type") == "text":
-            model_instance = VeniceChat(
-                model_id=f"venice/{model_id}",
-                model_name=model_id,
+            capabilities = {}
+        constraints = spec.get("constraints")
+        if not isinstance(constraints, dict):
+            constraints = None
+        common: dict[str, Any] = dict(model_id=model["id"], model_name=model["id"], model_spec=spec)
+        web = spec.get("supportsWebSearch", capabilities.get("supportsWebSearch")) is True
+        x_search = spec.get("supportsXSearch", capabilities.get("supportsXSearch")) is True
+        if model["type"] == "text":
+            common.update(
                 api_base=VENICE_API_BASE,
                 can_stream=True,
-                vision=capabilities.get("supportsVision", False),
-                supports_schema=capabilities.get("supportsResponseSchema", False),
-                supports_tools=capabilities.get("supportsFunctionCalling", False),
-                supports_web_search=supports_web_search,
-                supports_x_search=supports_x_search,
+                vision=capabilities.get("supportsVision") is True,
+                supports_schema=capabilities.get("supportsResponseSchema") is True,
+                supports_tools=capabilities.get("supportsFunctionCalling") is True,
+                supports_web_search=web,
+                supports_x_search=x_search,
             )
-            async_model_instance = AsyncVeniceChat(
-                model_id=f"venice/{model_id}",
-                model_name=model_id,
-                api_base=VENICE_API_BASE,
-                can_stream=True,
-                vision=capabilities.get("supportsVision", False),
-                supports_schema=capabilities.get("supportsResponseSchema", False),
-                supports_tools=capabilities.get("supportsFunctionCalling", False),
-                supports_web_search=supports_web_search,
-                supports_x_search=supports_x_search,
-            )
-            register(model_instance, async_model=async_model_instance)
-        elif model.get("type") == "image":
-            model_instance = VeniceImage(
-                model_id=model_id,
-                model_name=model_id,
-                image_constraints=constraints,
-                supports_web_search=supports_web_search,
-            )
-            async_model_instance = AsyncVeniceImage(
-                model_id=model_id,
-                model_name=model_id,
-                image_constraints=constraints,
-                supports_web_search=supports_web_search,
-            )
-            register(
-                model_instance,
-                async_model=async_model_instance,
-            )
-        elif model.get("type") == "tts":
-            register(
-                VeniceSpeech(model_id=model_id, model_name=model_id),
-                async_model=AsyncVeniceSpeech(model_id=model_id, model_name=model_id),
-            )
+            register(VeniceChat(**common), async_model=AsyncVeniceChat(**common))
+        elif model["type"] == "image":
+            common.update(image_constraints=constraints, supports_web_search=web)
+            register(VeniceImage(**common), async_model=AsyncVeniceImage(**common))
+        elif model["type"] == "tts":
+            register(VeniceSpeech(**common), async_model=AsyncVeniceSpeech(**common))
 
 
 __all__ = [

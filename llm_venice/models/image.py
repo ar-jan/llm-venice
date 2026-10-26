@@ -10,6 +10,7 @@ from typing import Any, Literal, Optional, Union
 
 import httpx2
 import llm
+from ._common import initialize_model, warn_deprecated
 from llm.utils import logging_client
 from pydantic import ConfigDict, Field, model_validator
 
@@ -405,13 +406,19 @@ class VeniceImage(llm.KeyModel):
     can_stream = False
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
+    model_name: str
+    model_spec: dict
     supports_web_search = False
 
     def __init__(
-        self, model_id, model_name=None, image_constraints=None, supports_web_search=False
+        self,
+        model_id,
+        model_name=None,
+        image_constraints=None,
+        supports_web_search=False,
+        model_spec=None,
     ):
-        self.model_id = f"venice/{model_id}"
-        self.model_name = model_name or model_id
+        initialize_model(self, model_id, model_name, model_spec)
         self.image_constraints = image_constraints
         self.supports_web_search = supports_web_search
 
@@ -423,6 +430,7 @@ class VeniceImage(llm.KeyModel):
 
     def execute(self, prompt, stream, response, conversation=None, key=None):
         """Execute image generation request."""
+        warn_deprecated(self)
         try:
             api_key = require_model_key(self, key)
             try:
@@ -471,13 +479,19 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
     can_stream = False
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
+    model_name: str
+    model_spec: dict
     supports_web_search = False
 
     def __init__(
-        self, model_id, model_name=None, image_constraints=None, supports_web_search=False
+        self,
+        model_id,
+        model_name=None,
+        image_constraints=None,
+        supports_web_search=False,
+        model_spec=None,
     ):
-        self.model_id = f"venice/{model_id}"
-        self.model_name = model_name or model_id
+        initialize_model(self, model_id, model_name, model_spec)
         self.image_constraints = image_constraints
         self.supports_web_search = supports_web_search
 
@@ -489,6 +503,7 @@ class AsyncVeniceImage(llm.AsyncKeyModel):
 
     async def execute(self, prompt, stream, response, conversation=None, key=None):
         """Execute image generation request asynchronously."""
+        warn_deprecated(self)
         try:
             api_key = require_model_key(self, key)
             try:

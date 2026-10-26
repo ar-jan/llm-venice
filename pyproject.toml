@@ -71,7 +71,7 @@ line-ending = "lf"
 [tool.pyright]
 strict = [
     "llm_venice/errors.py", "llm_venice/types.py", "llm_venice/params.py",
-    "llm_venice/client.py", "llm_venice/_logging.py", "llm_venice/results.py", "llm_venice/_endpoints.py", "llm_venice/_http.py",
+    "llm_venice/catalog.py", "llm_venice/client.py", "llm_venice/_logging.py", "llm_venice/results.py", "llm_venice/_endpoints.py", "llm_venice/_http.py",
 ]
 include = [
     "llm_venice",
