@@ -17,6 +17,7 @@ import llm
 from llm.utils import logging_client
 from pydantic import Field
 
+from llm_venice._files import try_rename_no_replace
 from llm_venice.api.client import get_auth_headers_with_content_type
 from llm_venice.api.errors import VeniceAPIError, raise_api_error
 from llm_venice.constants import ENDPOINT_AUDIO_SPEECH
@@ -375,9 +376,10 @@ def _publish_audio_file(
     """
     Publish complete audio without replacing another writer's file by default.
 
-    A hard link atomically creates the destination or fails if it exists, even
-    for a dangling symlink. Staging lives in the same directory/filesystem.
-    Unsupported hard links fail safely, leaving the completed staging file.
+    Prefer native exclusive rename, falling back to a hard link only when that
+    operation is unsupported. Both refuse existing paths, including dangling
+    symlinks. Staging lives in the same directory/filesystem. If neither method
+    is supported, fail safely and leave the completed staging file.
     Explicit overwrite uses replace and preserves regular-file access modes.
     """
     if overwrite:
@@ -402,6 +404,8 @@ def _publish_audio_file(
     candidate = output_path
     for _ in range(5):
         try:
+            if try_rename_no_replace(part_path, candidate):
+                return candidate
             os.link(part_path, candidate)
         except FileExistsError:
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
