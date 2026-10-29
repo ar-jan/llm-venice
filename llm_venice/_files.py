@@ -5,6 +5,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 import asyncio
 import ctypes
+import datetime
 import errno
 from functools import lru_cache
 import os
@@ -132,6 +133,31 @@ def publish_file(
     except OSError as exc:
         return Publication(destination, exc, staging)
     return Publication(destination)
+
+
+def publish_media_file(
+    staging: pathlib.Path, destination: pathlib.Path, *, overwrite: bool = False
+) -> Publication:
+    """Publish generated media, picking a timestamped name if another writer won the path."""
+    candidate = destination
+    for _ in range(5):
+        try:
+            outcome = publish_file(staging, candidate, overwrite=overwrite)
+        except FileExistsError:
+            if overwrite:
+                raise
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            candidate = destination.with_name(f"{destination.stem}_{timestamp}{destination.suffix}")
+            continue
+        if outcome.cleanup_error is not None:
+            with suppress(OSError, ValueError):
+                print(
+                    f"Warning: file saved to {outcome.path}; could not remove staging file "
+                    f"{outcome.staging_path}: {outcome.cleanup_error}",
+                    file=sys.stderr,
+                )
+        return outcome
+    raise FileExistsError(f"could not publish file without overwriting a file at {destination}")
 
 
 def retain_partial(staging: pathlib.Path, error: BaseException) -> None:

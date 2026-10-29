@@ -11,13 +11,6 @@ import llm
 from llm import NeedsKeyException
 
 
-def get_venice_key(explicit_key: Optional[str] = None) -> str:
-    """Resolve a key, preserving llm's missing-key exception contract."""
-    from ._http import resolve_key
-
-    return resolve_key(explicit_key)
-
-
 def require_model_key(
     model: Union[llm.KeyModel, llm.AsyncKeyModel], explicit_key: Optional[str] = None
 ) -> str:
@@ -103,8 +96,6 @@ def get_unique_filepath(
 
 def validate_output_directory(
     output_dir: Optional[Union[pathlib.Path, str]],
-    *,
-    create_if_missing: bool = False,
 ) -> Optional[pathlib.Path]:
     """
     Validate that an output directory is writable.

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from llm_venice.client import VeniceClient
 from llm_venice._files import write_chunks
-from llm_venice.models.audio import _publish_media_file
+from llm_venice._files import publish_media_file
 from llm_venice.errors import VeniceError
 from llm_venice.cli.errors import handle_cli_error
 
@@ -82,7 +82,7 @@ def create_upscale_command():
             if target.is_dir():
                 target = target / default.name
             saved_path = write_chunks(
-                [result.data], target, overwrite=overwrite, publish=_publish_media_file
+                [result.data], target, overwrite=overwrite, publish=publish_media_file
             ).path
         except (VeniceError, ValueError, OSError) as e:
             handle_cli_error(e)

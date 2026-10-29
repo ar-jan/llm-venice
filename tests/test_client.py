@@ -411,6 +411,18 @@ def test_async_cancel_waits_for_running_file_write(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("is_async", [False, True])
+def test_logging_shortens_long_strings(is_async, httpx2_mock, monkeypatch, capsys):
+    monkeypatch.setenv("LLM_VENICE_SHOW_RESPONSES", "1")
+    encoded = base64.b64encode(PNG * 100).decode()
+    httpx2_mock.add_response(json={"images": [encoded], "id": "short"})
+    invoke(is_async, "generate_image", "m", "prompt")
+    output = capsys.readouterr().err
+    assert encoded not in output
+    assert f"{encoded[:64]}...[{len(encoded)} chars]" in output
+    assert '"id": "short"' in output
+
+
+@pytest.mark.parametrize("is_async", [False, True])
 def test_binary_safe_logging_and_key_redaction(is_async, httpx2_mock, monkeypatch, capsys):
     monkeypatch.setenv("LLM_VENICE_SHOW_RESPONSES", "1")
     httpx2_mock.add_response(

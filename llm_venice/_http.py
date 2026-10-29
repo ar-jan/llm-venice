@@ -1,5 +1,6 @@
 """Shared HTTP preparation and error mapping; transport lives in client.py."""
 
+from functools import lru_cache
 from importlib.metadata import version
 from typing import Any, NoReturn, cast
 
@@ -18,11 +19,16 @@ def resolve_key(key: str | None) -> str:
     return resolved
 
 
+@lru_cache(maxsize=1)
+def _user_agent() -> str:
+    return f"llm-venice/{version('llm-venice')} llm/{version('llm')}"
+
+
 def request_headers(key: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {key}",
         "Accept-Encoding": "gzip",
-        "User-Agent": f"llm-venice/{version('llm-venice')} llm/{version('llm')}",
+        "User-Agent": _user_agent(),
     }
 
 

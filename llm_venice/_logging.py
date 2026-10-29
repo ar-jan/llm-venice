@@ -18,6 +18,10 @@ _SECRET_KEYS = {
     "secret",
 }
 
+# Long strings (mostly base64 image data) are shortened so logs stay readable.
+_MAX_STRING = 256
+_STRING_PREVIEW = 64
+
 
 def enabled() -> bool:
     value = os.environ.get(
@@ -34,6 +38,16 @@ def redact(value: Any) -> Any:
         }
     if isinstance(value, list):
         return [redact(item) for item in cast(list[Any], value)]
+    return value
+
+
+def shorten(value: Any) -> Any:
+    if isinstance(value, str) and len(value) > _MAX_STRING:
+        return f"{value[:_STRING_PREVIEW]}...[{len(value)} chars]"
+    if isinstance(value, dict):
+        return {k: shorten(v) for k, v in cast(dict[str, Any], value).items()}
+    if isinstance(value, list):
+        return [shorten(item) for item in cast(list[Any], value)]
     return value
 
 
@@ -58,7 +72,7 @@ def log_buffered(response: httpx2.Response) -> None:
         except (ValueError, UnicodeError):
             print("[invalid JSON body]", file=sys.stderr)
         else:
-            print(json.dumps(redact(body)), file=sys.stderr)
+            print(json.dumps(shorten(redact(body))), file=sys.stderr)
     else:
         print(f"[{len(response.content)} bytes]", file=sys.stderr)
 

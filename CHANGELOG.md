@@ -28,7 +28,7 @@ attributes but are excluded from `__all__`.
 | Old (0.9) | New |
 |---|---|
 | `fetch_models(key)` | `with VeniceClient(key=key) as client: models = client.list_models()` |
-| `persist_models(models, path)` | `save_catalog(models, path)` / `refresh_catalog()` |
+| `persist_models(models, path)` | `from llm_venice.catalog import save_catalog`; `save_catalog(models, path)` / `refresh_catalog()` |
 | `list_characters(key, web_enabled="true")` → envelope dict | `client.list_characters(web_enabled=True)` → `list[Character]` |
 | `persist_characters(data)` | removed from public API (CLI-internal) |
 | `list_api_keys(headers)` / `get_rate_limits(headers)` / `get_rate_limits_log(headers)` | `client.list_api_keys()` / `client.get_rate_limits()` / `client.get_rate_limits_log()` |

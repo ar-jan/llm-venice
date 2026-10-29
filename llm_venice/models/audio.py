@@ -1,7 +1,6 @@
 """Venice audio/text-to-speech model implementation."""
 
 from contextlib import suppress
-import datetime
 import pathlib
 import sys
 import time
@@ -135,28 +134,6 @@ class DownloadProgress:
         self._last_update = now
 
 
-def _publish_media_file(part_path, output_path, *, overwrite):
-    candidate = output_path
-    for _ in range(5):
-        try:
-            outcome = _files.publish_file(part_path, candidate, overwrite=overwrite)
-        except FileExistsError:
-            if overwrite:
-                raise
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            candidate = output_path.with_name(f"{output_path.stem}_{timestamp}{output_path.suffix}")
-            continue
-        if outcome.cleanup_error is not None:
-            with suppress(OSError, ValueError):
-                print(
-                    f"Warning: audio saved to {outcome.path}; could not remove staging file "
-                    f"{outcome.staging_path}: {outcome.cleanup_error}",
-                    file=sys.stderr,
-                )
-        return outcome
-    raise FileExistsError(f"could not publish audio without overwriting a file at {output_path}")
-
-
 def _partial_notice(error):
     path = getattr(error, "partial_path", None)
     if path is None:
@@ -179,7 +156,7 @@ def write_audio_file(chunks, output_path, reporter, *, overwrite=False):
 
     try:
         outcome = _files.write_chunks(
-            progress_chunks(), output_path, overwrite=overwrite, publish=_publish_media_file
+            progress_chunks(), output_path, overwrite=overwrite, publish=_files.publish_media_file
         )
     except BaseException as exc:
         _partial_notice(exc)
@@ -196,7 +173,7 @@ async def write_async_audio_file(chunks, output_path, reporter, *, overwrite=Fal
 
     try:
         outcome = await _files.write_async_chunks(
-            progress_chunks(), output_path, overwrite=overwrite, publish=_publish_media_file
+            progress_chunks(), output_path, overwrite=overwrite, publish=_files.publish_media_file
         )
     except BaseException as exc:
         _partial_notice(exc)

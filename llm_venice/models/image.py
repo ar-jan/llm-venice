@@ -9,8 +9,7 @@ from ._common import initialize_model, warn_deprecated, model_error_boundary
 from llm_venice.client import VeniceClient, AsyncVeniceClient
 from llm_venice.params import ImageParams, copy_params
 from llm_venice.results import ImageResult
-from llm_venice._files import async_file_call, write_chunks
-from .audio import _publish_media_file
+from llm_venice._files import async_file_call, publish_media_file, write_chunks
 from pydantic import Field
 
 from llm_venice.utils import (
@@ -76,7 +75,7 @@ def _image_options(model, prompt):
     params = copy_params(ImageParams, opts)
     if params.enable_web_search and not model.supports_web_search:
         raise ValueError(f"Model {model.model_id} does not support web search")
-    return opts, params, []
+    return opts, params
 
 
 def _save_adapter_images(model, opts, result):
@@ -95,7 +94,7 @@ def _save_adapter_images(model, opts, result):
         path = get_unique_filepath(directory, filename, opts.overwrite_files)
         paths.append(
             write_chunks(
-                [image.data], path, overwrite=opts.overwrite_files, publish=_publish_media_file
+                [image.data], path, overwrite=opts.overwrite_files, publish=publish_media_file
             ).path
         )
     return paths
@@ -111,7 +110,8 @@ def _image_response(response, result: ImageResult, paths):
     }
 
 
-def _image_notices(result, notices):
+def _image_notices(result):
+    notices: list[VeniceNotice] = []
     append_blurred_notice(notices, is_blurred=result.blurred)
     if result.content_policy_violation_count:
         notices.append(
@@ -155,12 +155,12 @@ class VeniceImage(CatalogOptionsMixin, llm.KeyModel):
     def execute(self, prompt, stream, response, conversation=None, key=None):
         with model_error_boundary():
             api_key = require_model_key(self, key)
-            opts, params, notices = _image_options(self, prompt)
+            opts, params = _image_options(self, prompt)
             with VeniceClient(key=api_key) as client:
                 result = client.generate_image(self.model_name, prompt.prompt, params)
             paths = [] if result.content_violation else _save_adapter_images(self, opts, result)
             _image_response(response, result, paths)
-            rendered = _image_notices(result, notices)
+            rendered = _image_notices(result)
             if rendered:
                 yield rendered
             if result.content_violation:
@@ -200,7 +200,7 @@ class AsyncVeniceImage(CatalogOptionsMixin, llm.AsyncKeyModel):
     async def execute(self, prompt, stream, response, conversation=None, key=None):
         with model_error_boundary():
             api_key = require_model_key(self, key)
-            opts, params, notices = _image_options(self, prompt)
+            opts, params = _image_options(self, prompt)
             async with AsyncVeniceClient(key=api_key) as client:
                 result = await client.generate_image(self.model_name, prompt.prompt, params)
             paths = (
@@ -209,7 +209,7 @@ class AsyncVeniceImage(CatalogOptionsMixin, llm.AsyncKeyModel):
                 else await async_file_call(_save_adapter_images, self, opts, result)
             )
             _image_response(response, result, paths)
-            rendered = _image_notices(result, notices)
+            rendered = _image_notices(result)
             if rendered:
                 yield rendered
             if result.content_violation:

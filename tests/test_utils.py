@@ -2,15 +2,7 @@ import click
 import llm
 import pytest
 
-from llm_venice.utils import get_venice_key, require_model_key, validate_output_directory
-
-
-def test_get_venice_key_defaults_to_needs_key(monkeypatch):
-    """Default behavior should raise NeedsKeyException for library usage."""
-    monkeypatch.setattr(llm, "get_key", lambda *_, **__: None)
-
-    with pytest.raises(llm.NeedsKeyException):
-        get_venice_key()
+from llm_venice.utils import require_model_key, validate_output_directory
 
 
 @pytest.mark.parametrize("value", [None, ""])
@@ -62,7 +54,7 @@ def test_directory_validation_never_prompts(tmp_path, monkeypatch):
         pytest.fail("output directories must not prompt")
 
     monkeypatch.setattr(click, "confirm", no_prompt)
-    assert validate_output_directory(tmp_path / "new", create_if_missing=True) == tmp_path / "new"
+    assert validate_output_directory(tmp_path / "new") == tmp_path / "new"
 
 
 def test_library_modules_do_not_import_click():

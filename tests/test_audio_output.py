@@ -250,4 +250,4 @@ def test_staging_cleanup_failure_still_reports_success(tmp_path, monkeypatch, ca
     assert saved == target
     assert target.read_bytes() == b"audio"
     assert part.read_bytes() == b"audio"
-    assert f"audio saved to {target}" in capsys.readouterr().err
+    assert f"file saved to {target}" in capsys.readouterr().err
