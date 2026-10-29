@@ -65,6 +65,18 @@ def test_constrained_boolean_option_still_coerces_cli_strings(cls):
             opts.model_validate({"transparent_background": value})
 
 
+@pytest.mark.parametrize("cls", [VeniceImage, AsyncVeniceImage])
+def test_supported_boolean_option_accepts_both_values(cls):
+    """True means transparency is allowed, so neither value is constrained."""
+    opts = cls("m", image_constraints={"supportsTransparentBackground": True}).Options
+    for value, expected in (("true", True), (True, True), ("false", False), (False, False)):
+        assert (
+            opts.model_validate({"transparent_background": value}).transparent_background
+            is expected
+        )
+    assert opts.model_validate({}).transparent_background is None
+
+
 @pytest.mark.parametrize("is_async", [False, True])
 def test_prompt_limit_is_checked_outside_options(is_async, httpx2_mock, mock_venice_api_key):
     model: Any = (AsyncVeniceImage if is_async else VeniceImage)(
