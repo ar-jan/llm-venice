@@ -1,12 +1,19 @@
 """Platform bindings for publishing files without replacing an existing path."""
 
+from collections.abc import AsyncIterable, Iterable
+from contextlib import suppress
+from dataclasses import dataclass
+import asyncio
 import ctypes
+import datetime
 import errno
 from functools import lru_cache
 import os
 import pathlib
 import sys
-from typing import Callable, Optional
+import stat
+import tempfile
+from typing import Any, BinaryIO, Callable, Optional, TypeVar
 
 
 _UNSUPPORTED = {errno.ENOSYS, errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP}
@@ -75,3 +82,187 @@ def try_rename_no_replace(source: pathlib.Path, destination: pathlib.Path) -> bo
         if error in _UNSUPPORTED:
             return False
         raise OSError(error, os.strerror(error), os.fspath(source), None, os.fspath(destination))
+
+
+@dataclass(frozen=True)
+class Publication:
+    """Completed publication, possibly with a harmless extra staging link."""
+
+    path: pathlib.Path
+    cleanup_error: OSError | None = None
+    staging_path: pathlib.Path | None = None
+
+
+def open_staging_file(output_path: pathlib.Path) -> tuple[BinaryIO, pathlib.Path]:
+    """Claim private staging in the destination directory, never following links."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    preferred = output_path.with_name(f"{output_path.name}.part")
+    try:
+        fd = os.open(preferred, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        fd, name = tempfile.mkstemp(
+            dir=output_path.parent, prefix=f".{output_path.name}.", suffix=".part"
+        )
+        preferred = pathlib.Path(name)
+    return os.fdopen(fd, "wb"), preferred
+
+
+def publish_file(
+    staging: pathlib.Path, destination: pathlib.Path, *, overwrite: bool = False
+) -> Publication:
+    """Publish once, atomically. Filename retries belong to the adapter caller."""
+    if overwrite:
+        try:
+            existing = destination.lstat()
+        except FileNotFoundError:
+            existing = None
+        try:
+            if existing is not None and stat.S_ISREG(existing.st_mode):
+                staging.chmod(stat.S_IMODE(existing.st_mode) & 0o777)
+            os.replace(staging, destination)
+        except BaseException:
+            with suppress(OSError):
+                staging.chmod(0o600)
+            raise
+        return Publication(destination)
+    if try_rename_no_replace(staging, destination):
+        return Publication(destination)
+    os.link(staging, destination)
+    try:
+        staging.unlink()
+    except OSError as exc:
+        return Publication(destination, exc, staging)
+    return Publication(destination)
+
+
+def publish_media_file(
+    staging: pathlib.Path, destination: pathlib.Path, *, overwrite: bool = False
+) -> Publication:
+    """Publish generated media, picking a timestamped name if another writer won the path."""
+    candidate = destination
+    for _ in range(5):
+        try:
+            outcome = publish_file(staging, candidate, overwrite=overwrite)
+        except FileExistsError:
+            if overwrite:
+                raise
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            candidate = destination.with_name(f"{destination.stem}_{timestamp}{destination.suffix}")
+            continue
+        if outcome.cleanup_error is not None:
+            with suppress(OSError, ValueError):
+                print(
+                    f"Warning: file saved to {outcome.path}; could not remove staging file "
+                    f"{outcome.staging_path}: {outcome.cleanup_error}",
+                    file=sys.stderr,
+                )
+        return outcome
+    raise FileExistsError(f"could not publish file without overwriting a file at {destination}")
+
+
+def retain_partial(staging: pathlib.Path, error: BaseException) -> None:
+    """Remove empty staging; attach nonempty/unknown-size staging to the error."""
+    try:
+        if staging.stat().st_size == 0:
+            staging.unlink()
+            return
+    except FileNotFoundError:
+        return
+    except OSError:
+        pass
+    error.partial_path = staging  # type: ignore[attr-defined]
+
+
+class _RecordingPublish:
+    """Remember a completed publication so a late error cannot hide the saved path."""
+
+    def __init__(self, publish: Callable[..., Publication]):
+        self._publish = publish
+        self.publication: Publication | None = None
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Publication:
+        self.publication = self._publish(*args, **kwargs)
+        return self.publication
+
+
+def _annotate_failure(
+    staging: pathlib.Path, error: BaseException, recorder: _RecordingPublish
+) -> None:
+    """Attach the published path, or retain partial staging if nothing was published."""
+    if recorder.publication is not None:
+        # Any staging left over is a harmless extra link to the complete file.
+        error.published_path = recorder.publication.path  # type: ignore[attr-defined]
+    else:
+        retain_partial(staging, error)
+
+
+def write_chunks(
+    chunks: Iterable[bytes],
+    path: str | os.PathLike[str],
+    *,
+    overwrite: bool = False,
+    publish: Callable[..., Publication] = publish_file,
+) -> Publication:
+    """Write privately, then publish. Preserve the original error and retained bytes."""
+    destination = pathlib.Path(path)
+    if destination.is_dir():
+        raise IsADirectoryError(str(destination))
+    handle, staging = open_staging_file(destination)
+    recorder = _RecordingPublish(publish)
+    try:
+        for chunk in chunks:
+            handle.write(chunk)
+        handle.close()
+        return recorder(staging, destination, overwrite=overwrite)
+    except BaseException as exc:
+        with suppress(OSError, ValueError):
+            handle.close()
+        _annotate_failure(staging, exc, recorder)
+        raise
+
+
+_R = TypeVar("_R")
+
+
+async def async_file_call(function: Callable[..., _R], *args: Any, **kwargs: Any) -> _R:
+    """Wait for a running file operation before propagating cancellation."""
+    task = asyncio.create_task(asyncio.to_thread(function, *args, **kwargs))
+    try:
+        return await asyncio.shield(task)
+    except BaseException:
+        # Repeated cancellation must not race close/unlink against a running write.
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except BaseException:
+                pass
+        # Retrieve any exception, keeping the original cancellation/failure.
+        if not task.cancelled():
+            task.exception()
+        raise
+
+
+async def write_async_chunks(
+    chunks: AsyncIterable[bytes],
+    path: str | os.PathLike[str],
+    *,
+    overwrite: bool = False,
+    publish: Callable[..., Publication] = publish_file,
+) -> Publication:
+    """Async network consumption with cancellation-safe file writes and shared publication."""
+    destination = pathlib.Path(path)
+    if destination.is_dir():
+        raise IsADirectoryError(str(destination))
+    handle, staging = open_staging_file(destination)
+    recorder = _RecordingPublish(publish)
+    try:
+        async for chunk in chunks:
+            await async_file_call(handle.write, chunk)
+        await async_file_call(handle.close)
+        # Cancellation during publish waits for it, then raises without its result.
+        return await async_file_call(recorder, staging, destination, overwrite=overwrite)
+    except BaseException as exc:
+        with suppress(OSError, ValueError):
+            handle.close()
+        _annotate_failure(staging, exc, recorder)
+        raise

@@ -10,6 +10,7 @@ import sys
 import pytest
 
 from llm_venice.models import audio
+from llm_venice import _files
 
 
 @pytest.mark.skipif(os.name == "nt", reason="RLIMIT_FSIZE and SIGXFSZ require Unix")
@@ -45,7 +46,7 @@ print(json.dumps({'size': part.stat().st_size, 'published': target.exists()}))
 
 def test_partial_write_failure_keeps_bytes_even_without_progress(tmp_path, monkeypatch, capsys):
     target = tmp_path / "out.mp3"
-    open_staging = audio._open_staging_file
+    open_staging = _files.open_staging_file
     error = OSError("disk full during write")
 
     class PartialWriter:
@@ -63,7 +64,7 @@ def test_partial_write_failure_keeps_bytes_even_without_progress(tmp_path, monke
         file, part = open_staging(path)
         return PartialWriter(file), part
 
-    monkeypatch.setattr(audio, "_open_staging_file", open_partial)
+    monkeypatch.setattr(_files, "open_staging_file", open_partial)
     reporter = audio.DownloadProgress(False)
     with pytest.raises(OSError) as caught:
         audio.write_audio_file([b"abcdefgh"], target, reporter)
@@ -77,7 +78,7 @@ def test_partial_write_failure_keeps_bytes_even_without_progress(tmp_path, monke
 
 def test_empty_file_after_flush_failure_is_removed(tmp_path, monkeypatch, capsys):
     target = tmp_path / "out.mp3"
-    open_staging = audio._open_staging_file
+    open_staging = _files.open_staging_file
     error = OSError("flush failed before any bytes reached disk")
 
     class UnflushedWriter:
@@ -95,7 +96,7 @@ def test_empty_file_after_flush_failure_is_removed(tmp_path, monkeypatch, capsys
         file, part = open_staging(path)
         return UnflushedWriter(file), part
 
-    monkeypatch.setattr(audio, "_open_staging_file", open_unflushed)
+    monkeypatch.setattr(_files, "open_staging_file", open_unflushed)
     reporter = audio.DownloadProgress(False)
     with pytest.raises(OSError) as caught:
         audio.write_audio_file([b"buffered"], target, reporter)
@@ -124,7 +125,7 @@ def test_cleanup_cannot_replace_original_failure(
     # Keep stdout/stderr and pathlib restored before inspecting the result.
     with monkeypatch.context() as patch:
         if cleanup == "close":
-            open_staging = audio._open_staging_file
+            open_staging = _files.open_staging_file
 
             class CloseFailure:
                 def __init__(self, file):
@@ -141,7 +142,7 @@ def test_cleanup_cannot_replace_original_failure(
                 file, staging = open_staging(path)
                 return CloseFailure(file), staging
 
-            patch.setattr(audio, "_open_staging_file", open_failing_close)
+            patch.setattr(_files, "open_staging_file", open_failing_close)
         elif cleanup == "stat":
             real_stat = pathlib.Path.stat
 

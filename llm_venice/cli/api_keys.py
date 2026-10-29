@@ -1,14 +1,13 @@
 """API keys management commands for Venice CLI."""
 
+from datetime import timezone
 import json
 
 import click
-import httpx2
 
-from llm_venice.api import keys as api_keys
-from llm_venice.api.errors import VeniceAPIError
+from llm_venice.client import VeniceClient
+from llm_venice.errors import VeniceError
 from llm_venice.cli.errors import handle_cli_error
-from llm_venice.utils import get_venice_key
 
 
 def create_api_keys_group():
@@ -24,8 +23,7 @@ def create_api_keys_group():
     def api_keys_group(ctx):
         """Manage API keys - list, create, delete, rate-limits"""
         # Retrieve the API key once and store it in context
-        key = get_venice_key(click_exceptions=True)
-        ctx.obj = {"headers": {"Authorization": f"Bearer {key}"}}
+        ctx.obj = {"client": ctx.with_resource(VeniceClient())}
 
         # Default to listing API keys if no subcommand is provided
         if not ctx.invoked_subcommand:
@@ -36,8 +34,8 @@ def create_api_keys_group():
     def list_keys(ctx):
         """List all API keys."""
         try:
-            response = api_keys.list_api_keys(ctx.obj["headers"])
-        except (VeniceAPIError, httpx2.RequestError) as e:
+            response = ctx.obj["client"]._json_operation("keys")
+        except (VeniceError, ValueError, OSError) as e:
             handle_cli_error(e)
         else:
             click.echo(json.dumps(response, indent=2))
@@ -47,8 +45,8 @@ def create_api_keys_group():
     def rate_limits(ctx):
         """Show current rate limits for your API key"""
         try:
-            response = api_keys.get_rate_limits(ctx.obj["headers"])
-        except (VeniceAPIError, httpx2.RequestError) as e:
+            response = ctx.obj["client"]._json_operation("rate_limits")
+        except (VeniceError, ValueError, OSError) as e:
             handle_cli_error(e)
         else:
             click.echo(json.dumps(response, indent=2))
@@ -58,8 +56,8 @@ def create_api_keys_group():
     def rate_limits_log(ctx):
         """Show the last 50 rate limit logs for the account"""
         try:
-            response = api_keys.get_rate_limits_log(ctx.obj["headers"])
-        except (VeniceAPIError, httpx2.RequestError) as e:
+            response = ctx.obj["client"]._json_operation("rate_limits_log")
+        except (VeniceError, ValueError, OSError) as e:
             handle_cli_error(e)
         else:
             click.echo(json.dumps(response, indent=2))
@@ -100,17 +98,17 @@ def create_api_keys_group():
     @click.pass_context
     def create_key(ctx, description, key_type, expiration_date, limits_vcu, limits_usd):
         """Create a new API key."""
-        expiration_str = expiration_date.strftime("%Y-%m-%dT%H:%M:%SZ") if expiration_date else None
+        expiration = expiration_date.replace(tzinfo=timezone.utc) if expiration_date else None
         try:
-            response = api_keys.create_api_key(
-                ctx.obj["headers"],
-                description,
-                key_type,
-                expiration_str,
-                limits_vcu,
-                limits_usd,
+            response = ctx.obj["client"]._json_operation(
+                "create_key",
+                description=description,
+                key_type=key_type,
+                expires_at=expiration,
+                limit_vcu=limits_vcu,
+                limit_usd=limits_usd,
             )
-        except (VeniceAPIError, httpx2.RequestError) as e:
+        except (VeniceError, ValueError, OSError) as e:
             handle_cli_error(e)
         else:
             click.echo(json.dumps(response, indent=2))
@@ -121,8 +119,8 @@ def create_api_keys_group():
     def delete_key(ctx, api_key_id):
         """Delete an API key by ID."""
         try:
-            response = api_keys.delete_api_key(ctx.obj["headers"], api_key_id)
-        except (VeniceAPIError, httpx2.RequestError) as e:
+            response = ctx.obj["client"]._json_operation("delete_key", id=api_key_id)
+        except (VeniceError, ValueError, OSError) as e:
             handle_cli_error(e)
         else:
             click.echo(json.dumps(response, indent=2))

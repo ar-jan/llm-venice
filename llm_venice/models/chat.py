@@ -5,12 +5,15 @@ import json
 from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Union
 
 import llm
+from llm_venice._options import CatalogOptionsMixin, normalize_policy
+from ._common import model_error_boundary
+from ._common import initialize_model, warn_deprecated
 from llm.default_plugins.openai_models import AsyncChat, Chat
 from llm_venice.constants import VENICE_PARAMETERS, NON_OPENAI_COMPATIBLE_PARAMS
 from pydantic import Field, field_validator
 
 
-class VeniceChatOptions(Chat.Options):
+class _ChatOptions(Chat.Options):
     """Options for Venice chat models."""
 
     if TYPE_CHECKING:
@@ -354,29 +357,34 @@ def _build_venice_kwargs(model_id: str, supports_web_search: bool, kwargs: Dict)
     return kwargs
 
 
-class VeniceChat(Chat):
+class VeniceChat(CatalogOptionsMixin, Chat):
     """Venice AI chat model."""
 
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
     supports_web_search = False
     supports_x_search = False
+    model_spec: dict
 
     def __init__(
         self,
         *args,
         supports_web_search: bool = False,
         supports_x_search: bool = False,
+        model_spec=None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        # The llm model ID carries the plugin prefix; the API needs the bare ID.
+        initialize_model(self, self.model_id, self.model_name, model_spec)
+        self.catalog_policy = normalize_policy("text", self.model_spec)
         self.supports_web_search = supports_web_search
         self.supports_x_search = supports_x_search
 
     def __str__(self):  # type: ignore[invalid-argument-type]
         return f"Venice Chat: {self.model_id}"
 
-    class Options(VeniceChatOptions):
+    class Options(_ChatOptions):
         pass
 
     @property
@@ -390,36 +398,43 @@ class VeniceChat(Chat):
         return tuple(tools)
 
     def build_kwargs(self, prompt, stream):
+        warn_deprecated(self)
+        with model_error_boundary():
+            self.Options.model_validate(prompt.options.model_dump())
         prompt, server_side_tools = _split_server_side_tools(prompt)
         base_kwargs = super().build_kwargs(prompt, stream)
         base_kwargs = _apply_server_side_tools(base_kwargs, server_side_tools)
         return _build_venice_kwargs(self.model_id, self.supports_web_search, base_kwargs)
 
 
-class AsyncVeniceChat(AsyncChat):
+class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
     """Venice AI async chat model."""
 
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
     supports_web_search = False
     supports_x_search = False
+    model_spec: dict
 
     def __init__(
         self,
         *args,
         supports_web_search: bool = False,
         supports_x_search: bool = False,
+        model_spec=None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        # The llm model ID carries the plugin prefix; the API needs the bare ID.
+        initialize_model(self, self.model_id, self.model_name, model_spec)
+        self.catalog_policy = normalize_policy("text", self.model_spec)
         self.supports_web_search = supports_web_search
         self.supports_x_search = supports_x_search
 
     def __str__(self):  # type: ignore[invalid-argument-type]
         return f"Venice Chat: {self.model_id}"
 
-    class Options(VeniceChatOptions):
-        pass
+    Options = VeniceChat.Options
 
     @property
     def supported_server_side_tools(self) -> tuple[type[llm.ServerSideTool], ...]:
@@ -432,6 +447,9 @@ class AsyncVeniceChat(AsyncChat):
         return tuple(tools)
 
     def build_kwargs(self, prompt, stream):
+        warn_deprecated(self)
+        with model_error_boundary():
+            self.Options.model_validate(prompt.options.model_dump())
         prompt, server_side_tools = _split_server_side_tools(prompt)
         base_kwargs = super().build_kwargs(prompt, stream)
         base_kwargs = _apply_server_side_tools(base_kwargs, server_side_tools)

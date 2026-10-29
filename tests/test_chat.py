@@ -1,9 +1,13 @@
 """Tests for VeniceChat model functionality"""
 
+import asyncio
+
 import pytest
 from pydantic import ValidationError
 from llm import Prompt, Response
-from llm_venice import AsyncVeniceChat, VeniceChat, VeniceChatOptions
+from llm_venice import AsyncVeniceChat, VeniceChat
+
+VeniceChatOptions = VeniceChat.Options
 
 
 def test_venice_chat_options_fields():
@@ -38,6 +42,43 @@ def test_venice_chat_options_fields():
     with pytest.raises(ValidationError) as exc_info:
         VeniceChatOptions(enable_web_search="invalid")
     assert "enable_web_search must be one of" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize("kwargs", [{}, {"model_name": None}])
+def test_direct_construction_sends_unprefixed_model(
+    is_async, kwargs, httpx2_mock, request_json, mock_venice_api_key
+):
+    """Without a model_name, the API receives model_id minus the plugin prefix."""
+    httpx2_mock.add_response(
+        method="POST",
+        url="https://api.venice.ai/api/v1/chat/completions",
+        json={
+            "id": "x",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "llama-3.3-70b",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        },
+    )
+    cls = AsyncVeniceChat if is_async else VeniceChat
+    chat = cls(model_id="llama-3.3-70b", api_base="https://api.venice.ai/api/v1", **kwargs)
+    assert chat.model_id == "venice/llama-3.3-70b"
+    assert chat.model_name == "llama-3.3-70b"
+
+    async def run_async():
+        return await chat.prompt("hi", stream=False).text()  # type: ignore[union-attr]
+
+    text = asyncio.run(run_async()) if is_async else chat.prompt("hi", stream=False).text()
+    assert text == "ok"
+    assert request_json()["model"] == "llama-3.3-70b"
 
 
 def test_venice_chat_build_kwargs_json_schema():
@@ -985,7 +1026,7 @@ def test_new_parameters_request_shape_client_call(monkeypatch):
     and that stream_options is present when streaming.
     """
     from llm import Prompt
-    from llm_venice import VeniceChat, VeniceChatOptions
+    from llm_venice import VeniceChat
 
     captured_kwargs = {}
 

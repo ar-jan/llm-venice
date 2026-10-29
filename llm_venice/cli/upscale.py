@@ -1,11 +1,12 @@
 """Upscale command for Venice CLI."""
 
 import click
-import httpx2
-import llm
+from pathlib import Path
 
-from llm_venice.api.upscale import perform_image_upscale, write_upscaled_image
-from llm_venice.api.errors import VeniceAPIError
+from llm_venice.client import VeniceClient
+from llm_venice._files import write_chunks
+from llm_venice._files import publish_media_file
+from llm_venice.errors import VeniceError
 from llm_venice.cli.errors import handle_cli_error
 
 
@@ -21,10 +22,11 @@ def create_upscale_command():
     @click.argument("image_path", type=click.Path(exists=True, dir_okay=False, readable=True))
     @click.option(
         "--scale",
-        type=click.FloatRange(1, 4),
-        default=2.0,
+        # The endpoint accepts only 2 or 4; reject other values at parse time.
+        type=click.Choice(["2", "4"]),
+        default="2",
         show_default=True,
-        help="Scale factor (between 1 and 4)",
+        help="Scale factor (2 or 4)",
     )
     @click.option(
         "--enhance",
@@ -68,16 +70,22 @@ def create_upscale_command():
     def upscale(**kwargs):
         """Upscale an image using Venice API"""
         try:
-            result = perform_image_upscale(**kwargs)
-        except llm.NeedsKeyException as e:
+            image_path = Path(kwargs.pop("image_path"))
+            output = kwargs.pop("output_path")
+            overwrite = kwargs.pop("overwrite")
+            kwargs["scale"] = float(kwargs["scale"])
+            with VeniceClient() as client:
+                result = client.upscale_image(image_path, **kwargs)
+            extension = "jpg" if result.format == "jpeg" else result.format
+            default = image_path.with_name(f"{image_path.stem}_upscaled.{extension}")
+            target = Path(output) if output else default
+            if target.is_dir():
+                target = target / default.name
+            saved_path = write_chunks(
+                [result.data], target, overwrite=overwrite, publish=publish_media_file
+            ).path
+        except (VeniceError, ValueError, OSError) as e:
             handle_cli_error(e)
-        except VeniceAPIError as e:
-            handle_cli_error(e)
-        except ValueError as e:
-            handle_cli_error(e)
-        except httpx2.RequestError as e:
-            handle_cli_error(e)
-        saved_path = write_upscaled_image(result)
         click.echo(f"Upscaled image saved to {saved_path}")
 
     return upscale

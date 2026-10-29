@@ -4,7 +4,7 @@ from typing import Sequence
 
 import click
 
-from llm_venice.notices import VeniceNotice, render_notice
+from llm_venice._notices import VeniceNotice, render_notice
 
 
 def emit_cli_notices(notices: Sequence[VeniceNotice]) -> None:

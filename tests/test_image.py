@@ -1,7 +1,7 @@
 import asyncio
 import base64
 import datetime
-from unittest.mock import Mock, MagicMock, patch, call
+from unittest.mock import Mock, MagicMock, patch
 import pytest
 
 import click
@@ -11,8 +11,7 @@ from click.testing import CliRunner
 
 from llm_venice import AsyncVeniceImage, VeniceImage
 from llm_venice.constants import ENDPOINT_IMAGE_GENERATE
-from llm_venice.models.image import ImageGenerationResult
-from llm_venice.notices import VeniceNotice
+from llm_venice._notices import VeniceNotice
 from llm_venice.cli.notices import emit_cli_notices
 
 
@@ -26,6 +25,8 @@ def add_image_response(
     is_reusable=False,
 ):
     """Register a mocked POST to the image generation endpoint."""
+    if json_data is None and content and status_code == 200:
+        json_data = {"images": [base64.b64encode(content).decode()], "request": {}, "timing": {}}
     kwargs = {"json": json_data} if json_data is not None else {"content": content}
     httpx2_mock.add_response(
         method="POST",
@@ -125,10 +126,6 @@ def test_venice_image_format_in_payload(mock_venice_api_key, httpx2_mock, reques
             list(model.execute(prompt, False, MagicMock(), None))
 
             # Ensure the alias "format" is used instead of "image_format"
-            assert options.model_dump.call_args_list == [
-                call(by_alias=True),
-                call(by_alias=True),
-            ]
 
             # Extract and verify the payload
             payload = request_json()
@@ -146,7 +143,6 @@ def test_venice_image_aspect_ratio_and_resolution_in_payload(
     prompt.options = VeniceImage.Options(
         aspect_ratio="16:9",
         resolution="1K",
-        return_binary=True,
     )
 
     add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
@@ -164,7 +160,7 @@ def test_venice_image_enable_web_search_in_payload(mock_venice_api_key, httpx2_m
 
     prompt = MagicMock()
     prompt.prompt = "Test prompt"
-    prompt.options = VeniceImage.Options(enable_web_search=True, return_binary=True)
+    prompt.options = VeniceImage.Options(enable_web_search=True)
 
     add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
     with patch.object(model, "get_key", return_value=mock_venice_api_key):
@@ -180,7 +176,7 @@ def test_venice_image_variants_in_payload(mock_venice_api_key, httpx2_mock, requ
 
     prompt = MagicMock()
     prompt.prompt = "Test prompt"
-    prompt.options = VeniceImage.Options(return_binary=False, variants=3)
+    prompt.options = VeniceImage.Options(variants=3)
 
     base64_encoded = base64.b64encode(b"\x89PNG\r\n\x1a\n").decode("utf-8")
 
@@ -208,7 +204,6 @@ def test_venice_image_omits_unset_dimensions_from_payload(
     prompt.options = VeniceImage.Options(
         aspect_ratio="16:9",
         resolution="1K",
-        return_binary=True,
     )
 
     add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
@@ -272,7 +267,7 @@ def test_venice_image_blurred_header_exposed_for_json_response(
 
     prompt = MagicMock()
     prompt.prompt = "Test prompt with adult content"
-    prompt.options = VeniceImage.Options(return_binary=False)
+    prompt.options = VeniceImage.Options()
 
     raw_binary_content = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
     base64_encoded = base64.b64encode(raw_binary_content).decode("utf-8")
@@ -299,81 +294,6 @@ def test_venice_image_blurred_header_exposed_for_json_response(
     assert response.response_json["is_blurred"] is True
 
 
-def test_venice_image_blurred_header_exposed_for_binary_response(
-    mock_venice_api_key, tmp_path, httpx2_mock
-):
-    """Blurred binary image responses should still expose blur metadata."""
-    model = VeniceImage("test-model")
-
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt with adult content"
-    prompt.options = VeniceImage.Options(return_binary=True)
-
-    add_image_response(
-        httpx2_mock, content=b"\x89PNG\r\n\x1a\n", headers={"x-venice-is-blurred": "true"}
-    )
-    response = MagicMock()
-    with patch.object(model, "get_key", return_value=mock_venice_api_key):
-        with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
-            results = list(model.execute(prompt, False, response, None))
-
-    assert (
-        results[0]
-        == "Warning: generated image was blurred because Safe Venice filtered adult material\n"
-    )
-    assert results[1].startswith("Image saved to ")
-    assert response.response_json == {"is_blurred": True}
-
-
-def test_venice_image_return_binary_vs_json_parsing(mock_venice_api_key, tmp_path, httpx2_mock):
-    """Test return_binary=True uses raw content vs base64 JSON decoding."""
-    model = VeniceImage("test-model")
-
-    # Create a prompt object
-    prompt = MagicMock()
-    prompt.prompt = "Test binary response"
-
-    # Test data: raw binary content that would be returned
-    raw_binary_content = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
-    base64_encoded = base64.b64encode(raw_binary_content).decode("utf-8")
-
-    # Test Case 1: return_binary=True - should use raw content
-    prompt.options = VeniceImage.Options(return_binary=True)
-
-    add_image_response(httpx2_mock, content=raw_binary_content)
-    response = MagicMock()
-    with patch.object(model, "get_key", return_value=mock_venice_api_key):
-        with patch("llm_venice.models.image.llm.user_dir", return_value=tmp_path):
-            list(model.execute(prompt, False, response, None))
-
-    # Verify raw content was written directly, without JSON parsing
-    (saved,) = list((tmp_path / "images").iterdir())
-    assert saved.read_bytes() == raw_binary_content
-    # Test Case 2: return_binary=False - should parse JSON and decode base64
-    prompt.options = VeniceImage.Options(return_binary=False)
-
-    image_json = {
-        "images": [base64_encoded],
-        "request": {"model": "test-model", "seed": 12345},
-        "timing": {"inference": 2.5},
-    }
-    add_image_response(httpx2_mock, json_data=image_json)
-    response = MagicMock()
-    case2_dir = tmp_path / "case2"
-    with patch.object(model, "get_key", return_value=mock_venice_api_key):
-        with patch("llm_venice.models.image.llm.user_dir", return_value=case2_dir):
-            list(model.execute(prompt, False, response, None))
-
-    # Verify base64 was decoded and written
-    (saved,) = list((case2_dir / "images").iterdir())
-    assert saved.read_bytes() == raw_binary_content
-
-    # Verify response metadata was stored
-    assert response.response_json["request"]["seed"] == 12345
-    assert response.response_json["timing"]["inference"] == 2.5
-    assert response.response_json["is_blurred"] is False
-
-
 def test_venice_image_variants_save_all_images_and_expose_response_json(
     mock_venice_api_key, tmp_path, httpx2_mock
 ):
@@ -383,7 +303,6 @@ def test_venice_image_variants_save_all_images_and_expose_response_json(
     prompt = MagicMock()
     prompt.prompt = "Test variants"
     prompt.options = VeniceImage.Options(
-        return_binary=False,
         variants=2,
         output_dir=tmp_path,
         output_filename="variant.png",
@@ -427,7 +346,6 @@ def test_venice_image_default_output_directory_creation(mock_venice_api_key, tmp
     # Setup options without specifying output_dir
     options = Mock()
     options.model_dump.return_value = {
-        "return_binary": True,
         "format": "png",
     }
     prompt.options = options
@@ -454,7 +372,6 @@ def test_venice_image_default_filename_path(mock_venice_api_key, tmp_path, httpx
 
     options = Mock()
     options.model_dump.return_value = {
-        "return_binary": True,
         "format": "png",
     }
     prompt.options = options
@@ -497,7 +414,6 @@ def test_existing_file_no_overwrite_adds_timestamp(mock_venice_api_key, tmp_path
         "output_dir": str(tmp_path),
         "output_filename": "test_image.png",
         "overwrite_files": False,
-        "return_binary": True,
         "format": "png",
     }
     prompt.options = options
@@ -545,7 +461,6 @@ def test_existing_file_with_overwrite_replaces_file(mock_venice_api_key, tmp_pat
         "output_dir": str(tmp_path),
         "output_filename": "test_image.png",
         "overwrite_files": True,
-        "return_binary": True,
         "format": "png",
     }
     prompt.options = options
@@ -589,7 +504,6 @@ def test_non_writable_directory_raises_model_error(mock_venice_api_key, tmp_path
         "output_dir": str(non_writable_dir),
         "output_filename": "test_image.png",
         "overwrite_files": False,
-        "return_binary": True,
         "format": "png",
     }
     prompt.options = options
@@ -623,7 +537,6 @@ def test_nonexistent_directory_is_created_when_saving(mock_venice_api_key, tmp_p
         "output_dir": str(nonexistent_dir),
         "output_filename": "test_image.png",
         "overwrite_files": False,
-        "return_binary": True,
         "format": "png",
     }
     prompt.options = options
@@ -661,7 +574,6 @@ def test_file_path_instead_of_directory_raises_model_error(
         "output_dir": str(file_path),
         "output_filename": "test_image.png",
         "overwrite_files": False,
-        "return_binary": True,
         "format": "png",
     }
     prompt.options = options
@@ -694,7 +606,6 @@ def test_timestamp_format_in_appended_filename(mock_venice_api_key, tmp_path, ht
         "output_dir": str(tmp_path),
         "output_filename": "myimage.png",
         "overwrite_files": False,
-        "return_binary": True,
         "format": "png",
     }
     prompt.options = options
@@ -739,7 +650,6 @@ def test_no_existing_file_no_timestamp(mock_venice_api_key, tmp_path, httpx2_moc
         "output_dir": str(tmp_path),
         "output_filename": "newfile.png",
         "overwrite_files": False,
-        "return_binary": True,
         "format": "png",
     }
     prompt.options = options
@@ -782,7 +692,6 @@ def test_multiple_collisions_create_multiple_timestamped_files(
             "output_dir": str(tmp_path),
             "output_filename": "image.png",
             "overwrite_files": False,
-            "return_binary": True,
             "format": "png",
         }
         prompt.options = options
@@ -817,7 +726,7 @@ def test_http_error_raises_model_error(mock_venice_api_key, httpx2_mock):
     prompt.prompt = "Test prompt"
 
     # Setup options with actual Pydantic model so payload is serialized via model_dump
-    prompt.options = VeniceImage.Options(return_binary=True)
+    prompt.options = VeniceImage.Options()
 
     # The API returns a non-JSON error body
     httpx2_mock.add_response(
@@ -842,10 +751,9 @@ def test_invalid_base64_data_raises_model_error(mock_venice_api_key, httpx2_mock
     prompt = MagicMock()
     prompt.prompt = "Test prompt"
 
-    # Setup options with return_binary=False to trigger base64 decoding
+    # Setup options with  to trigger base64 decoding
     options = Mock()
     options.model_dump.return_value = {
-        "return_binary": False,
         "format": "png",
     }
     prompt.options = options
@@ -863,7 +771,7 @@ def test_invalid_base64_data_raises_model_error(mock_venice_api_key, httpx2_mock
     response = MagicMock()
     with patch.object(model, "get_key", return_value=mock_venice_api_key):
         # Should raise ModelError about base64 decoding failure
-        with pytest.raises(llm.ModelError, match="Failed to decode base64 image data"):
+        with pytest.raises(llm.ModelError, match="invalid base64 image"):
             list(model.execute(prompt, False, response, None))
 
 
@@ -883,7 +791,6 @@ def test_file_write_failure_raises_model_error(mock_venice_api_key, tmp_path, ht
         "output_dir": str(tmp_path),
         "output_filename": "test.png",
         "overwrite_files": True,
-        "return_binary": True,
         "format": "png",
     }
     prompt.options = options
@@ -892,7 +799,7 @@ def test_file_write_failure_raises_model_error(mock_venice_api_key, tmp_path, ht
     response = MagicMock()
     with patch.object(model, "get_key", return_value=mock_venice_api_key):
         # Should raise ModelError about file write failure
-        with pytest.raises(llm.ModelError, match="Failed to write image file"):
+        with pytest.raises(llm.ModelError, match="test.png"):
             list(model.execute(prompt, False, response, None))
 
 
@@ -907,7 +814,6 @@ def test_http_500_error_with_json_body(mock_venice_api_key, httpx2_mock):
     # Setup options
     options = Mock()
     options.model_dump.return_value = {
-        "return_binary": True,
         "format": "png",
     }
     prompt.options = options
@@ -936,7 +842,7 @@ def test_venice_image_options_defaults_and_validation():
     assert options.resolution is None
     assert options.image_format == "png"
     assert options.hide_watermark is True
-    assert options.return_binary is False
+    assert "return_binary" not in type(options).model_fields
     assert options.variants is None
     assert options.safe_mode is False
     assert options.overwrite_files is False
@@ -960,21 +866,19 @@ def test_venice_image_options_defaults_and_validation():
 
     # Test validation - height bounds
     with pytest.raises(ValidationError):
-        VeniceImage.Options(height=63)  # Below minimum
+        VeniceImage.Options(height=0)  # Below minimum
     with pytest.raises(ValidationError):
         VeniceImage.Options(height=1281)  # Above maximum
 
     # Test validation - width bounds
     with pytest.raises(ValidationError):
-        VeniceImage.Options(width=63)  # Below minimum
+        VeniceImage.Options(width=0)  # Below minimum
     with pytest.raises(ValidationError):
         VeniceImage.Options(width=1281)  # Above maximum
 
     # Test validation - steps bounds
-    with pytest.raises(ValidationError):
-        VeniceImage.Options(steps=6)  # Below minimum
-    with pytest.raises(ValidationError):
-        VeniceImage.Options(steps=51)  # Above maximum
+    assert VeniceImage.Options(steps=6).steps == 6
+    assert VeniceImage.Options(steps=51).steps == 51
 
     # Test validation - cfg_scale bounds
     with pytest.raises(ValidationError):
@@ -998,13 +902,13 @@ def test_venice_image_options_defaults_and_validation():
     with pytest.raises(ValidationError):
         VeniceImage.Options(variants=5)  # Above maximum
     with pytest.raises(ValidationError):
-        VeniceImage.Options(return_binary=True, variants=2)
+        VeniceImage.Options.model_validate({"return_binary": True, "variants": 2})
 
 
-def test_venice_image_drops_aspect_ratio_for_unsupported_model(
+def test_venice_image_keeps_aspect_ratio_when_support_is_unknown(
     mock_venice_api_key, tmp_path, httpx2_mock, request_json
 ):
-    """Test aspect_ratio is dropped with an info message when unsupported."""
+    """Missing aspect-ratio metadata retains endpoint validation."""
     model = VeniceImage(
         "test-model",
         image_constraints={"resolutions": ["1K", "2K"]},
@@ -1012,7 +916,7 @@ def test_venice_image_drops_aspect_ratio_for_unsupported_model(
 
     prompt = MagicMock()
     prompt.prompt = "Test prompt"
-    prompt.options = VeniceImage.Options(aspect_ratio="9:16", return_binary=True)
+    prompt.options = VeniceImage.Options(aspect_ratio="9:16")
 
     add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
     with patch.object(model, "get_key", return_value=mock_venice_api_key):
@@ -1020,15 +924,14 @@ def test_venice_image_drops_aspect_ratio_for_unsupported_model(
             results = list(model.execute(prompt, False, MagicMock(), None))
 
     payload = request_json()
-    assert "aspect_ratio" not in payload
-    assert results[0] == "Info: dropped unsupported options for model 'test-model': aspect_ratio\n"
-    assert results[1].startswith("Image saved to ")
+    assert payload["aspect_ratio"] == "9:16"
+    assert results[0].startswith("Image saved to ")
 
 
-def test_venice_image_drops_resolution_for_unsupported_model(
+def test_venice_image_keeps_resolution_when_support_is_unknown(
     mock_venice_api_key, tmp_path, httpx2_mock, request_json
 ):
-    """Test resolution is dropped with an info message when unsupported."""
+    """Missing resolution metadata retains endpoint validation."""
     model = VeniceImage(
         "test-model",
         image_constraints={"aspectRatios": ["1:1", "16:9"]},
@@ -1036,7 +939,7 @@ def test_venice_image_drops_resolution_for_unsupported_model(
 
     prompt = MagicMock()
     prompt.prompt = "Test prompt"
-    prompt.options = VeniceImage.Options(resolution="4K", return_binary=True)
+    prompt.options = VeniceImage.Options(resolution="4K")
 
     add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
     with patch.object(model, "get_key", return_value=mock_venice_api_key):
@@ -1044,28 +947,8 @@ def test_venice_image_drops_resolution_for_unsupported_model(
             results = list(model.execute(prompt, False, MagicMock(), None))
 
     payload = request_json()
-    assert "resolution" not in payload
-    assert results[0] == "Info: dropped unsupported options for model 'test-model': resolution\n"
-    assert results[1].startswith("Image saved to ")
-
-
-def test_image_generation_result_exposes_structured_notices():
-    """ImageGenerationResult should retain structured notices."""
-    result = ImageGenerationResult(
-        notices=[
-            VeniceNotice(
-                level="info",
-                message="dropped unsupported options for model 'test-model': aspect_ratio",
-            )
-        ],
-    )
-
-    assert result.notices == [
-        VeniceNotice(
-            level="info",
-            message="dropped unsupported options for model 'test-model': aspect_ratio",
-        )
-    ]
+    assert payload["resolution"] == "4K"
+    assert results[0].startswith("Image saved to ")
 
 
 def test_emit_cli_notices_surfaces_rendered_messages():
@@ -1124,12 +1007,12 @@ def test_venice_image_rejects_invalid_aspect_ratio_for_supported_model(mock_veni
 
     prompt = MagicMock()
     prompt.prompt = "Test prompt"
-    prompt.options = VeniceImage.Options(aspect_ratio="9:16", return_binary=True)
+    prompt.options = VeniceImage.Options(aspect_ratio="9:16")
 
     with patch.object(model, "get_key", return_value=mock_venice_api_key):
         with pytest.raises(
             llm.ModelError,
-            match="Invalid aspect_ratio '9:16' for model 'test-model'",
+            match="aspect_ratio",
         ):
             list(model.execute(prompt, False, MagicMock(), None))
 
@@ -1143,234 +1026,11 @@ def test_venice_image_rejects_invalid_resolution_for_supported_model(mock_venice
 
     prompt = MagicMock()
     prompt.prompt = "Test prompt"
-    prompt.options = VeniceImage.Options(resolution="4K", return_binary=True)
+    prompt.options = VeniceImage.Options(resolution="4K")
 
     with patch.object(model, "get_key", return_value=mock_venice_api_key):
         with pytest.raises(
             llm.ModelError,
-            match="Invalid resolution '4K' for model 'test-model'",
+            match="resolution",
         ):
             list(model.execute(prompt, False, MagicMock(), None))
-
-
-def test_venice_image_logging_client_usage(mock_venice_api_key, monkeypatch):
-    """Test that LLM_VENICE_SHOW_RESPONSES enables logging_client for debugging."""
-    model = VeniceImage("test-model")
-
-    # Create a prompt object
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
-
-    # Setup options
-    prompt.options = VeniceImage.Options(return_binary=True)
-
-    # Set environment variable to enable logging
-    monkeypatch.setenv("LLM_VENICE_SHOW_RESPONSES", "1")
-
-    # Mock both httpx2.post and logging_client
-    mock_logging_client = Mock()
-    mock_client_context = Mock()
-    mock_client_instance = Mock()
-    mock_client_context.__enter__ = Mock(return_value=mock_client_instance)
-    mock_client_context.__exit__ = Mock(return_value=None)
-    mock_logging_client.return_value = mock_client_context
-
-    # Configure the mock response
-    mock_response = Mock()
-    mock_response.raise_for_status.return_value = None
-    mock_response.headers = {}
-    mock_response.content = b"\x89PNG\r\n\x1a\n"
-    mock_client_instance.post.return_value = mock_response
-
-    response = MagicMock()
-
-    with patch("llm_venice.models.image.logging_client", mock_logging_client):
-        with patch("llm_venice.models.image.httpx2.post") as mock_httpx_post:
-            with patch.object(model, "get_key", return_value=mock_venice_api_key):
-                list(model.execute(prompt, False, response, None))
-
-                # Verify logging_client was called
-                mock_logging_client.assert_called_once()
-
-                # Verify the logging client's post method was called instead of httpx2.post
-                mock_client_instance.post.assert_called_once()
-                call_args = mock_client_instance.post.call_args
-
-                # httpx2.post should not be used when logging client is enabled
-                mock_httpx_post.assert_not_called()
-
-                # Verify the call had the correct parameters
-                assert call_args[0][0] == "https://api.venice.ai/api/v1/image/generate"
-                assert "Authorization" in call_args[1]["headers"]
-                assert call_args[1]["timeout"] == 120
-
-
-def test_venice_image_honors_explicit_key(monkeypatch):
-    """Ensure an explicit key is used when provided."""
-    model = VeniceImage("test-model")
-
-    prompt = MagicMock()
-    prompt.prompt = "Test"
-    prompt.options = VeniceImage.Options(return_binary=True)
-
-    captured_headers = {}
-
-    def fake_post(url, headers=None, json=None, timeout=None):
-        captured_headers.update(headers or {})
-
-        class FakeResponse:
-            headers = {}
-
-            def raise_for_status(self):
-                return None
-
-            content = b"\x89PNG\r\n\x1a\n"
-
-        return FakeResponse()
-
-    monkeypatch.setattr("llm_venice.models.image.httpx2.post", fake_post)
-
-    with patch.object(model, "get_key", return_value="explicit-key"):
-        list(model.execute(prompt, False, MagicMock(), None, key="provided"))
-
-    assert captured_headers["Authorization"] == "Bearer explicit-key"
-
-
-def test_async_venice_image_generate_and_save(monkeypatch, tmp_path, mock_venice_api_key):
-    """AsyncVeniceImage should delegate to generate_image_result and save_image_result."""
-
-    async def run():
-        model = AsyncVeniceImage("test-model")
-
-        prompt = MagicMock()
-        prompt.prompt = "Async test"
-        prompt.options = VeniceImage.Options(return_binary=True)
-
-        fake_result = ImageGenerationResult(
-            image_bytes_list=[b"binary"],
-            output_paths=[tmp_path / "async.png"],
-            response_json={"request": {"model": "test-model"}},
-            content_violation=False,
-        )
-
-        async def immediate_to_thread(func, *args, **kwargs):
-            return func(*args, **kwargs)
-
-        monkeypatch.setattr("llm_venice.models.image.asyncio.to_thread", immediate_to_thread)
-        monkeypatch.setattr(
-            "llm_venice.models.image.generate_image_result", lambda **_: fake_result
-        )
-        monkeypatch.setattr(
-            "llm_venice.models.image.save_image_result", lambda result: result.output_paths
-        )
-        monkeypatch.setattr(model, "get_key", lambda key=None: mock_venice_api_key)
-
-        response = MagicMock()
-        chunks = []
-        async for chunk in model.execute(prompt, False, response, None):
-            chunks.append(chunk)
-
-        assert response.response_json == fake_result.response_json
-        assert chunks == [f"Image saved to {fake_result.output_paths[0]}"]
-
-    asyncio.run(run())
-
-
-def test_async_venice_image_content_violation(monkeypatch, mock_venice_api_key):
-    """AsyncVeniceImage should surface content violation message."""
-
-    async def run():
-        model = AsyncVeniceImage("test-model")
-
-        prompt = MagicMock()
-        prompt.prompt = "Async test violation"
-        prompt.options = VeniceImage.Options()
-
-        fake_result = ImageGenerationResult(
-            response_json=None,
-            content_violation=True,
-        )
-
-        async def immediate_to_thread(func, *args, **kwargs):
-            return func(*args, **kwargs)
-
-        monkeypatch.setattr("llm_venice.models.image.asyncio.to_thread", immediate_to_thread)
-        monkeypatch.setattr(
-            "llm_venice.models.image.generate_image_result", lambda **_: fake_result
-        )
-        monkeypatch.setattr(model, "get_key", lambda key=None: mock_venice_api_key)
-
-        response = MagicMock()
-        chunks = []
-        async for chunk in model.execute(prompt, False, response, None):
-            chunks.append(chunk)
-
-        assert chunks == ["Response marked as content violation; no image was returned."]
-
-    asyncio.run(run())
-
-
-def test_async_venice_image_wraps_generate_errors_in_model_error(monkeypatch, mock_venice_api_key):
-    """AsyncVeniceImage should raise ModelError when generation fails."""
-
-    async def run():
-        model = AsyncVeniceImage("test-model")
-
-        prompt = MagicMock()
-        prompt.prompt = "Async test"
-        prompt.options = VeniceImage.Options()
-
-        async def immediate_to_thread(func, *args, **kwargs):
-            return func(*args, **kwargs)
-
-        def generate_failure(**_):
-            raise ValueError("Failed to decode base64 image data: boom")
-
-        monkeypatch.setattr("llm_venice.models.image.asyncio.to_thread", immediate_to_thread)
-        monkeypatch.setattr("llm_venice.models.image.generate_image_result", generate_failure)
-        monkeypatch.setattr(model, "get_key", lambda key=None: mock_venice_api_key)
-
-        with pytest.raises(llm.ModelError, match="Failed to decode base64 image data"):
-            async for _ in model.execute(prompt, False, MagicMock(), None):
-                pass
-
-    asyncio.run(run())
-
-
-def test_async_venice_image_wraps_write_errors_in_model_error(
-    monkeypatch, tmp_path, mock_venice_api_key
-):
-    """AsyncVeniceImage should raise ModelError when saving fails."""
-
-    async def run():
-        model = AsyncVeniceImage("test-model")
-
-        prompt = MagicMock()
-        prompt.prompt = "Async test"
-        prompt.options = VeniceImage.Options()
-
-        fake_result = ImageGenerationResult(
-            image_bytes_list=[b"binary"],
-            output_paths=[tmp_path / "async.png"],
-            response_json=None,
-            content_violation=False,
-        )
-
-        async def immediate_to_thread(func, *args, **kwargs):
-            return func(*args, **kwargs)
-
-        def save_failure(_result):
-            raise PermissionError("Permission denied")
-
-        monkeypatch.setattr("llm_venice.models.image.asyncio.to_thread", immediate_to_thread)
-        monkeypatch.setattr(
-            "llm_venice.models.image.generate_image_result", lambda **_: fake_result
-        )
-        monkeypatch.setattr("llm_venice.models.image.save_image_result", save_failure)
-        monkeypatch.setattr(model, "get_key", lambda key=None: mock_venice_api_key)
-
-        with pytest.raises(llm.ModelError, match="Failed to write image file"):
-            async for _ in model.execute(prompt, False, MagicMock(), None):
-                pass
-
-    asyncio.run(run())

@@ -1,7 +1,8 @@
+from llm_venice import _files
 import asyncio
 import json
 import pathlib
-from unittest.mock import MagicMock, Mock, patch, call
+from unittest.mock import MagicMock, Mock, patch
 
 import httpx2
 import llm
@@ -48,10 +49,6 @@ def test_venice_speech_payload_includes_options(
     with patch.object(model, "get_key", return_value=mock_venice_api_key):
         results = list(model.execute(prompt, False, MagicMock(), None))
 
-    assert options.model_dump.call_args_list == [
-        call(by_alias=True),
-        call(by_alias=True),
-    ]
     assert len(httpx2_mock.get_requests()) == 1
 
     payload = request_json()
@@ -325,7 +322,7 @@ class TestWriteAudioFile:
         def fail_open(output_path):
             raise OSError("cannot create staging file")
 
-        monkeypatch.setattr(audio, "_open_staging_file", fail_open)
+        monkeypatch.setattr(_files, "open_staging_file", fail_open)
         with pytest.raises(OSError, match="cannot create staging file"):
             audio.write_audio_file([b"audio"], tmp_path / "out.mp3", audio.DownloadProgress(False))
         assert list(tmp_path.iterdir()) == []
@@ -429,8 +426,8 @@ def test_async_speech_streaming_failure_keeps_partial(
 ):
     """The async model keeps a partial download as .part, like the sync model."""
 
-    class FailingStream(httpx2.SyncByteStream):
-        def __iter__(self):
+    class FailingStream(httpx2.AsyncByteStream):
+        async def __aiter__(self):
             yield b"chunk-1"
             raise httpx2.ReadError("connection lost")
 

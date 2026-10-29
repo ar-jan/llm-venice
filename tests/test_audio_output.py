@@ -187,7 +187,7 @@ def test_interrupted_overwrite_keeps_partial_private(tmp_path, umask_022, fallba
 
 
 def test_unsupported_publication_keeps_audio_without_overwriting(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr("llm_venice.models.audio.try_rename_no_replace", lambda *args: False)
+    monkeypatch.setattr("llm_venice._files.try_rename_no_replace", lambda *args: False)
     target = tmp_path / "out.mp3"
     target.write_bytes(b"original")
     error = OSError(errno.EOPNOTSUPP, "hard links unavailable")
@@ -234,7 +234,7 @@ def test_failed_overwrite_publication_restores_private_staging(
 
 
 def test_staging_cleanup_failure_still_reports_success(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr("llm_venice.models.audio.try_rename_no_replace", lambda *args: False)
+    monkeypatch.setattr("llm_venice._files.try_rename_no_replace", lambda *args: False)
     target = tmp_path / "out.mp3"
     part = tmp_path / "out.mp3.part"
     real_unlink = pathlib.Path.unlink
@@ -250,4 +250,4 @@ def test_staging_cleanup_failure_still_reports_success(tmp_path, monkeypatch, ca
     assert saved == target
     assert target.read_bytes() == b"audio"
     assert part.read_bytes() == b"audio"
-    assert f"audio saved to {target}" in capsys.readouterr().err
+    assert f"file saved to {target}" in capsys.readouterr().err
