@@ -83,6 +83,19 @@ def test_cache_tracks_constraints_and_is_bounded():
     assert options_class.cache_info().maxsize == 128
 
 
+def test_options_descriptor_class_and_instance_access():
+    base = VeniceImage.Options
+    assert AsyncVeniceImage.Options is base
+    model = VeniceImage("m", image_constraints={"steps": {"min": 2}})
+    specialized = model.Options
+    assert specialized is not base and issubclass(specialized, base)
+    assert specialized.__name__ == "VeniceImageOptionsForModel"
+    assert model.Options is specialized
+    model.catalog_policy = {"kind": "image", "fields": {"steps": {"ge": 5}}}
+    with pytest.raises(ValidationError):
+        model.Options(steps=4)
+
+
 @pytest.mark.parametrize(
     "bad",
     [

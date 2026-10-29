@@ -10,15 +10,34 @@ from pydantic import BaseModel, Field, TypeAdapter, create_model
 from pydantic.fields import FieldInfo
 
 
-class CatalogOptionsMixin:
-    """Expose base Options on classes and lazily cached model Options on instances."""
+class _CatalogOptions:
+    """Return base Options on the class and catalog-specialized Options on instances."""
 
-    def __getattribute__(self, name: str) -> Any:
-        if name == "Options":
-            base: type[BaseModel] = getattr(type(self), "Options")
-            policy: dict[str, Any] = object.__getattribute__(self, "catalog_policy")
-            return options_class(base, json.dumps(policy, sort_keys=True))
-        return super().__getattribute__(name)
+    def __init__(self, base: type[BaseModel]) -> None:
+        self.base = base
+
+    def __get__(self, obj: Any, owner: type | None = None) -> type[BaseModel]:
+        if obj is None:
+            return self.base
+        policy: dict[str, Any] = obj.catalog_policy
+        # Policies are replaced, never mutated, so identity detects a new policy
+        # and avoids re-serializing on every access.
+        cached: tuple[dict[str, Any], type[BaseModel]] | None = obj.__dict__.get("_catalog_options")
+        if cached is not None and cached[0] is policy:
+            return cached[1]
+        options = options_class(self.base, json.dumps(policy, sort_keys=True))
+        obj.__dict__["_catalog_options"] = (policy, options)
+        return options
+
+
+class CatalogOptionsMixin:
+    """Wrap each subclass's own Options so instances see catalog-specialized Options."""
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        options = cls.__dict__.get("Options")
+        if isinstance(options, type) and issubclass(options, BaseModel):
+            setattr(cls, "Options", _CatalogOptions(options))
 
 
 def _object(value: Any) -> dict[str, Any]:
@@ -142,7 +161,8 @@ def options_class(base: type[BaseModel], policy_json: str) -> type[BaseModel]:
             info.default = rules.pop("default")
         info.metadata.extend(Field(**rules).metadata)
         definitions[name] = (annotation, info)
-    return create_model(f"{base.__name__}ForModel", __base__=base, **definitions)
+    name = base.__qualname__.replace(".", "")
+    return create_model(f"{name}ForModel", __base__=base, **definitions)
 
 
 def validate_request(policy: dict[str, Any], text: str, options: BaseModel) -> None:
