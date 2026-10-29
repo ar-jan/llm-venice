@@ -15,6 +15,7 @@ from llm_venice._options import validate_request
 from llm_venice.catalog import catalog_path
 from llm_venice.cli.errors import handle_cli_error
 from llm_venice.models import _load_or_fetch_models
+from llm_venice.models._common import warn_deprecated
 from llm_venice.models.audio import (
     AudioResponseFormat,
     DownloadProgress,
@@ -232,6 +233,7 @@ def create_tts_command():
         reporter = DownloadProgress(progress)
         try:
             validate_request(resolved_model.catalog_policy, input_text, options)
+            warn_deprecated(resolved_model)
             with (
                 VeniceClient() as client,
                 client.stream_speech(

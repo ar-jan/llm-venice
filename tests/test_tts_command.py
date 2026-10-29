@@ -9,6 +9,8 @@ import httpx2
 import pytest
 from llm.cli import cli
 
+from llm_venice.models import _common
+
 
 SPEECH_URL = "https://api.venice.ai/api/v1/audio/speech"
 MODELS_URL = "https://api.venice.ai/api/v1/models?type=all"
@@ -269,6 +271,26 @@ def test_default_model_is_first_catalog_tts_model(
 
     assert result.exit_code == 0, result.output
     assert request_payload(speech_response)["model"] == "tts-first"
+
+
+def test_deprecated_model_warns_once_on_use(
+    user_dir, speech_response, mock_venice_api_key, cli_runner, monkeypatch
+):
+    monkeypatch.setattr(_common, "_deprecated_warnings", set())
+    catalog = [
+        {
+            "id": "tts-old",
+            "type": "tts",
+            "model_spec": {"deprecation": {"replacementModelId": "tts-new"}},
+        }
+    ]
+    (user_dir / "venice_models.json").write_text(json.dumps(catalog))
+
+    result = tts(cli_runner, "Hello", "-m", "tts-old", "-o", "-")
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout_bytes == AUDIO
+    assert result.stderr == ("Warning: venice/tts-old is deprecated; use venice/tts-new instead\n")
 
 
 def test_non_tts_model_errors(user_dir, httpx2_mock, mock_venice_api_key, cli_runner):
