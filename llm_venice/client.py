@@ -1,7 +1,7 @@
 """Reusable sync and async clients for Venice's non-chat endpoints."""
 
 from collections.abc import AsyncGenerator, Generator
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import AsyncExitStack, ExitStack, asynccontextmanager, contextmanager
 from datetime import datetime
 import os
 from pathlib import Path
@@ -246,24 +246,25 @@ class VeniceClient(_Configuration):
         """Open single-use speech. Keep consumption inside this context and client lifetime."""
         body = ep.speech_body(model, text, params, streaming=True)
         url, options = self._prepare("audio/speech", {"json": body})
-        try:
-            with self._http.stream("POST", url, **options) as response:
+        with ExitStack() as stack:
+            # Map transport errors only while opening; body errors are mapped by
+            # SpeechStream, and errors from the caller's block must pass through.
+            try:
+                response = stack.enter_context(self._http.stream("POST", url, **options))
                 if not response.is_success:
                     response.read()
                     check_status(response, "Generating speech")
-                format = ep.media_format(
-                    response.headers.get("content-type"),
-                    b"",
-                    body.get("response_format"),
-                    image=False,
-                )
-                stream = SpeechStream(response, format)
-                try:
-                    yield stream
-                finally:
-                    stream.close()
-        except httpx2.RequestError as exc:
-            raise VeniceConnectionError(f"Generating speech failed: {exc}") from exc
+            except httpx2.RequestError as exc:
+                raise VeniceConnectionError(f"Generating speech failed: {exc}") from exc
+            format = ep.media_format(
+                response.headers.get("content-type"),
+                b"",
+                body.get("response_format"),
+                image=False,
+            )
+            stream = SpeechStream(response, format)
+            stack.callback(stream.close)
+            yield stream
 
 
 class AsyncVeniceClient(_Configuration):
@@ -451,21 +452,24 @@ class AsyncVeniceClient(_Configuration):
         """Open single-use speech. Keep consumption inside this context and client lifetime."""
         body = ep.speech_body(model, text, params, streaming=True)
         url, options = self._prepare("audio/speech", {"json": body})
-        try:
-            async with self._http.stream("POST", url, **options) as response:
+        async with AsyncExitStack() as stack:
+            # Map transport errors only while opening; body errors are mapped by
+            # AsyncSpeechStream, and errors from the caller's block must pass through.
+            try:
+                response = await stack.enter_async_context(
+                    self._http.stream("POST", url, **options)
+                )
                 if not response.is_success:
                     await response.aread()
                     check_status(response, "Generating speech")
-                format = ep.media_format(
-                    response.headers.get("content-type"),
-                    b"",
-                    body.get("response_format"),
-                    image=False,
-                )
-                stream = AsyncSpeechStream(response, format)
-                try:
-                    yield stream
-                finally:
-                    await stream.aclose()
-        except httpx2.RequestError as exc:
-            raise VeniceConnectionError(f"Generating speech failed: {exc}") from exc
+            except httpx2.RequestError as exc:
+                raise VeniceConnectionError(f"Generating speech failed: {exc}") from exc
+            format = ep.media_format(
+                response.headers.get("content-type"),
+                b"",
+                body.get("response_format"),
+                image=False,
+            )
+            stream = AsyncSpeechStream(response, format)
+            stack.push_async_callback(stream.aclose)
+            yield stream

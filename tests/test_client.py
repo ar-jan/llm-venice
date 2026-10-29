@@ -450,6 +450,44 @@ def test_stream_http_error_reads_body_and_maps_status(is_async, httpx2_mock):
                     pytest.fail("error response must not be yielded")
 
 
+@pytest.mark.parametrize("is_async", [False, True])
+def test_stream_open_failure_maps_to_connection_error(is_async, httpx2_mock):
+    httpx2_mock.add_exception(httpx2.ConnectError("refused"))
+
+    async def run():
+        async with AsyncVeniceClient(key="k") as client:
+            async with client.stream_speech("m", "text"):
+                pytest.fail("failed open must not be yielded")
+
+    with pytest.raises(VeniceConnectionError, match="Generating speech failed"):
+        if is_async:
+            asyncio.run(run())
+        else:
+            with VeniceClient(key="k") as client:
+                with client.stream_speech("m", "text"):
+                    pytest.fail("failed open must not be yielded")
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_stream_does_not_relabel_caller_request_errors(is_async, httpx2_mock):
+    httpx2_mock.add_response(content=b"audio", headers={"content-type": "audio/mpeg"})
+    own_error = httpx2.ConnectError("caller's own request")
+
+    async def run():
+        async with AsyncVeniceClient(key="k") as client:
+            async with client.stream_speech("m", "text"):
+                raise own_error
+
+    with pytest.raises(httpx2.ConnectError) as caught:
+        if is_async:
+            asyncio.run(run())
+        else:
+            with VeniceClient(key="k") as client:
+                with client.stream_speech("m", "text"):
+                    raise own_error
+    assert caught.value is own_error
+
+
 def test_owned_stream_logging_does_not_read_chunks(monkeypatch, capsys, httpx2_mock):
     monkeypatch.setenv("LLM_VENICE_SHOW_RESPONSES", "true")
     chunks = Chunks()
