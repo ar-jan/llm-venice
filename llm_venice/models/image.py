@@ -1,6 +1,9 @@
 """Venice image generation model implementation."""
 
+import asyncio
+from contextlib import suppress
 import pathlib
+import sys
 from typing import Literal, cast
 
 import llm
@@ -78,8 +81,9 @@ def _image_options(model, prompt):
     return opts, params
 
 
-def _save_adapter_images(model, opts, result):
-    paths = []
+def _save_adapter_images(model, opts, result, paths=None):
+    """Save each image, appending to ``paths`` as soon as the file is published."""
+    paths = [] if paths is None else paths
     for index, image in enumerate(result.images, 1):
         directory = (
             pathlib.Path(opts.output_dir).expanduser()
@@ -98,6 +102,18 @@ def _save_adapter_images(model, opts, result):
             ).path
         )
     return paths
+
+
+async def _save_adapter_images_async(model, opts, result):
+    paths: list[pathlib.Path] = []
+    try:
+        return await async_file_call(_save_adapter_images, model, opts, result, paths)
+    except asyncio.CancelledError:
+        # Cancellation waits for the running save, then drops its return value.
+        for path in paths:
+            with suppress(OSError, ValueError):
+                print(f"Warning: image saved to {path} before cancellation", file=sys.stderr)
+        raise
 
 
 def _image_response(response, result: ImageResult, paths):
@@ -206,7 +222,7 @@ class AsyncVeniceImage(CatalogOptionsMixin, llm.AsyncKeyModel):
             paths = (
                 []
                 if result.content_violation
-                else await async_file_call(_save_adapter_images, self, opts, result)
+                else await _save_adapter_images_async(self, opts, result)
             )
             _image_response(response, result, paths)
             rendered = _image_notices(result)

@@ -1,8 +1,11 @@
 """Exclusive rename bindings and publication fallback/error behavior."""
 
+import asyncio
 import ctypes
 import errno
 import os
+from pathlib import Path
+import threading
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -197,3 +200,62 @@ def test_hard_link_fallback_keeps_collision_protection(monkeypatch, tmp_path, un
     assert saved.read_bytes() == b"new"
     assert target.read_bytes() == b"existing"
     assert not list(tmp_path.glob("*.part"))
+
+
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_cancel_during_publication_reports_published_path(monkeypatch, tmp_path, cleanup_fails):
+    """A save finished under cancellation names its file instead of a stale partial."""
+    if cleanup_fails:
+        # Hard-link fallback whose staging cleanup fails: the leftover staging
+        # file is a complete extra link, not a partial download.
+        monkeypatch.setattr(_files, "try_rename_no_replace", lambda *args: False)
+        original_unlink = Path.unlink
+
+        def unlink(path, *args, **kwargs):
+            if path.suffix == ".part":
+                raise OSError("cleanup failed")
+            return original_unlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", unlink)
+    started, release = threading.Event(), threading.Event()
+
+    def slow_publish(*args, **kwargs):
+        started.set()
+        assert release.wait(5)
+        return _files.publish_media_file(*args, **kwargs)
+
+    target = tmp_path / "out.mp3"
+
+    async def chunks():
+        yield b"audio"
+
+    async def run():
+        errors: list[asyncio.CancelledError] = []
+
+        async def save():
+            try:
+                await _files.write_async_chunks(chunks(), target, publish=slow_publish)
+            except asyncio.CancelledError as exc:
+                errors.append(exc)
+                raise
+
+        task = asyncio.create_task(save())
+        assert await asyncio.to_thread(started.wait, 5)
+        # Another writer wins the name, so publication picks a timestamped path.
+        target.write_bytes(b"existing")
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        return errors[0]
+
+    error = asyncio.run(run())
+    published = getattr(error, "published_path")
+    assert published != target
+    assert published.name.startswith("out_") and published.suffix == ".mp3"
+    assert published.read_bytes() == b"audio"
+    assert target.read_bytes() == b"existing"
+    assert not hasattr(error, "partial_path")
+    assert bool(list(tmp_path.glob("*.part"))) is cleanup_fails

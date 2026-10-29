@@ -173,6 +173,29 @@ def retain_partial(staging: pathlib.Path, error: BaseException) -> None:
     error.partial_path = staging  # type: ignore[attr-defined]
 
 
+class _RecordingPublish:
+    """Remember a completed publication so a late error cannot hide the saved path."""
+
+    def __init__(self, publish: Callable[..., Publication]):
+        self._publish = publish
+        self.publication: Publication | None = None
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Publication:
+        self.publication = self._publish(*args, **kwargs)
+        return self.publication
+
+
+def _annotate_failure(
+    staging: pathlib.Path, error: BaseException, recorder: _RecordingPublish
+) -> None:
+    """Attach the published path, or retain partial staging if nothing was published."""
+    if recorder.publication is not None:
+        # Any staging left over is a harmless extra link to the complete file.
+        error.published_path = recorder.publication.path  # type: ignore[attr-defined]
+    else:
+        retain_partial(staging, error)
+
+
 def write_chunks(
     chunks: Iterable[bytes],
     path: str | os.PathLike[str],
@@ -185,15 +208,16 @@ def write_chunks(
     if destination.is_dir():
         raise IsADirectoryError(str(destination))
     handle, staging = open_staging_file(destination)
+    recorder = _RecordingPublish(publish)
     try:
         for chunk in chunks:
             handle.write(chunk)
         handle.close()
-        return publish(staging, destination, overwrite=overwrite)
+        return recorder(staging, destination, overwrite=overwrite)
     except BaseException as exc:
         with suppress(OSError, ValueError):
             handle.close()
-        retain_partial(staging, exc)
+        _annotate_failure(staging, exc, recorder)
         raise
 
 
@@ -230,13 +254,15 @@ async def write_async_chunks(
     if destination.is_dir():
         raise IsADirectoryError(str(destination))
     handle, staging = open_staging_file(destination)
+    recorder = _RecordingPublish(publish)
     try:
         async for chunk in chunks:
             await async_file_call(handle.write, chunk)
         await async_file_call(handle.close)
-        return await async_file_call(publish, staging, destination, overwrite=overwrite)
+        # Cancellation during publish waits for it, then raises without its result.
+        return await async_file_call(recorder, staging, destination, overwrite=overwrite)
     except BaseException as exc:
         with suppress(OSError, ValueError):
             handle.close()
-        retain_partial(staging, exc)
+        _annotate_failure(staging, exc, recorder)
         raise

@@ -1,7 +1,9 @@
 """Service errors. Local file failures remain OSError; invalid inputs use ValidationError.
 
-Failed saves may attach ``partial_path: Path`` naming retained bytes. This does
-not change the exception's type, message, or original cause.
+Failed saves may attach ``partial_path: Path`` naming retained bytes. If
+cancellation arrives after the file was already published, the error instead
+carries ``published_path: Path`` naming the complete file. Neither attribute
+changes the exception's type, message, or original cause.
 For cancellation, inspect the exception where the save is awaited: Python 3.10
 wraps it when another task awaits the cancelled task.
 """

@@ -304,7 +304,9 @@ Publication is atomic per file, not across a batch: earlier successful files sur
 a later failure. Private staging avoids truncating existing files or following
 planted staging symlinks. Overwrite preserves existing regular-file permissions.
 Errors/cancellation retain nonempty staging and may attach `error.partial_path`;
-empty staging is removed. Library saves print nothing.
+empty staging is removed. Cancellation that arrives once the file is already
+published attaches `error.published_path` to the complete file instead.
+Library saves print nothing.
 To inspect this metadata on cancellation, catch `asyncio.CancelledError` where
 `stream.save()` is awaited inside the task. Python 3.10 wraps that exception when
 another task awaits the cancelled task.

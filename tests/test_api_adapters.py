@@ -5,6 +5,7 @@ import base64
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
+import threading
 from typing import Any
 
 import httpx2
@@ -12,8 +13,9 @@ import llm
 import pytest
 from llm.cli import cli
 
-from llm_venice import AsyncVeniceImage, VeniceImage
+from llm_venice import AsyncVeniceImage, AsyncVeniceSpeech, VeniceImage
 from llm_venice import _files
+from llm_venice.models import image as image_module
 
 PNG = b"\x89PNG\r\n\x1a\nbytes"
 
@@ -111,3 +113,73 @@ def test_return_binary_cli_rejected(
     assert result.exit_code != 0
     assert "return_binary" in result.output and "Extra inputs" in result.output
     assert not httpx2_mock.get_requests()
+
+
+def _cancel_while_blocked(execute, started, release):
+    """Cancel an adapter run while its file save is blocked in a worker thread."""
+
+    async def run():
+        task = asyncio.create_task(execute())
+        assert await asyncio.to_thread(started.wait, 5)
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+
+
+def _blocking(function, started, release):
+    def wrapper(*args, **kwargs):
+        started.set()
+        assert release.wait(5)
+        return function(*args, **kwargs)
+
+    return wrapper
+
+
+def test_async_buffered_speech_cancel_reports_saved_path(
+    tmp_path, httpx2_mock, monkeypatch, capsys
+):
+    httpx2_mock.add_response(content=b"audio", headers={"content-type": "audio/mpeg"})
+    started, release = threading.Event(), threading.Event()
+    monkeypatch.setattr(
+        _files, "publish_media_file", _blocking(_files.publish_media_file, started, release)
+    )
+    model: Any = AsyncVeniceSpeech("tts")
+    prompt = MagicMock(prompt="hello", options=model.Options(output_dir=tmp_path))
+
+    async def execute():
+        async for _ in model.execute(prompt, False, MagicMock(), key="provided-key"):
+            pass
+
+    _cancel_while_blocked(execute, started, release)
+    (saved,) = tmp_path.iterdir()
+    assert saved.read_bytes() == b"audio"
+    stderr = capsys.readouterr().err
+    assert f"audio saved to {saved} before cancellation" in stderr
+    assert "partial audio" not in stderr
+
+
+def test_async_image_cancel_reports_saved_paths(tmp_path, httpx2_mock, monkeypatch, capsys):
+    httpx2_mock.add_response(json={"images": [base64.b64encode(PNG).decode()] * 2})
+    started, release = threading.Event(), threading.Event()
+    monkeypatch.setattr(
+        image_module, "write_chunks", _blocking(image_module.write_chunks, started, release)
+    )
+    model: Any = AsyncVeniceImage("model")
+    prompt = MagicMock(prompt="hello", options=model.Options(output_dir=tmp_path))
+
+    async def execute():
+        async for _ in model.execute(prompt, False, MagicMock(), key="provided-key"):
+            pass
+
+    _cancel_while_blocked(execute, started, release)
+    saved = sorted(tmp_path.iterdir())
+    assert len(saved) == 2
+    stderr = capsys.readouterr().err
+    for path in saved:
+        assert path.read_bytes() == PNG
+        assert f"image saved to {path} before cancellation" in stderr

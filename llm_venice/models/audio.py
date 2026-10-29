@@ -135,6 +135,11 @@ class DownloadProgress:
 
 
 def _partial_notice(error):
+    published = getattr(error, "published_path", None)
+    if published is not None:
+        with suppress(OSError, ValueError):
+            print(f"Warning: audio saved to {published} before cancellation", file=sys.stderr)
+        return
     path = getattr(error, "partial_path", None)
     if path is None:
         return
@@ -163,6 +168,10 @@ def write_audio_file(chunks, output_path, reporter, *, overwrite=False):
         raise
     reporter.finish()
     return outcome.path
+
+
+async def _single_chunk(data):
+    yield data
 
 
 async def write_async_audio_file(chunks, output_path, reporter, *, overwrite=False):
@@ -290,9 +299,8 @@ class AsyncVeniceSpeech(CatalogOptionsMixin, llm.AsyncKeyModel):
                 else:
                     buffered = await client.generate_speech(self.model_name, prompt.prompt, params)
                     path = speech_output_path(self.model_name, opts, buffered.format)
-                    saved = await _files.async_file_call(
-                        write_audio_file,
-                        [buffered.data],
+                    saved = await write_async_audio_file(
+                        _single_chunk(buffered.data),
                         path,
                         reporter,
                         overwrite=opts.overwrite_files,
