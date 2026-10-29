@@ -4,9 +4,9 @@ from copy import deepcopy
 from functools import lru_cache
 import json
 import math
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Callable, Literal, cast
 
-from pydantic import BaseModel, Field, TypeAdapter, create_model
+from pydantic import AfterValidator, BaseModel, Field, TypeAdapter, create_model
 from pydantic.fields import FieldInfo
 
 
@@ -134,6 +134,17 @@ def normalize_policy(kind: str, spec: Any, image_constraints: Any = None) -> dic
     return policy
 
 
+def _restrict_to(choices: list[Any]) -> Callable[[Any], Any]:
+    allowed = [*choices, None]
+
+    def check(value: Any) -> Any:
+        if value not in allowed:
+            raise ValueError(f"Input should be one of: {', '.join(map(str, allowed))}")
+        return value
+
+    return check
+
+
 @lru_cache(maxsize=128)
 def options_class(base: type[BaseModel], policy_json: str) -> type[BaseModel]:
     policy: dict[str, Any] = json.loads(policy_json)
@@ -155,8 +166,13 @@ def options_class(base: type[BaseModel], policy_json: str) -> type[BaseModel]:
         info.description = " ".join([info.description or "", *descriptions]).strip() or None
         if "choices" in rules:
             choices = rules.pop("choices")
-            # Dynamic Literal construction preserves useful llm option/schema output.
-            annotation = getattr(Literal, "__getitem__")(tuple([*choices, None]))
+            if choices and all(isinstance(choice, bool) for choice in choices):
+                # Keep the base bool type so CLI strings like "false" still coerce;
+                # Literal[False] would reject them before the allowed set is checked.
+                info.metadata.append(AfterValidator(_restrict_to(choices)))
+            else:
+                # Dynamic Literal construction preserves useful llm option/schema output.
+                annotation = getattr(Literal, "__getitem__")(tuple([*choices, None]))
         if "default" in rules:
             info.default = rules.pop("default")
         info.metadata.extend(Field(**rules).metadata)

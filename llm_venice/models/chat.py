@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Union
 import llm
 from llm_venice._options import CatalogOptionsMixin, normalize_policy
 from ._common import model_error_boundary
-from ._common import normalize_model_id, warn_deprecated
+from ._common import initialize_model, warn_deprecated
 from llm.default_plugins.openai_models import AsyncChat, Chat
 from llm_venice.constants import VENICE_PARAMETERS, NON_OPENAI_COMPATIBLE_PARAMS
 from pydantic import Field, field_validator
@@ -364,6 +364,7 @@ class VeniceChat(CatalogOptionsMixin, Chat):
     key_env_var = "LLM_VENICE_KEY"
     supports_web_search = False
     supports_x_search = False
+    model_spec: dict
 
     def __init__(
         self,
@@ -373,15 +374,9 @@ class VeniceChat(CatalogOptionsMixin, Chat):
         model_spec=None,
         **kwargs,
     ):
-        if "model_id" in kwargs:
-            kwargs["model_id"] = f"venice/{normalize_model_id(kwargs['model_id'])}"
-        if "model_name" in kwargs:
-            kwargs["model_name"] = normalize_model_id(kwargs["model_name"])
         super().__init__(*args, **kwargs)
-        self.model_id = f"venice/{normalize_model_id(self.model_id)}"
-        if self.model_name:
-            self.model_name = normalize_model_id(self.model_name)
-        self.model_spec = model_spec or {}
+        # The llm model ID carries the plugin prefix; the API needs the bare ID.
+        initialize_model(self, self.model_id, self.model_name, model_spec)
         self.catalog_policy = normalize_policy("text", self.model_spec)
         self.supports_web_search = supports_web_search
         self.supports_x_search = supports_x_search
@@ -419,6 +414,7 @@ class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
     key_env_var = "LLM_VENICE_KEY"
     supports_web_search = False
     supports_x_search = False
+    model_spec: dict
 
     def __init__(
         self,
@@ -428,15 +424,9 @@ class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
         model_spec=None,
         **kwargs,
     ):
-        if "model_id" in kwargs:
-            kwargs["model_id"] = f"venice/{normalize_model_id(kwargs['model_id'])}"
-        if "model_name" in kwargs:
-            kwargs["model_name"] = normalize_model_id(kwargs["model_name"])
         super().__init__(*args, **kwargs)
-        self.model_id = f"venice/{normalize_model_id(self.model_id)}"
-        if self.model_name:
-            self.model_name = normalize_model_id(self.model_name)
-        self.model_spec = model_spec or {}
+        # The llm model ID carries the plugin prefix; the API needs the bare ID.
+        initialize_model(self, self.model_id, self.model_name, model_spec)
         self.catalog_policy = normalize_policy("text", self.model_spec)
         self.supports_web_search = supports_web_search
         self.supports_x_search = supports_x_search
