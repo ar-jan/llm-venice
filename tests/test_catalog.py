@@ -70,6 +70,15 @@ def test_bad_refresh_preserves_good_cache(tmp_path, httpx2_mock, payload):
     assert path.read_bytes() == previous
 
 
+def test_refresh_skips_malformed_entries(tmp_path, httpx2_mock):
+    path = tmp_path / "catalog"
+    valid = {"id": "m", "type": "text", "model_spec": {"future": {"x": 1}}}
+    httpx2_mock.add_response(json={"data": [{"id": "bad", "model_spec": None}, valid]})
+    with VeniceClient(key="k") as client:
+        assert refresh_catalog(client, path) == [valid]
+    assert json.loads(path.read_text()) == [valid]
+
+
 def test_refresh_owns_only_temporary_client(tmp_path, httpx2_mock, monkeypatch):
     monkeypatch.setattr(llm, "get_key", lambda *a: "k")
     httpx2_mock.add_response(json={"data": [{"id": "m", "type": "text"}]})

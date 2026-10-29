@@ -1,4 +1,7 @@
+import json
+
 import httpx2
+import llm
 import pytest
 from llm.cli import cli
 
@@ -56,3 +59,19 @@ def test_characters_http_error_programmatic(httpx2_mock, mock_venice_api_key):
     message = str(excinfo.value)
     assert "404" in message
     assert "not found" in message.lower()
+
+
+def test_characters_cli_tolerates_optional_field_drift(
+    cli_runner, httpx2_mock, mock_venice_api_key, tmp_path, monkeypatch
+):
+    """Unexpected optional values are saved as returned instead of failing the command."""
+    monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
+    payload = {"data": [{"id": "c", "slug": "s", "modelId": None, "stats": None}]}
+    httpx2_mock.add_response(
+        method="GET", url="https://api.venice.ai/api/v1/characters", json=payload
+    )
+
+    result = cli_runner.invoke(cli, ["venice", "characters"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads((llm.user_dir() / "venice_characters.json").read_text()) == payload

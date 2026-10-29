@@ -125,7 +125,7 @@ class VeniceClient(_Configuration):
         return ep.parse_envelope(self._send(method, path, action, **kwargs), name, action)
 
     def list_models(self, *, type: str = "all") -> list[ModelInfo]:
-        """Fetch concrete catalog resources; empty filtered results are valid."""
+        """Fetch catalog resources, skipping malformed entries; empty filtered results are valid."""
         return cast(list[ModelInfo], self._json_operation("models", type=type)["data"])
 
     def list_characters(
@@ -324,7 +324,7 @@ class AsyncVeniceClient(_Configuration):
         return ep.parse_envelope(await self._send(method, path, action, **kwargs), name, action)
 
     async def list_models(self, *, type: str = "all") -> list[ModelInfo]:
-        """Fetch concrete catalog resources; empty filtered results are valid."""
+        """Fetch catalog resources, skipping malformed entries; empty filtered results are valid."""
         return cast(list[ModelInfo], (await self._json_operation("models", type=type))["data"])
 
     async def list_characters(

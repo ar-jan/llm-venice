@@ -33,7 +33,7 @@ from llm_venice.errors import (
 )
 from llm_venice.params import ImageParams, SpeechParams, copy_params
 from llm_venice.results import GeneratedImage, ImageResult, SpeechResult
-from llm_venice.types import ApiKey, CreatedApiKey, ModelInfo
+from llm_venice.types import ApiKey, Character, CreatedApiKey, ModelInfo, RateLimits
 
 PNG = b"\x89PNG\r\n\x1a\nbytes"
 WEBP = b"RIFF0000WEBPbytes"
@@ -142,6 +142,20 @@ def test_resource_shapes_and_types_preserve_unknown_fields():
         resource({"id": 1}, ApiKey, "Keys")
     with pytest.raises(VeniceResponseError):
         model_resource({"id": "x", "type": None}, "Models")
+
+
+def test_resource_checks_required_keys_but_tolerates_optional_drift():
+    # Optional fields that drift from the documented types must not break parsing.
+    drifted = {"id": "c", "slug": "s", "modelId": None, "adult": "maybe", "stats": None}
+    assert resource(drifted, Character, "Characters") == drifted
+    limits = {"accessPermitted": True, "balances": {"USD": None}, "apiTier": None}
+    assert resource(limits, RateLimits, "Limits") == limits
+    with pytest.raises(VeniceResponseError, match="invalid Character: slug"):
+        resource({"id": "c"}, Character, "Characters")
+    with pytest.raises(VeniceResponseError, match="invalid RateLimits: accessPermitted"):
+        resource({"accessPermitted": "yes"}, RateLimits, "Limits")
+    with pytest.raises(VeniceResponseError, match="expected an object"):
+        resource(None, RateLimits, "Limits")
 
 
 def test_images_preserve_partial_moderation_and_format():

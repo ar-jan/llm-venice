@@ -57,18 +57,18 @@ def refresh_catalog(
 ) -> list[ModelInfo]:
     """Fetch and save a nonempty catalog; close only a client created here.
 
-    Invalid responses never replace a good cache. Service and local file errors
-    propagate. A successful explicit refresh clears failed registration attempts.
+    Malformed entries are skipped; empty or wholly invalid responses never
+    replace a good cache. Service and local file errors propagate. A successful
+    explicit refresh clears failed registration attempts.
     """
     if client is None:
         with VeniceClient() as owned:
             models = owned.list_models()
     else:
         models = client.list_models()
+    # list_models() already skipped malformed entries; reject an empty result.
     if not models:
         raise VeniceResponseError("Refreshing catalog", "no usable models returned")
-    for model in models:
-        model_resource(model, "Refreshing catalog")
     target = save_catalog(models, path)
     normalized = str(target.resolve())
     _catalog_state.failed_bootstraps.difference_update(

@@ -14,7 +14,15 @@ from llm_venice.client import VeniceClient
     "args,method,path,data",
     [
         (["list"], "GET", "api_keys", [{"id": "key", "future": {"flag": True}}]),
+        # Optional fields with undocumented values still render unchanged.
+        (["list"], "GET", "api_keys", [{"id": "key", "description": None, "ipAllowlist": 1}]),
         (["rate-limits"], "GET", "api_keys/rate_limits", {"accessPermitted": True}),
+        (
+            ["rate-limits"],
+            "GET",
+            "api_keys/rate_limits",
+            {"accessPermitted": True, "balances": {"USD": None}, "apiTier": None},
+        ),
         (
             ["rate-limits-log"],
             "GET",

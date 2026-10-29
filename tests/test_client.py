@@ -101,6 +101,17 @@ def test_json_parity(is_async, method, args, kwargs, path, payload, expected, ht
 
 
 @pytest.mark.parametrize("is_async", [False, True])
+def test_list_models_skips_malformed_entries(is_async, httpx2_mock):
+    valid = {"id": "m", "type": "text", "future": 1}
+    malformed = [None, {"id": "x"}, {"id": "y", "type": "text", "model_spec": None}]
+    httpx2_mock.add_response(json={"data": [*malformed, valid]})
+    assert invoke(is_async, "list_models") == [valid]
+    httpx2_mock.add_response(json={"data": malformed})
+    with pytest.raises(VeniceResponseError, match="no usable models"):
+        invoke(is_async, "list_models")
+
+
+@pytest.mark.parametrize("is_async", [False, True])
 def test_media_and_extra_body_parity(is_async, httpx2_mock, tmp_path):
     httpx2_mock.add_response(json={"images": [base64.b64encode(PNG).decode()]})
     result = invoke(

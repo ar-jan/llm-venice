@@ -8,7 +8,11 @@
 - Image output always uses JSON/base64. The `return_binary` option has been removed;
   omit it and use `variants` for multi-image output.
 - Saving creates requested parent directories without an interactive confirmation.
-- Parameter validation follows endpoint bounds; upscale scale must be 2 or 4.
+- Parameter validation follows endpoint bounds; upscale scale must be 2 or 4, and
+  `llm venice upscale --scale` accepts only `2` or `4`.
+- JSON resources are checked for their required fields; optional fields pass through
+  unchanged. Catalog refreshes skip malformed model entries and fail only when no
+  usable model remains.
 - Speech filenames follow the returned media format, including model-specific defaults.
 - Model Options now expose published limits and choices. Explicit unsupported
   values fail locally; missing metadata retains endpoint validation. Prompt/text

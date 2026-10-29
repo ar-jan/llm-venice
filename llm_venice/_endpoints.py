@@ -3,10 +3,12 @@
 import base64
 import binascii
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Any, Literal, TypeVar, cast
 
 import httpx2
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
+from typing_extensions import get_type_hints
 
 from .errors import VeniceResponseError
 from .params import ImageParams, SpeechParams, copy_params, parameter_body
@@ -128,13 +130,28 @@ def json_object(response: httpx2.Response, action: str) -> dict[str, Any]:
 _T = TypeVar("_T")
 
 
+@lru_cache(maxsize=None)
+def _required_validators(kind: type[Any]) -> tuple[tuple[str, TypeAdapter[Any]], ...]:
+    hints = get_type_hints(kind)
+    required: frozenset[str] = getattr(kind, "__required_keys__")
+    return tuple((key, TypeAdapter(hints[key])) for key in sorted(required))
+
+
 def resource(value: Any, kind: type[_T], action: str) -> _T:
-    """Validate known fields without stripping unfamiliar JSON or changing timestamps."""
-    try:
-        TypeAdapter(kind).validate_python(value, strict=True)
-    except ValidationError as exc:
-        raise VeniceResponseError(action, f"invalid {kind.__name__}") from exc
-    return cast(_T, value)
+    """Check the object and its required keys; optional fields pass through unchecked.
+
+    Optional metadata drifts (e.g. a field becoming null) without breaking the
+    resource. Unfamiliar JSON and wire-format timestamps are preserved.
+    """
+    if not isinstance(value, dict):
+        raise VeniceResponseError(action, f"invalid {kind.__name__}: expected an object")
+    obj = cast(dict[str, Any], value)
+    for key, validator in _required_validators(kind):
+        try:
+            validator.validate_python(obj[key], strict=True)
+        except (KeyError, ValidationError) as exc:
+            raise VeniceResponseError(action, f"invalid {kind.__name__}: {key}") from exc
+    return cast(_T, obj)
 
 
 def model_resource(value: Any, action: str) -> ModelInfo:
@@ -326,8 +343,17 @@ def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[st
         return {}
     obj = json_object(response, action)
     if name == "models":
-        for item in list_data(obj, action):
-            model_resource(item, action)
+        # Catalog semantics: skip malformed entries, reject only a wholly invalid list.
+        items = list_data(obj, action)
+        valid: list[ModelInfo] = []
+        for item in items:
+            try:
+                valid.append(model_resource(item, action))
+            except VeniceResponseError:
+                continue
+        if items and not valid:
+            raise VeniceResponseError(action, "no usable models returned")
+        obj = {**obj, "data": valid}
     elif name == "characters":
         for item in list_data(obj, action):
             resource(item, Character, action)

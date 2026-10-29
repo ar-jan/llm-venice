@@ -22,10 +22,11 @@ def create_upscale_command():
     @click.argument("image_path", type=click.Path(exists=True, dir_okay=False, readable=True))
     @click.option(
         "--scale",
-        type=click.FloatRange(1, 4),
-        default=2.0,
+        # The endpoint accepts only 2 or 4; reject other values at parse time.
+        type=click.Choice(["2", "4"]),
+        default="2",
         show_default=True,
-        help="Scale factor (between 1 and 4)",
+        help="Scale factor (2 or 4)",
     )
     @click.option(
         "--enhance",
@@ -72,6 +73,7 @@ def create_upscale_command():
             image_path = Path(kwargs.pop("image_path"))
             output = kwargs.pop("output_path")
             overwrite = kwargs.pop("overwrite")
+            kwargs["scale"] = float(kwargs["scale"])
             with VeniceClient() as client:
                 result = client.upscale_image(image_path, **kwargs)
             extension = "jpg" if result.format == "jpeg" else result.format
