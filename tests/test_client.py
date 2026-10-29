@@ -444,6 +444,19 @@ def test_binary_safe_logging_and_key_redaction(is_async, httpx2_mock, monkeypatc
 
 
 @pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize("make_input", [lambda data: data, io.BytesIO], ids=["bytes", "file"])
+def test_upscale_labels_recognized_image_bytes(is_async, make_input, httpx2_mock):
+    jpeg = b"\xff\xd8\xff\xe0jpeg"
+    httpx2_mock.add_response(content=PNG)
+    httpx2_mock.add_response(content=PNG)
+    invoke(is_async, "upscale_image", make_input(jpeg))
+    invoke(is_async, "upscale_image", make_input(b"unknown"))
+    labelled, unknown = (request.content for request in httpx2_mock.get_requests())
+    assert b'filename="image.jpg"\r\nContent-Type: image/jpeg\r\n' in labelled
+    assert b'filename="image"\r\nContent-Type: application/octet-stream\r\n' in unknown
+
+
+@pytest.mark.parametrize("is_async", [False, True])
 def test_stream_http_error_reads_body_and_maps_status(is_async, httpx2_mock):
     httpx2_mock.add_response(status_code=401, json={"message": "denied"})
 

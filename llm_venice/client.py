@@ -15,7 +15,7 @@ from . import _logging
 from ._files import async_file_call
 from ._http import DEFAULT_TIMEOUT, check_status, request_headers, resolve_key
 from .constants import VENICE_API_BASE
-from .errors import VeniceConnectionError
+from .errors import VeniceConnectionError, VeniceResponseError
 from .params import ImageParams, SpeechParams
 from .results import (
     AsyncSpeechStream,
@@ -29,14 +29,24 @@ from .types import ApiKey, Character, CreatedApiKey, ModelInfo, RateLimitLogEntr
 ImageInput = str | os.PathLike[str] | bytes | BinaryIO
 
 
-def _image_file(image: ImageInput) -> tuple[str, bytes]:
+def _image_file(image: ImageInput) -> tuple[str, bytes] | tuple[str, bytes, str]:
+    """Build the multipart file, labelling recognized PNG/JPEG/WebP bytes."""
     if isinstance(image, (str, os.PathLike)):
         path = Path(image)
-        return path.name, path.read_bytes()
-    if isinstance(image, bytes):
-        return "image", image
-    # Caller owns the file, including its current cursor and lifetime.
-    return "image", image.read()
+        filename, content = path.name, path.read_bytes()
+    elif isinstance(image, bytes):
+        filename, content = "image", image
+    else:
+        # Caller owns the file, including its current cursor and lifetime.
+        filename, content = "image", image.read()
+    try:
+        format = ep.media_format(None, content, None, image=True)
+    except VeniceResponseError:
+        # Unrecognized bytes: send as-is and let the API decide.
+        return filename, content
+    if filename == "image":
+        filename = f"image.{'jpg' if format == 'jpeg' else format}"
+    return filename, content, f"image/{format}"
 
 
 class _Configuration:
@@ -214,14 +224,14 @@ class VeniceClient(_Configuration):
                 "replication": replication,
             }
         ).model_dump(by_alias=True, exclude_none=True)
-        filename, content = _image_file(image)
+        file = _image_file(image)
         return ep.parse_upscale(
             self._send(
                 "POST",
                 "image/upscale",
                 "Upscaling image",
                 data=data,
-                files={"image": (filename, content)},
+                files={"image": file},
             )
         )
 
@@ -420,14 +430,14 @@ class AsyncVeniceClient(_Configuration):
                 "replication": replication,
             }
         ).model_dump(by_alias=True, exclude_none=True)
-        filename, content = await async_file_call(_image_file, image)
+        file = await async_file_call(_image_file, image)
         return ep.parse_upscale(
             await self._send(
                 "POST",
                 "image/upscale",
                 "Upscaling image",
                 data=data,
-                files={"image": (filename, content)},
+                files={"image": file},
             )
         )
 
