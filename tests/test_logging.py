@@ -4,7 +4,10 @@ import asyncio
 import base64
 import json
 
+import httpx2
+import openai
 import pytest
+from pytest_httpx2 import IteratorStream
 
 from llm_venice import AsyncVeniceChat, VeniceChat, _logging
 from llm_venice.client import AsyncVeniceClient, VeniceClient
@@ -145,29 +148,122 @@ def test_venice_off_silences_chat_despite_openai_variable(
     assert capsys.readouterr().err == ""
 
 
-@pytest.mark.parametrize("is_async", [False, True])
-def test_streamed_chat_chunks_are_echoed(
-    is_async, httpx2_mock, monkeypatch, capsys, mock_venice_api_key
-):
-    monkeypatch.setenv(_logging.VENICE_ENV, "1")
-    chunk = {
+def sse_chunk(content, **extra):
+    return {
         "id": "x",
         "object": "chat.completion.chunk",
         "created": 0,
         "model": "llama-3.3-70b",
-        "choices": [{"index": 0, "delta": {"content": "streamed-reply"}, "finish_reason": None}],
+        "choices": [{"index": 0, "delta": {"content": content}, "finish_reason": None}],
+        **extra,
     }
-    body = f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n".encode()
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize("chunked", [True, False], ids=["chunked", "single"])
+def test_streamed_chat_events_are_logged_and_redacted(
+    is_async, chunked, httpx2_mock, monkeypatch, capsys, mock_venice_api_key
+):
+    monkeypatch.setenv(_logging.VENICE_ENV, "1")
+    first = json.dumps(sse_chunk("stréamed-", apiKey="sse-secret"), ensure_ascii=False)
+    body = f"data: {first}\n\ndata: {json.dumps(sse_chunk('reply'))}\n\ndata: [DONE]\n\n"
+    raw = body.encode()
+    # Split mid-line and inside the multi-byte "é" to exercise incremental decoding.
+    cut = raw.index("é".encode()) + 1
+    response = (
+        {"stream": IteratorStream([raw[:cut], raw[cut : cut + 40], raw[cut + 40 :]])}
+        if chunked
+        else {"content": raw}
+    )
+    httpx2_mock.add_response(
+        method="POST", url=CHAT_URL, headers={"content-type": "text/event-stream"}, **response
+    )
+    assert run_chat(is_async, stream=True) == "stréamed-reply"
+    err = capsys.readouterr().err
+    assert "sse-secret" not in err
+    assert '"apiKey": "[redacted]"' in err
+    assert '"content": "stréamed-"' in err
+    assert '"content": "reply"' in err
+    assert "    data: [DONE]" in err
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_streamed_json_chat_body_is_redacted_once_complete(
+    is_async, httpx2_mock, monkeypatch, capsys, mock_venice_api_key
+):
+    monkeypatch.setenv(_logging.VENICE_ENV, "1")
+    completion = {**COMPLETION, "apiKey": "json-secret"}
+    completion["choices"] = [
+        {
+            **COMPLETION["choices"][0],
+            "logprobs": {"content": [{"token": "logged", "logprob": -0.1}]},
+        }
+    ]
+    raw = json.dumps(completion).encode()
     httpx2_mock.add_response(
         method="POST",
         url=CHAT_URL,
-        content=body,
-        headers={"content-type": "text/event-stream"},
+        headers={"content-type": "application/json"},
+        stream=IteratorStream([raw[:20], raw[20:]]),
     )
-    assert run_chat(is_async, stream=True) == "streamed-reply"
+    assert run_chat(is_async, stream=False) == "logged-reply"
     err = capsys.readouterr().err
-    assert '"content": "streamed-reply"' in err
-    assert "data: [DONE]" in err
+    assert "json-secret" not in err
+    assert '"token": "logged"' in err
+    assert '\n      "apiKey": "[redacted]"' in err  # pretty-printed, not raw chunks
+
+
+def test_already_read_chat_body_is_logged_directly(monkeypatch, capsys):
+    monkeypatch.setenv(_logging.VENICE_ENV, "1")
+    response = httpx2.Response(200, json={"apiKey": "read-secret", "ok": True})
+    _logging.log_chat_response(response)
+    assert type(response) is httpx2.Response
+    err = capsys.readouterr().err
+    assert "read-secret" not in err
+    assert '"ok": true' in err
+
+
+def test_redaction_is_limited_to_credentials():
+    body = {
+        "apiKey": "k",
+        "API_KEY": "k",
+        "tools": [{"parameters": {"properties": {"token": {}, "secret": {}}}}],
+        "logprobs": [{"token": "t"}],
+    }
+    assert _logging.redact(body) == {
+        "apiKey": "[redacted]",
+        "API_KEY": "[redacted]",
+        "tools": [{"parameters": {"properties": {"token": {}, "secret": {}}}}],
+        "logprobs": [{"token": "t"}],
+    }
+
+
+def test_credential_headers_are_redacted(httpx2_mock, monkeypatch, capsys):
+    monkeypatch.setenv(_logging.VENICE_ENV, "1")
+    httpx2_mock.add_response(json={"ok": True})
+    with _logging.chat_http_client() as client:
+        client.get("https://api.venice.ai/x", headers={"x-api-key": "hdr-secret"})
+    err = capsys.readouterr().err
+    assert "hdr-secret" not in err
+    assert "x-api-key: [redacted]" in err
+
+
+@pytest.mark.parametrize(
+    "factory,default",
+    [
+        (_logging.chat_http_client, openai.DefaultHttpxClient),
+        (_logging.async_chat_http_client, openai.DefaultAsyncHttpxClient),
+    ],
+)
+def test_chat_logging_keeps_environment_proxies(monkeypatch, factory, default):
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:3128")
+    monkeypatch.setenv("NO_PROXY", "localhost")
+    # httpx keeps environment proxies as URL-pattern mounts; supplying a custom
+    # transport would drop them, so the logging client must match the default.
+    logging_client, default_client = factory(), default()
+    patterns = [pattern.pattern for pattern in logging_client._mounts]
+    assert patterns
+    assert patterns == [pattern.pattern for pattern in default_client._mounts]
 
 
 def test_shorten_keeps_prose_and_truncates_blobs():

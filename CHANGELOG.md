@@ -30,8 +30,9 @@
     A Venice value of `0` now also silences Venice chat.
   - `0`, `false`, `off` and `no` now disable logging. In 0.9, any non-empty value,
     including `0`, enabled it.
-  - Logs show request and response headers and bodies, with credentials redacted,
-    base64 data shortened and binary bodies summarised. This fixes the 0.9 crash
+  - Logs show request and response headers and bodies, with credential headers and
+    `apiKey`/`api_key` fields redacted, base64 data shortened and binary bodies
+    summarised. Enabling logging keeps environment proxy settings. This fixes the 0.9 crash
     when logging binary speech responses.
   - Async chat no longer fails with `TypeError: Invalid http_client argument` when
     `LLM_OPENAI_SHOW_RESPONSES` is set.

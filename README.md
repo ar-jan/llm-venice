@@ -258,10 +258,15 @@ LLM_VENICE_SHOW_RESPONSES=1 llm -m venice/llama-3.3-70b --no-stream 'Say hi'
   models but not Venice.
 - `0`, `false`, `off` and `no` turn logging off; any other value turns it on. (llm
   itself treats any non-empty `LLM_OPENAI_SHOW_RESPONSES`, even `0`, as on.)
-- Authorization headers, cookies and returned API keys are redacted. Long base64
-  data is shortened and binary bodies are summarised by type and size.
-- Streamed chat responses are printed chunk by chunk as they arrive; use
-  `--no-stream` for a single JSON body. Streamed speech audio is not printed.
+- The `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie` and `X-API-Key`
+  headers are redacted, as are `apiKey`/`api_key` fields in JSON bodies (such as a
+  newly created API key). Other fields, such as logprobs `token`, are shown as-is.
+- Long base64 data is shortened and binary bodies are summarised by type and size.
+- Streamed chat responses are printed event by event as they arrive; use
+  `--no-stream` for a single pretty-printed JSON body. Streamed speech audio is not
+  printed.
+- Logging does not change how requests are sent, so `HTTP(S)_PROXY`, `ALL_PROXY` and
+  `NO_PROXY` still apply.
 
 ---
 
