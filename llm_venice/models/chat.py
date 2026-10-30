@@ -5,6 +5,8 @@ import json
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Union
 
 import llm
+import openai
+from llm_venice import _logging
 from llm_venice._options import CatalogOptionsMixin, normalize_policy, parse_json_object
 from ._common import model_error_boundary
 from ._common import initialize_model, warn_deprecated
@@ -409,6 +411,20 @@ def _build_venice_kwargs(model_id: str, supports_web_search: bool, kwargs: Dict)
     return kwargs
 
 
+def _openai_client(model: Union[Chat, AsyncChat], key, *, async_: bool):
+    """Build the SDK client, using Venice's logging setting instead of llm's."""
+    kwargs: Dict[str, Any] = {"api_key": model.get_key(key)}
+    if model.api_base:
+        kwargs["base_url"] = model.api_base
+    if model.headers:
+        kwargs["default_headers"] = model.headers
+    if _logging.enabled():
+        kwargs["http_client"] = (
+            _logging.async_chat_http_client() if async_ else _logging.chat_http_client()
+        )
+    return openai.AsyncOpenAI(**kwargs) if async_ else openai.OpenAI(**kwargs)
+
+
 class VeniceChat(CatalogOptionsMixin, Chat):
     """Venice AI chat model."""
 
@@ -448,6 +464,9 @@ class VeniceChat(CatalogOptionsMixin, Chat):
         if self.supports_x_search:
             tools.append(VeniceXSearch)
         return tuple(tools)
+
+    def get_client(self, key, *, async_=False):
+        return _openai_client(self, key, async_=async_)
 
     def build_kwargs(self, prompt, stream):
         warn_deprecated(self)
@@ -497,6 +516,9 @@ class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
         if self.supports_x_search:
             tools.append(VeniceXSearch)
         return tuple(tools)
+
+    def get_client(self, key, *, async_=False):
+        return _openai_client(self, key, async_=async_)
 
     def build_kwargs(self, prompt, stream):
         warn_deprecated(self)

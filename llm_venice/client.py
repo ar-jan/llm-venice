@@ -263,6 +263,8 @@ class VeniceClient(_Configuration):
                 response = stack.enter_context(self._http.stream("POST", url, **options))
                 if not response.is_success:
                     response.read()
+                    if self._owned:
+                        _logging.log_buffered(response)
                     check_status(response, "Generating speech")
             except httpx2.RequestError as exc:
                 raise VeniceConnectionError(f"Generating speech failed: {exc}") from exc
@@ -471,6 +473,8 @@ class AsyncVeniceClient(_Configuration):
                 )
                 if not response.is_success:
                     await response.aread()
+                    if self._owned:
+                        _logging.log_buffered(response)
                     check_status(response, "Generating speech")
             except httpx2.RequestError as exc:
                 raise VeniceConnectionError(f"Generating speech failed: {exc}") from exc
