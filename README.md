@@ -120,6 +120,15 @@ Use a public character, for example:
 
 `llm -m venice/google.gemma-4-26b-a4b-it -o character_slug alan-watts "What is the meaning of life?"`
 
+API fields that have no dedicated option yet can be sent with `extra_body`, as a JSON object.
+Put new Venice parameters under `venice_parameters`; they are merged with the options above:
+
+`llm -m venice/llama-3.3-70b -o extra_body '{"venice_parameters": {"new_flag": true}}' "Hello"`
+
+`extra_body` cannot override fields that have an option or that llm sets itself (such as
+`min_p`, `temperature`, `messages`, or `venice_parameters.character_slug`); use the option instead.
+Image and speech models accept `-o extra_body '{...}'` in the same way.
+
 ### Web and X search tools
 
 Models that advertise web search or X search expose them as llm server-side tools, so they also

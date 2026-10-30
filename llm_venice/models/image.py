@@ -7,13 +7,18 @@ import sys
 from typing import Literal, cast
 
 import llm
-from llm_venice._options import CatalogOptionsMixin, normalize_policy, validate_request
+from llm_venice._options import (
+    CatalogOptionsMixin,
+    normalize_policy,
+    parse_json_object,
+    validate_request,
+)
 from ._common import initialize_model, warn_deprecated, model_error_boundary
 from llm_venice.client import VeniceClient, AsyncVeniceClient
 from llm_venice.params import ImageParams, copy_params
 from llm_venice.results import ImageResult
 from llm_venice._files import async_file_call, publish_media_file, write_chunks
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from llm_venice.utils import (
     generate_timestamp_filename,
@@ -37,6 +42,11 @@ class _ImageOptions(ImageParams, ImageOutputOptions):
     hide_watermark: bool | None = True
     image_format: Literal["png", "jpeg", "webp"] | None = Field(default="png", alias="format")
     embed_exif_metadata: bool | None = False
+
+    @field_validator("extra_body", mode="before")
+    @classmethod
+    def _parse_extra_body(cls, value: object) -> object:
+        return parse_json_object(value, "extra_body")
 
 
 def append_blurred_notice(notices: list[VeniceNotice], *, is_blurred: bool) -> None:

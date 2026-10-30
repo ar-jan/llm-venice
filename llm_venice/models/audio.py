@@ -7,8 +7,13 @@ import time
 from typing import Literal, Optional, Union
 
 import llm
-from llm_venice._options import CatalogOptionsMixin, normalize_policy, validate_request
-from pydantic import Field
+from llm_venice._options import (
+    CatalogOptionsMixin,
+    normalize_policy,
+    parse_json_object,
+    validate_request,
+)
+from pydantic import Field, field_validator
 from typing import cast
 from ._common import initialize_model, warn_deprecated, model_error_boundary
 from llm_venice.client import VeniceClient, AsyncVeniceClient
@@ -39,6 +44,11 @@ class _SpeechOptions(SpeechParams, SpeechOutputOptions):
 
     response_format: Optional[AudioResponseFormat] = "mp3"
     speed: float | None = Field(default=1.0, ge=0.25, le=4.0)
+
+    @field_validator("extra_body", mode="before")
+    @classmethod
+    def _parse_extra_body(cls, value: object) -> object:
+        return parse_json_object(value, "extra_body")
 
 
 def _normalize_output_dir(
