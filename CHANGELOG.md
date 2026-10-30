@@ -17,6 +17,11 @@
 - Model Options now expose published limits and choices. Explicit unsupported
   values fail locally; missing metadata retains endpoint validation. Prompt/text
   limits also apply. Speech accepts cloned and custom voice IDs.
+- Chat models accept an `extra_body` option for API fields without a dedicated option,
+  including new `venice_parameters` entries, which are merged with option-derived ones.
+  Fields that would override an option or request field are rejected rather than
+  silently overridden. `-o extra_body '{...}'` JSON strings now also work for image
+  and speech models.
 
 ### Python migration
 

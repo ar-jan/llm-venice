@@ -2,15 +2,28 @@
 
 import copy
 import json
-from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Union
 
 import llm
-from llm_venice._options import CatalogOptionsMixin, normalize_policy
+from llm_venice._options import CatalogOptionsMixin, normalize_policy, parse_json_object
 from ._common import model_error_boundary
 from ._common import initialize_model, warn_deprecated
 from llm.default_plugins.openai_models import AsyncChat, Chat
 from llm_venice.constants import VENICE_PARAMETERS, NON_OPENAI_COMPATIBLE_PARAMS
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
+from typing_extensions import Self
+
+# Request keys set by llm or this plugin outside of Options; extra_body must not
+# override them, because the OpenAI SDK merges extra_body over the request body.
+_RESERVED_REQUEST_KEYS = {
+    "model",
+    "messages",
+    "stream",
+    "stream_options",
+    "tools",
+    "tool_choice",
+    "response_format",
+}
 
 
 class _ChatOptions(Chat.Options):
@@ -112,6 +125,41 @@ class _ChatOptions(Chat.Options):
         description=("Disable thinking and strip <think></think> blocks (reasoning models)."),
         default=None,
     )
+
+    extra_body: Optional[Dict[str, Any]] = Field(
+        description=(
+            "Additional API fields, as a JSON object; cannot override other options. "
+            "New Venice parameters go under 'venice_parameters'."
+        ),
+        default=None,
+    )
+
+    @field_validator("extra_body", mode="before")
+    @classmethod
+    def _parse_extra_body(cls, value: Any) -> Any:
+        return parse_json_object(value, "extra_body")
+
+    @model_validator(mode="after")
+    def _check_extra_body(self) -> Self:
+        """Reject extra_body fields that would silently override declared options."""
+        extra_body = self.extra_body or {}
+        fields = type(self).model_fields
+        reserved = _RESERVED_REQUEST_KEYS | set(fields)
+        reserved.update(field.alias for field in fields.values() if field.alias)
+        collisions = sorted(reserved.intersection(extra_body))
+        if "venice_parameters" in extra_body:
+            nested = extra_body["venice_parameters"]
+            if not isinstance(nested, dict):
+                raise ValueError("extra_body.venice_parameters must be an object")
+            collisions += sorted(
+                f"venice_parameters.{key}" for key in VENICE_PARAMETERS.intersection(nested)
+            )
+        if collisions:
+            raise ValueError(
+                f"extra_body conflicts with reserved fields: {', '.join(collisions)}; "
+                "use the corresponding option instead"
+            )
+        return self
 
     @field_validator("enable_web_search")
     def validate_enable_web_search(cls, value):
@@ -344,15 +392,19 @@ def _build_venice_kwargs(model_id: str, supports_web_search: bool, kwargs: Dict)
             "enable_web_search must be set to 'on' or 'auto' when using web citations or including search results in stream"
         )
 
-    # Build extra_body
-    if non_openai_compatible_params or venice_parameters:
-        kwargs["extra_body"] = {}
-        # Non-standard parameters go top-level inside extra_body
-        if non_openai_compatible_params:
-            kwargs["extra_body"].update(non_openai_compatible_params)
-        # Venice-specific parameters go in extra_body.venice_parameters
-        if venice_parameters:
-            kwargs["extra_body"]["venice_parameters"] = venice_parameters
+    # Build extra_body on top of any user-supplied extra_body. Options validation
+    # rejects collisions, so merging here never overrides user fields.
+    extra_body = copy.deepcopy(kwargs.pop("extra_body", None) or {})
+    # Non-standard parameters go top-level inside extra_body
+    extra_body.update(non_openai_compatible_params)
+    # Venice-specific parameters go in extra_body.venice_parameters
+    if venice_parameters:
+        extra_body["venice_parameters"] = {
+            **extra_body.get("venice_parameters", {}),
+            **venice_parameters,
+        }
+    if extra_body:
+        kwargs["extra_body"] = extra_body
 
     return kwargs
 

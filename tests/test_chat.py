@@ -629,6 +629,102 @@ def test_venice_parameters_edge_cases():
     assert kwargs["extra_body"]["top_k"] == 50
 
 
+def test_extra_body_option_parses_json_and_rejects_collisions():
+    """extra_body accepts CLI JSON strings but cannot override declared fields."""
+    assert VeniceChatOptions.model_validate({"extra_body": '{"future": null}'}).extra_body == {
+        "future": None
+    }
+    assert VeniceChatOptions(extra_body={"future": 1}).extra_body == {"future": 1}
+
+    for value in ("[1]", "{not json", '"text"'):
+        with pytest.raises(ValidationError, match="extra_body must be a JSON object"):
+            VeniceChatOptions.model_validate({"extra_body": value})
+
+    for value, field in [
+        ({"min_p": 0.1}, "min_p"),
+        ({"temperature": 0.1}, "temperature"),
+        ({"messages": []}, "messages"),
+        ({"model": "other"}, "model"),
+        ({"venice_parameters": {"character_slug": "x"}}, "venice_parameters.character_slug"),
+    ]:
+        with pytest.raises(ValidationError, match=f"reserved fields: {field}"):
+            VeniceChatOptions(extra_body=value)
+
+    with pytest.raises(ValidationError, match="venice_parameters must be an object"):
+        VeniceChatOptions(extra_body={"venice_parameters": True})
+
+
+@pytest.mark.parametrize("cls", [VeniceChat, AsyncVeniceChat])
+def test_extra_body_option_is_merged_with_venice_parameters(cls):
+    """User extra_body fields survive alongside option-derived fields."""
+    chat = cls(model_id="venice/test-model", model_name="test-model")
+    extra_body = {"future": None, "venice_parameters": {"new_flag": True}}
+    options = VeniceChatOptions(
+        extra_body=extra_body,
+        min_p=0.1,
+        character_slug="alan-watts",
+    )
+    kwargs = chat.build_kwargs(Prompt(prompt="Test", model=chat, options=options), stream=False)
+
+    assert kwargs["extra_body"] == {
+        "future": None,
+        "min_p": 0.1,
+        "venice_parameters": {"new_flag": True, "character_slug": "alan-watts"},
+    }
+    # The caller's dict is not mutated.
+    assert extra_body == {"future": None, "venice_parameters": {"new_flag": True}}
+
+    # extra_body alone passes through unchanged.
+    options = VeniceChatOptions(extra_body={"venice_parameters": {"new_flag": True}})
+    kwargs = chat.build_kwargs(Prompt(prompt="Test", model=chat, options=options), stream=False)
+    assert kwargs["extra_body"] == {"venice_parameters": {"new_flag": True}}
+
+
+def test_cli_extra_body_option_reaches_request(cli_runner, monkeypatch, hermetic_venice_model):
+    """-o extra_body '<json>' works from the CLI and merges with other options."""
+    from unittest.mock import patch
+
+    from llm import cli as llm_cli
+
+    model_id = hermetic_venice_model()
+    monkeypatch.setenv("LLM_VENICE_KEY", "test-venice-key")
+    captured = {}
+
+    def fake_execute(self, prompt, stream=False, **kwargs):
+        captured.update(self.build_kwargs(prompt, stream))
+        return iter(["Mock response"])
+
+    with patch.object(VeniceChat, "execute", fake_execute):
+        result = cli_runner.invoke(
+            llm_cli.cli,
+            [
+                "prompt",
+                "-m",
+                model_id,
+                "-o",
+                "extra_body",
+                '{"future": 1, "venice_parameters": {"new_flag": true}}',
+                "-o",
+                "strip_thinking_response",
+                "1",
+                "--no-log",
+                "Test prompt",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert captured["extra_body"] == {
+            "future": 1,
+            "venice_parameters": {"new_flag": True, "strip_thinking_response": True},
+        }
+
+        result = cli_runner.invoke(
+            llm_cli.cli,
+            ["prompt", "-m", model_id, "-o", "extra_body", '{"top_k": 5}', "--no-log", "x"],
+        )
+        assert result.exit_code != 0
+        assert "reserved fields: top_k" in result.output
+
+
 def test_new_parameters_validation():
     """Test validation for new parameters focusing on error cases and JSON parsing."""
     # Invalid min_p values

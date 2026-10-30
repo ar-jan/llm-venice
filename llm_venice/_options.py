@@ -40,6 +40,23 @@ class CatalogOptionsMixin:
             setattr(cls, "Options", _CatalogOptions(options))
 
 
+def parse_json_object(value: Any, name: str) -> Any:
+    """Parse a JSON object passed as a CLI string; leave other values to field validation.
+
+    llm passes ``-o key value`` options as raw strings, so dict-typed options need
+    this as a ``mode="before"`` validator to be usable from the command line.
+    """
+    if not isinstance(value, str):
+        return value
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        raise ValueError(f"{name} must be a JSON object") from None
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{name} must be a JSON object")
+    return cast(dict[str, Any], parsed)
+
+
 def _object(value: Any) -> dict[str, Any]:
     return cast(dict[str, Any], value) if isinstance(value, dict) else {}
 

@@ -193,6 +193,88 @@ def test_cli_speech_api_error_is_clean(
     assert not (tmp_path / "hello.mp3.part").exists()
 
 
+def test_cli_image_extra_body_json_reaches_payload(
+    cli_runner, httpx2_mock, mock_venice_api_key, catalog, tmp_path
+):
+    """-o extra_body '<json>' is parsed from the CLI string and sent as fields."""
+    httpx2_mock.add_response(method="POST", url=ENDPOINT_IMAGE_GENERATE, json=IMAGE_JSON)
+
+    result = cli_runner.invoke(
+        cli,
+        [
+            "-m",
+            "venice/img-model",
+            "-o",
+            "output_dir",
+            str(tmp_path),
+            "-o",
+            "extra_body",
+            '{"future": null}',
+            "A cat",
+            "--no-log",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(httpx2_mock.get_requests()[0].read())
+    assert "future" in payload and payload["future"] is None
+    assert "extra_body" not in payload
+
+
+def test_cli_speech_extra_body_json_reaches_payload(
+    cli_runner, httpx2_mock, mock_venice_api_key, catalog, tmp_path
+):
+    """Speech accepts -o extra_body as a JSON string too."""
+    httpx2_mock.add_response(
+        method="POST",
+        url=ENDPOINT_AUDIO_SPEECH,
+        content=AUDIO,
+        headers={"Content-Type": "audio/mpeg"},
+    )
+
+    result = cli_runner.invoke(
+        cli,
+        [
+            "-m",
+            "venice/tts-model",
+            "-o",
+            "output_dir",
+            str(tmp_path),
+            "-o",
+            "extra_body",
+            '{"future": 1}',
+            "Hello.",
+            "--no-log",
+            "--no-stream",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(httpx2_mock.get_requests()[0].read())["future"] == 1
+
+
+@pytest.mark.parametrize(
+    ("model", "value", "message"),
+    [
+        ("venice/img-model", "[1]", "extra_body must be a JSON object"),
+        ("venice/img-model", '{"prompt": "x"}', "reserved fields: prompt"),
+        ("venice/tts-model", '{"speed": 2}', "reserved fields: speed"),
+    ],
+)
+def test_cli_media_extra_body_errors_before_request(
+    cli_runner, httpx2_mock, mock_venice_api_key, catalog, tmp_path, model, value, message
+):
+    """Invalid or colliding extra_body fails locally without calling the API."""
+    result = cli_runner.invoke(
+        cli,
+        ["-m", model, "-o", "output_dir", str(tmp_path), "-o", "extra_body", value, "x"],
+    )
+
+    assert result.exit_code != 0
+    assert message in result.output
+    assert httpx2_mock.get_requests() == []
+
+
 def test_tests_do_not_patch_httpx2_modules():
     """Transport mocking goes through httpx2_mock, not patch() on httpx2 itself."""
     needle = 'patch("' + "httpx2"  # built at runtime so this file does not match itself
