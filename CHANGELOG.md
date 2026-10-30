@@ -22,6 +22,19 @@
   Fields that would override an option or request field are rejected rather than
   silently overridden. `-o extra_body '{...}'` JSON strings now also work for image
   and speech models.
+- `LLM_VENICE_SHOW_RESPONSES` now logs every Venice request: chat, image, speech
+  (including streaming), upscale, characters, API keys and catalog refreshes.
+  Previously it covered only image generation and speech, and chat responded only
+  to `LLM_OPENAI_SHOW_RESPONSES`.
+  - When the Venice variable is unset or blank, `LLM_OPENAI_SHOW_RESPONSES` is used.
+    A Venice value of `0` now also silences Venice chat.
+  - `0`, `false`, `off` and `no` now disable logging. In 0.9, any non-empty value,
+    including `0`, enabled it.
+  - Logs show request and response headers and bodies, with credentials redacted,
+    base64 data shortened and binary bodies summarised. This fixes the 0.9 crash
+    when logging binary speech responses.
+  - Async chat no longer fails with `TypeError: Invalid http_client argument` when
+    `LLM_OPENAI_SHOW_RESPONSES` is set.
 
 ### Python migration
 

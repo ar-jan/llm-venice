@@ -433,7 +433,7 @@ def test_binary_safe_logging_and_key_redaction(is_async, httpx2_mock, monkeypatc
     httpx2_mock.add_response(json={"data": {"id": "k", "apiKey": "secret-new"}})
     invoke(is_async, "create_api_key", key_type="ADMIN")
     output = capsys.readouterr().err
-    assert "[3 bytes]" in output
+    assert "[audio/pcm, 3 bytes]" in output
     for secret in ["secret-cookie", "secret-auth", "secret-new"]:
         assert secret not in output
     monkeypatch.setenv("LLM_VENICE_SHOW_RESPONSES", "off")

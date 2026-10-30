@@ -12,6 +12,13 @@ from click.testing import CliRunner
 
 
 @pytest.fixture(autouse=True)
+def no_show_responses(monkeypatch):
+    """Keep a developer's HTTP-logging environment out of captured test output."""
+    monkeypatch.delenv("LLM_VENICE_SHOW_RESPONSES", raising=False)
+    monkeypatch.delenv("LLM_OPENAI_SHOW_RESPONSES", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def hermetic_llm_user_path(request, tmp_path_factory, monkeypatch):
     """Point LLM_USER_PATH at a per-test directory.
 

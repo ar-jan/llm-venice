@@ -243,6 +243,26 @@ List the available Venice commands with:
 
 `llm venice --help`
 
+### Debugging HTTP requests
+
+Set `LLM_VENICE_SHOW_RESPONSES=1` to print each Venice API request and response
+(headers and bodies) to stderr. This covers chat, image, speech, upscale and the
+`llm venice` commands, from both the CLI and the Python API:
+
+```bash
+LLM_VENICE_SHOW_RESPONSES=1 llm -m venice/llama-3.3-70b --no-stream 'Say hi'
+```
+
+- If `LLM_VENICE_SHOW_RESPONSES` is unset or blank, llm's `LLM_OPENAI_SHOW_RESPONSES`
+  is used instead. Set the Venice variable to `0` to log other OpenAI-compatible
+  models but not Venice.
+- `0`, `false`, `off` and `no` turn logging off; any other value turns it on. (llm
+  itself treats any non-empty `LLM_OPENAI_SHOW_RESPONSES`, even `0`, as on.)
+- Authorization headers, cookies and returned API keys are redacted. Long base64
+  data is shortened and binary bodies are summarised by type and size.
+- Streamed chat responses are printed chunk by chunk as they arrive; use
+  `--no-stream` for a single JSON body. Streamed speech audio is not printed.
+
 ---
 
 Read the `llm` [docs](https://llm.datasette.io/en/stable/usage.html) for more usage options.
@@ -363,11 +383,10 @@ Catch `VeniceError` for service failures, or its specific subclasses:
 Invalid parameters raise Pydantic `ValidationError`; local file failures remain
 `OSError`. Original causes and cancellation are preserved.
 
-Owned-client logging uses `LLM_VENICE_SHOW_RESPONSES`, falling back to
-`LLM_OPENAI_SHOW_RESPONSES` only when the Venice variable is absent. Empty values,
-`0`, `false`, and `off` disable it. Logs go to stderr, redact authentication and
-returned API keys, handle binary safely, and never consume streams. Injected-client
-logging and chat's llm/OpenAI logging remain caller-owned.
+Clients created without `http_client` log as described in
+[Debugging HTTP requests](#debugging-http-requests), reading the setting on every
+request. They never consume streams. Logging for a client you inject with
+`http_client` is up to you.
 
 ### Catalogs
 
