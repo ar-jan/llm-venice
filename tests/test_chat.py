@@ -332,6 +332,8 @@ def test_models_list_options_includes_chat_request_options(cli_runner, hermetic_
     assert "Key used to group related requests for prompt caching." in result.output
     assert "prompt_cache_retention: str" in result.output
     assert "Prompt cache retention: 'default', 'extended' or '24h'." in result.output
+    assert "enable_x_search: bool" in result.output
+    assert "Enable xAI native web and X/Twitter search" in result.output
 
 
 def test_async_venice_chat_parity_with_sync_build_kwargs():

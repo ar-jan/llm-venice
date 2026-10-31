@@ -99,6 +99,13 @@ class _ChatOptions(Chat.Options):
         description=("Enable web search: one of 'on', 'off', or 'auto'."),
         default=None,
     )
+    enable_x_search: Optional[bool] = Field(
+        description=(
+            "Enable xAI native web and X/Twitter search on models with X search support. "
+            "Replaces Venice web-search settings when true. VeniceXSearch overrides false."
+        ),
+        default=None,
+    )
     enable_web_scraping: Optional[bool] = Field(
         description=("Enable scraping of URLs in the latest user message using."),
         default=None,
@@ -293,17 +300,8 @@ def _apply_server_side_tools(kwargs: Dict, server_side_tools: List) -> Dict:
         return kwargs
 
     tool_parameters: Dict[str, object] = {}
-    x_search_requested = False
     for tool in server_side_tools:
         tool_parameters.update(tool.venice_parameters())
-        if isinstance(tool, VeniceXSearch):
-            x_search_requested = True
-
-    if x_search_requested:
-        # X search replaces Venice web search, as in the official venice-cli.
-        for key in _WEB_SEARCH_KEYS:
-            kwargs.pop(key, None)
-            tool_parameters.pop(key, None)
 
     kwargs.update(tool_parameters)
     return kwargs
@@ -356,7 +354,9 @@ def _make_json_schema_strict(schema: Dict) -> Dict:
     return schema
 
 
-def _build_venice_kwargs(model_id: str, supports_web_search: bool, kwargs: Dict) -> Dict:
+def _build_venice_kwargs(
+    model_id: str, supports_web_search: bool, supports_x_search: bool, kwargs: Dict
+) -> Dict:
     """Apply Venice-specific request shaping to kwargs."""
     # Venice requires strict mode and no additional properties for JSON schema.
     # The schema is copied so the caller's prompt.schema is never mutated.
@@ -377,6 +377,14 @@ def _build_venice_kwargs(model_id: str, supports_web_search: bool, kwargs: Dict)
     for key in VENICE_PARAMETERS:
         if key in kwargs and kwargs[key] is not None:
             venice_parameters[key] = kwargs.pop(key)
+
+    # Validate the effective configuration after tool values override options.
+    # xAI native search replaces Venice search for both entry points.
+    if venice_parameters.get("enable_x_search") is True:
+        if not supports_x_search:
+            raise llm.ModelError(f"Model {model_id} does not support X search")
+        for key in _WEB_SEARCH_KEYS:
+            venice_parameters.pop(key, None)
 
     web_search_requested = venice_parameters.get("enable_web_search")
     web_search_enabled = web_search_requested in ("on", "auto")
@@ -475,7 +483,9 @@ class VeniceChat(CatalogOptionsMixin, Chat):
         prompt, server_side_tools = _split_server_side_tools(prompt)
         base_kwargs = super().build_kwargs(prompt, stream)
         base_kwargs = _apply_server_side_tools(base_kwargs, server_side_tools)
-        return _build_venice_kwargs(self.model_id, self.supports_web_search, base_kwargs)
+        return _build_venice_kwargs(
+            self.model_id, self.supports_web_search, self.supports_x_search, base_kwargs
+        )
 
 
 class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
@@ -527,4 +537,6 @@ class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
         prompt, server_side_tools = _split_server_side_tools(prompt)
         base_kwargs = super().build_kwargs(prompt, stream)
         base_kwargs = _apply_server_side_tools(base_kwargs, server_side_tools)
-        return _build_venice_kwargs(self.model_id, self.supports_web_search, base_kwargs)
+        return _build_venice_kwargs(
+            self.model_id, self.supports_web_search, self.supports_x_search, base_kwargs
+        )
