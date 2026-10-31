@@ -112,6 +112,23 @@ Use web search (on web-enabled models; image models accept `on` or `off`):
 
 It is recommended to use web search in combination with `--no-stream` so the search citations are available in `response_json`.
 
+Use xAI native web **and** X/Twitter search on chat models with `supportsXSearch`:
+
+`llm -m venice/grok-4-3 -o enable_x_search true --no-stream "What is trending about Venice AI?"`
+
+In Python, use `model.prompt("What is trending about Venice AI?", enable_x_search=True)`
+with a supporting chat model. This enables both native search sources, not X alone.
+Omitting the option (or passing `None` in Python) leaves the field out of the request;
+`-o enable_x_search false` / `enable_x_search=False` sends an explicit false, which is
+allowed even on models without X search support. The API default is false.
+
+When effective X search is true, it replaces Venice search augmentation: `enable_web_search`,
+`enable_web_citations`, `enable_web_scraping`, and `include_search_results_in_stream` are
+dropped, including settings from `VeniceWebSearch`. When false or unset, the existing
+Venice web-search settings and validation apply. Tool settings override options, so selecting
+`VeniceXSearch` enables X search even with `-o enable_x_search false`; this also applies when
+the tool is restored by conversation continuation. See the search tools below.
+
 Let Venice scrape URLs in your latest message:
 
 `llm -m venice/llama-3.3-70b -o enable_web_scraping 1 "Summarize https://venice.ai"`
@@ -126,7 +143,8 @@ Put new Venice parameters under `venice_parameters`; they are merged with the op
 `llm -m venice/llama-3.3-70b -o extra_body '{"venice_parameters": {"new_flag": true}}' "Hello"`
 
 `extra_body` cannot override fields that have an option or that llm sets itself (such as
-`min_p`, `temperature`, `messages`, or `venice_parameters.character_slug`); use the option instead.
+`min_p`, `temperature`, `messages`, `venice_parameters.character_slug`, or
+`venice_parameters.enable_x_search`); use the option instead.
 Image and speech models accept `-o extra_body '{...}'` in the same way.
 
 ### Web and X search tools
@@ -142,9 +160,12 @@ show up in `llm tools -m venice/<model>` and are restored when you continue a co
 
 `llm -m venice/grok-4-3 -T VeniceXSearch --no-stream "What is trending about Venice AI?"`
 
-`VeniceXSearch` replaces Venice web search, so any web-search parameters are dropped when it is
-used. Use the `-o` parameters above for explicit web search modes and combinations that the tools
-do not cover.
+`VeniceXSearch` enables the same xAI native web and X/Twitter search as `-o enable_x_search true`
+and takes precedence over `enable_x_search=false`. X search replaces Venice web search even
+when both tools are selected, regardless of their order. Both tools remain available for
+discovery and conversation continuation; llm still requires every selected tool to be
+supported by the model. Use the `-o` parameters above for explicit web search modes and
+combinations that the tools do not cover.
 
 ### Text-to-speech
 

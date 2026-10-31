@@ -3,7 +3,7 @@ import json
 import httpx2
 import llm
 import pytest
-from llm_venice import AsyncVeniceImage, AsyncVeniceSpeech, VeniceImage, VeniceSpeech
+from llm_venice import AsyncVeniceImage, AsyncVeniceSpeech, VeniceImage, VeniceSpeech, VeniceXSearch
 from llm_venice.client import VeniceClient
 from llm_venice.models import register_venice_models
 
@@ -77,6 +77,29 @@ def test_registers_text_model_web_search_capability(monkeypatch, tmp_path):
     assert async_by_id["venice/search-model"].supports_web_search is True
     assert by_id["venice/plain-model"].supports_web_search is False
     assert async_by_id["venice/plain-model"].supports_web_search is False
+
+
+@pytest.mark.parametrize("supports_x_search", [False, True])
+@pytest.mark.parametrize("nested", [False, True])
+def test_registers_text_model_x_search_capability(
+    hermetic_venice_catalog, supports_x_search, nested
+):
+    spec = {"supportsXSearch": supports_x_search}
+    if nested:
+        spec = {"capabilities": spec}
+    hermetic_venice_catalog([{"id": "test-model", "type": "text", "model_spec": spec}])
+    registered = []
+
+    def register(model, async_model=None, aliases=None):
+        registered.extend([model, async_model])
+
+    register_venice_models(register)
+
+    assert len(registered) == 2
+    for model in registered:
+        assert model.supports_x_search is supports_x_search
+        assert (VeniceXSearch in model.supported_server_side_tools) is supports_x_search
+        assert model.Options().enable_x_search is None
 
 
 def test_register_skips_without_cache_or_key(monkeypatch, tmp_path):

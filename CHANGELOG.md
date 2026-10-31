@@ -2,6 +2,15 @@
 
 ## 0.10.0 (unreleased)
 
+- Chat models accept `-o enable_x_search true/false` and the Python `enable_x_search`
+  option for xAI native web and X/Twitter search. True requires `supportsXSearch`;
+  false is forwarded even on unsupported models, while unset/`None` is omitted.
+  `VeniceXSearch` remains available for discovery and conversation continuation and
+  overrides an explicit false option. After tool settings override options, effective
+  X search replaces all Venice web-search settings, including `VeniceWebSearch`.
+  False/unset retains existing web-search validation and behavior. Reserved
+  `extra_body.venice_parameters.enable_x_search` overrides remain forbidden; use the
+  dedicated option instead.
 - Media adapters and Venice commands use reusable synchronous/asynchronous clients.
 - Image and speech logs include `output_paths`; image logs preserve moderation and
   omitted-variant metadata. Successful partial image responses are saved.
