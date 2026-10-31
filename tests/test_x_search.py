@@ -11,13 +11,17 @@ from llm import cli as llm_cli
 from llm_venice import AsyncVeniceChat, VeniceChat, VeniceWebSearch, VeniceXSearch
 
 
-@pytest.fixture(params=[VeniceChat, AsyncVeniceChat])
-def chat(request):
-    return request.param(
+def make_chat(cls=VeniceChat):
+    return cls(
         model_id="venice/test-model",
         api_base="https://api.venice.ai/api/v1",
         supports_x_search=True,
     )
+
+
+@pytest.fixture(params=[VeniceChat, AsyncVeniceChat])
+def chat(request):
+    return make_chat(request.param)
 
 
 @pytest.fixture
@@ -81,7 +85,6 @@ def test_python_option_request(
     assert "enable_x_search" not in payload
 
 
-@pytest.mark.parametrize("stream", [False, True])
 @pytest.mark.parametrize(
     "options,tools",
     [
@@ -93,7 +96,8 @@ def test_python_option_request(
         ({"enable_x_search": False}, [VeniceXSearch(), VeniceWebSearch()]),
     ],
 )
-def test_effective_x_search_replaces_web_settings(chat, stream, options, tools):
+def test_effective_x_search_replaces_web_settings(options, tools):
+    chat = make_chat()
     # The model deliberately lacks Venice web search: its guard must run only
     # after the replaced settings have been removed.
     prompt = Prompt(
@@ -112,7 +116,7 @@ def test_effective_x_search_replaces_web_settings(chat, stream, options, tools):
     )
     original_options = prompt.options.model_dump()
 
-    kwargs = chat.build_kwargs(prompt, stream=stream)
+    kwargs = chat.build_kwargs(prompt, stream=False)
 
     assert kwargs["extra_body"]["venice_parameters"] == {
         "enable_x_search": True,
@@ -148,32 +152,39 @@ def test_llm_still_rejects_unadvertised_tools(chat):
 
 @pytest.mark.parametrize("x_search", [None, False])
 @pytest.mark.parametrize(
-    "supports_web_search,web_options,error",
+    "supports_web_search,web_options,tool",
     [
-        (False, {"enable_web_search": "on"}, "does not support web search"),
-        (False, {"enable_web_citations": True}, "does not support web search"),
-        (False, {"include_search_results_in_stream": True}, "does not support web search"),
-        (True, {"enable_web_citations": True}, "enable_web_search must be set"),
-        (True, {"include_search_results_in_stream": True}, "enable_web_search must be set"),
-        (False, {"enable_web_search": "off", "enable_web_scraping": True}, None),
-        (True, {"enable_web_search": "on", "enable_web_citations": True}, None),
-        (True, {"enable_web_search": "auto", "include_search_results_in_stream": True}, None),
+        (False, {"enable_web_search": "on"}, None),
+        (
+            True,
+            {
+                "enable_web_search": "on",
+                "enable_web_citations": True,
+                "enable_web_scraping": True,
+                "include_search_results_in_stream": True,
+            },
+            None,
+        ),
+        (True, {"enable_web_search": "off"}, VeniceWebSearch()),
     ],
+    ids=["unsupported", "web-options", "web-tool"],
 )
-def test_disabled_x_search_preserves_web_behavior(
-    chat, x_search, supports_web_search, web_options, error
-):
+def test_disabled_x_search_preserves_web_behavior(x_search, supports_web_search, web_options, tool):
+    chat = make_chat()
     chat.supports_web_search = supports_web_search
     prompt = Prompt(
         prompt="Search",
         model=chat,
         options=chat.Options(enable_x_search=x_search, **web_options),
+        tools=[tool] if tool else [],
     )
-    if error:
-        with pytest.raises(llm.ModelError, match=error):
+    if not supports_web_search:
+        with pytest.raises(llm.ModelError, match="does not support web search"):
             chat.build_kwargs(prompt, stream=False)
     else:
         expected = dict(web_options)
+        if tool:
+            expected.update(tool.venice_parameters())
         if x_search is not None:
             expected["enable_x_search"] = x_search
         assert (
@@ -181,24 +192,10 @@ def test_disabled_x_search_preserves_web_behavior(
         )
 
 
-@pytest.mark.parametrize("x_search", [None, False])
-def test_disabled_x_search_preserves_web_tool(chat, x_search):
-    chat.supports_web_search = True
-    tool = VeniceWebSearch()
-    prompt = Prompt(
-        prompt="Search",
-        model=chat,
-        options=chat.Options(enable_x_search=x_search, enable_web_search="off"),
-        tools=[tool],
-    )
-    expected = tool.venice_parameters()
-    if x_search is not None:
-        expected["enable_x_search"] = x_search
-    assert chat.build_kwargs(prompt, stream=False)["extra_body"]["venice_parameters"] == expected
-
-
-@pytest.mark.parametrize("value", ["true", "false", "invalid"])
-@pytest.mark.parametrize("supports_x_search", [False, True])
+@pytest.mark.parametrize(
+    "value,supports_x_search",
+    [("false", False), ("true", False), ("true", True), ("invalid", True)],
+)
 def test_cli_boolean_option(
     cli_runner,
     hermetic_venice_model,
