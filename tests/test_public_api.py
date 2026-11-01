@@ -150,6 +150,11 @@ def use(client: VeniceClient) -> None:
     assert_type(client.augment_search("query")["results"], list[AugmentSearchResult])
     assert_type(venice_augment_search("query", provider="google"), AugmentSearchResponse)
     assert_type(venice_augment_search_exa("query", limit=3), AugmentSearchResponse)
+    result: AugmentSearchResult = {
+        "title": "Search result", "url": "https://example.com", "content": None, "date": None,
+    }
+    assert_type(result.get("content", ""), str | None)
+    assert_type(result.get("date", ""), str | None)
     assert_type(client.generate_image("model", "hello", ImageParams(image_format="webp")), ImageResult)
     assert_type(client.generate_speech("model", "hello", SpeechParams(voice="custom")), SpeechResult)
     assert_type(client.upscale_image(b"image"), GeneratedImage)

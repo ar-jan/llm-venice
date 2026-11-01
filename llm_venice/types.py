@@ -169,12 +169,12 @@ class CreatedApiKey(ApiKey, total=False):
 
 
 class AugmentSearchResult(TypedDict, total=False):
-    """A web search result; the snippet and date may be empty or missing."""
+    """A web search result; the snippet and date may be empty, null or missing."""
 
     title: Required[str]
     url: Required[str]
-    content: str
-    date: str
+    content: str | None
+    date: str | None
 
 
 class AugmentSearchResponse(TypedDict, total=False):

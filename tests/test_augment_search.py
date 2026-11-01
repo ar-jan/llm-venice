@@ -77,7 +77,7 @@ def test_request_bounds_are_inclusive():
 
 
 def test_response_tolerates_optional_drift_and_keeps_unknown_fields():
-    drifted = {"title": "t", "url": "u", "date": None, "score": 0.9}
+    drifted = {"title": "t", "url": "u", "content": None, "date": None, "score": 0.9}
     payload = {"query": "q", "results": [drifted, {"title": "", "url": "u2"}], "future": 1}
     assert parse(payload) == payload
     assert parse({"query": "q", "results": []}) == {"query": "q", "results": []}

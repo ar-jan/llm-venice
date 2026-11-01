@@ -165,8 +165,9 @@ the model duplicate tools.
 
 `llm -m venice/zai-org-glm-4.6 -T venice_augment_search_exa --td "What is new in private AI inference?"`
 
-Every tool call is a separate, billed search. Use `--cl/--chain-limit` to cap the number of calls,
-or `--ta/--tools-approve` to approve each one. Search results are untrusted web content.
+Every tool call is a separate, billed search. `--cl/--chain-limit` limits response rounds;
+one round can contain several search calls, so it does not cap the number of billed searches.
+Use `--ta/--tools-approve` to approve each call. Search results are untrusted web content.
 
 ### Text-to-speech
 
@@ -355,8 +356,9 @@ Resource annotations are available from `llm_venice.types`.
 
 `augment_search(query, limit=None, provider=None)` searches the web without a model
 and returns the executed `query` and its `results`. Each result has a `title` and
-`url`, usually with a `content` snippet and `date`. `provider` is `"brave"`,
-`"google"` or `"exa"`; omitted options use Venice's defaults (Brave, 10 results).
+`url`, usually with a `content` snippet and `date`; both may be missing, null or empty.
+`provider` is `"brave"`, `"google"` or `"exa"`; omitted options use Venice's defaults
+(Brave, 10 results).
 The search tools are plain functions, such as
 `llm_venice.venice_augment_search_exa`, and can be passed to `model.chain(..., tools=[...])`.
 
