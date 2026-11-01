@@ -45,6 +45,14 @@
     when logging binary speech responses.
   - Async chat no longer fails with `TypeError: Invalid http_client argument` when
     `LLM_OPENAI_SHOW_RESPONSES` is set.
+- New `llm venice search` command and `augment_search()` client methods search the web
+  through Venice's `/augment/search` endpoint without a model, with Brave, Google or Exa
+  as the provider and 1-20 results.
+- New function tools let models that support function calling search through Venice:
+  `venice_augment_search`, where the model chooses the provider, and
+  `venice_augment_search_brave`, `venice_augment_search_google` and
+  `venice_augment_search_exa`, which each use one provider. They also work with models
+  from other plugins.
 
 ### Python migration
 

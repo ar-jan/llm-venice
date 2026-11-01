@@ -103,6 +103,8 @@ from llm_venice.types import ModelInfo
 from llm_venice.catalog import save_catalog, catalog_path
 assert v.ImageParams(image_format='webp').image_format == 'webp'
 assert v.VeniceWebSearch and v.VeniceXSearch
+import llm
+assert llm.get_tools()['venice_augment_search_exa'].implementation is v.venice_augment_search_exa
 assert v.VeniceSpeech.Options().response_format == 'mp3'
 """
     result = subprocess.run(
@@ -129,9 +131,10 @@ from llm_venice import (
     VeniceClient, AsyncVeniceClient, ImageParams, SpeechParams,
     ImageResult, GeneratedImage, SpeechResult, SpeechStream, AsyncSpeechStream,
     load_catalog, refresh_catalog, VeniceError, VeniceAPIError, MissingKeyError,
-    VeniceWebSearch, VeniceXSearch,
+    VeniceWebSearch, VeniceXSearch, venice_augment_search, venice_augment_search_exa,
 )
 from llm_venice.types import ModelInfo, Character, ApiKey, CreatedApiKey, RateLimits, RateLimitLogEntry
+from llm_venice.types import AugmentSearchResponse, AugmentSearchResult
 from llm_venice.catalog import save_catalog, catalog_path
 
 def use(client: VeniceClient) -> None:
@@ -143,6 +146,10 @@ def use(client: VeniceClient) -> None:
     assert_type(client.create_api_key(key_type="ADMIN"), CreatedApiKey)
     assert_type(client.get_rate_limits(), RateLimits)
     assert_type(client.get_rate_limits_log(), list[RateLimitLogEntry])
+    assert_type(client.augment_search("query", limit=5, provider="exa"), AugmentSearchResponse)
+    assert_type(client.augment_search("query")["results"], list[AugmentSearchResult])
+    assert_type(venice_augment_search("query", provider="google"), AugmentSearchResponse)
+    assert_type(venice_augment_search_exa("query", limit=3), AugmentSearchResponse)
     assert_type(client.generate_image("model", "hello", ImageParams(image_format="webp")), ImageResult)
     assert_type(client.generate_speech("model", "hello", SpeechParams(voice="custom")), SpeechResult)
     assert_type(client.upscale_image(b"image"), GeneratedImage)
@@ -158,6 +165,7 @@ async def use_async(client: AsyncVeniceClient) -> None:
     assert_type(await client.list_models(), list[ModelInfo])
     assert_type(await client.generate_image("model", "hello"), ImageResult)
     assert_type(await client.generate_speech("model", "hello"), SpeechResult)
+    assert_type(await client.augment_search("query"), AugmentSearchResponse)
     async with client.stream_speech("model", "hello") as stream:
         assert_type(stream, AsyncSpeechStream)
         assert_type(await stream.save("out.wav"), Path)

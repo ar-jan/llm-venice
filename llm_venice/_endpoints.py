@@ -13,7 +13,7 @@ from typing_extensions import get_type_hints
 from .errors import VeniceResponseError
 from .params import ImageParams, SpeechParams, copy_params, parameter_body
 from .results import GeneratedImage, ImageResult, SpeechResult
-from .types import ModelInfo
+from .types import AugmentSearchProvider, ModelInfo
 
 
 class _Input(BaseModel):
@@ -76,6 +76,22 @@ class KeyInput(BaseModel):
 
 class KeyIdInput(BaseModel):
     id: str = Field(min_length=1)
+
+
+class AugmentSearchInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    query: str = Field(min_length=1, max_length=400)
+    limit: int | None = Field(default=None, ge=1, le=20)
+    provider: AugmentSearchProvider | None = None
+
+    def body(self) -> dict[str, Any]:
+        """Omit unset options so Venice applies its defaults (10 results, Brave)."""
+        body: dict[str, Any] = {"query": self.query}
+        if self.limit is not None:
+            body["limit"] = self.limit
+        if self.provider is not None:
+            body["search_provider"] = self.provider
+        return body
 
 
 class CharacterFilters(BaseModel):
@@ -333,11 +349,25 @@ def json_operation(name: str, inputs: dict[str, Any]) -> tuple[str, str, str, di
             "Deleting API key",
             {"params": KeyIdInput.model_validate(inputs).model_dump()},
         )
+    if name == "augment_search":
+        return (
+            "POST",
+            "augment/search",
+            "Searching the web",
+            {"json": AugmentSearchInput.model_validate(inputs).body()},
+        )
     raise ValueError(f"Unknown JSON operation: {name}")
 
 
 def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[str, Any]:
-    from .types import ApiKey, Character, CreatedApiKey, RateLimitLogEntry, RateLimits
+    from .types import (
+        ApiKey,
+        AugmentSearchResult,
+        Character,
+        CreatedApiKey,
+        RateLimitLogEntry,
+        RateLimits,
+    )
 
     if name == "delete_key" and response.status_code == 204:
         return {}
@@ -367,4 +397,14 @@ def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[st
         resource(obj.get("data"), RateLimits, action)
     elif name == "create_key":
         resource(obj.get("data"), CreatedApiKey, action)
+    elif name == "augment_search":
+        # Not an envelope. Check items one by one so that drift in their optional
+        # fields (such as a null date) does not fail the whole search.
+        if not isinstance(obj.get("query"), str):
+            raise VeniceResponseError(action, "invalid AugmentSearchResponse: query")
+        results: Any = obj.get("results")
+        if not isinstance(results, list):
+            raise VeniceResponseError(action, "invalid AugmentSearchResponse: results")
+        for item in cast(list[Any], results):
+            resource(item, AugmentSearchResult, action)
     return obj

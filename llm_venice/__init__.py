@@ -18,6 +18,13 @@ from .catalog import load_catalog, refresh_catalog
 from .models.chat import VeniceChat, AsyncVeniceChat, VeniceWebSearch, VeniceXSearch
 from .models.image import VeniceImage, AsyncVeniceImage
 from .models.audio import VeniceSpeech, AsyncVeniceSpeech
+from .tools import (
+    AUGMENT_SEARCH_TOOLS as _AUGMENT_SEARCH_TOOLS,
+    venice_augment_search,
+    venice_augment_search_brave,
+    venice_augment_search_google,
+    venice_augment_search_exa,
+)
 from .models import register_venice_models as _register_models
 from .cli import register_venice_commands as _register_commands
 
@@ -32,6 +39,13 @@ def register_commands(cli):
 def register_models(register):
     """Register cached Venice models with llm's plugin system."""
     _register_models(register)
+
+
+@llm.hookimpl
+def register_tools(register):
+    """Register Venice function tools with llm's plugin system."""
+    for tool in _AUGMENT_SEARCH_TOOLS:
+        register(tool)
 
 
 __all__ = [
@@ -61,4 +75,8 @@ __all__ = [
     "AsyncVeniceSpeech",
     "VeniceWebSearch",
     "VeniceXSearch",
+    "venice_augment_search",
+    "venice_augment_search_brave",
+    "venice_augment_search_google",
+    "venice_augment_search_exa",
 ]

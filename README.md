@@ -167,6 +167,28 @@ discovery and conversation continuation; llm still requires every selected tool 
 supported by the model. Use the `-o` parameters above for explicit web search modes and
 combinations that the tools do not cover.
 
+### Search tools for function calling
+
+Venice's search API is also available as function tools. Unlike the web and X search tools above,
+which run inside the chat request, the model writes each query and llm runs the search. They work
+with any model that supports function calling, including models from other plugins.
+
+| Tool | Search provider |
+|------|-----------------|
+| `venice_augment_search` | Chosen by the model: `brave` (default), `google` or `exa` |
+| `venice_augment_search_brave` | Brave |
+| `venice_augment_search_google` | Google |
+| `venice_augment_search_exa` | Exa |
+
+Each tool takes a `query` (1-400 characters) and a `limit` (1-20 results, default 10), and returns
+the title, URL, snippet and date of each result. Offer one of them per prompt; several at once give
+the model duplicate tools.
+
+`llm -m venice/zai-org-glm-4.6 -T venice_augment_search_exa --td "What is new in private AI inference?"`
+
+Every tool call is a separate, billed search. Use `--cl/--chain-limit` to cap the number of calls,
+or `--ta/--tools-approve` to approve each one. Search results are untrusted web content.
+
 ### Text-to-speech
 
 Text-to-speech models (currently `tts-kokoro`) generate audio from text. Audio files are stored in the LLM user directory by default.
@@ -258,6 +280,16 @@ By default existing upscaled images are not overwritten; timestamped filenames a
 See `llm venice upscale --help` for the `--scale` (`2` or `4`, default `2`), `--enhance` and related options, and `--output-path` and `--overwrite` options.
 A file name passed to `--output-path` is used as given, even if its extension differs from the returned format.
 
+### Web search
+
+Search the web with Venice, without a model:
+
+`llm venice search -p exa -n 5 "private AI inference"`
+
+`-p/--provider` selects `brave`, `google` or `exa`; Venice uses Brave by default. `-n/--limit`
+sets the number of results (1-20); Venice returns up to 10 by default. Add `--json` for the
+JSON response. Each search is billed.
+
 ### Venice commands
 
 List the available Venice commands with:
@@ -267,8 +299,8 @@ List the available Venice commands with:
 ### Debugging HTTP requests
 
 Set `LLM_VENICE_SHOW_RESPONSES=1` to print each Venice API request and response
-(headers and bodies) to stderr. This covers chat, image, speech, upscale and the
-`llm venice` commands, from both the CLI and the Python API:
+(headers and bodies) to stderr. This covers chat, image, speech, upscale, the search
+tools and the `llm venice` commands, from both the CLI and the Python API:
 
 ```bash
 LLM_VENICE_SHOW_RESPONSES=1 llm -m venice/llama-3.3-70b --no-stream 'Say hi'
@@ -296,7 +328,7 @@ Read the `llm` [docs](https://llm.datasette.io/en/stable/usage.html) for more us
 ## Python API (0.10)
 
 `VeniceClient` and `AsyncVeniceClient` cover catalogs, characters, image generation,
-upscaling, speech, and API-key management. Chat continues to use llm's model API.
+upscaling, speech, web search, and API-key management. Chat continues to use llm's model API.
 Python 3.10 and later are supported; the installed package includes typing information.
 
 ```python
@@ -341,6 +373,13 @@ timestamps are preserved. Key management requires an ADMIN key; `create_api_key(
 takes `key_type=`, `description=`, optional `limit_usd=`/`limit_vcu=`, and an optional
 timezone-aware `expires_at` datetime. `delete_api_key(id)` returns `None`.
 Resource annotations are available from `llm_venice.types`.
+
+`augment_search(query, limit=None, provider=None)` searches the web without a model
+and returns the executed `query` and its `results`. Each result has a `title` and
+`url`, usually with a `content` snippet and `date`. `provider` is `"brave"`,
+`"google"` or `"exa"`; omitted options use Venice's defaults (Brave, 10 results).
+The search tools are plain functions, such as
+`llm_venice.venice_augment_search_exa`, and can be passed to `model.chain(..., tools=[...])`.
 
 ### Media and explicit saves
 
