@@ -32,6 +32,15 @@ def test_short_speech_sync_and_async(venice_api_key):
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("provider", ["brave", "google", "exa"])
+def test_augment_search_providers(venice_api_key, provider):
+    with VeniceClient(key=venice_api_key) as client:
+        response = client.augment_search("Venice AI private inference", limit=2, provider=provider)
+    assert isinstance(response["query"], str)
+    assert 0 < len(response["results"]) <= 2
+    assert all(result["url"] for result in response["results"])
+
+
 @pytest.mark.skipif(
     os.environ.get("LLM_VENICE_TEST_IMAGES") != "1",
     reason="Set LLM_VENICE_TEST_IMAGES=1 to opt into paid image generation",

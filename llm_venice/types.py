@@ -1,7 +1,10 @@
 """JSON resources; wire timestamps and unknown JSON fields are preserved."""
 
-from typing import Any
+from typing import Any, Literal
 from typing_extensions import Required, TypedDict
+
+AugmentSearchProvider = Literal["brave", "google", "exa"]
+"""Search providers accepted by ``/augment/search``; Venice uses Brave when omitted."""
 
 
 class ModelCapabilities(TypedDict, total=False):
@@ -163,6 +166,22 @@ class CreatedApiKey(ApiKey, total=False):
     """A newly created key, including the returned secret."""
 
     apiKey: Required[str]
+
+
+class AugmentSearchResult(TypedDict, total=False):
+    """A web search result; the snippet and date may be empty or missing."""
+
+    title: Required[str]
+    url: Required[str]
+    content: str
+    date: str
+
+
+class AugmentSearchResponse(TypedDict, total=False):
+    """The executed search query and its results."""
+
+    query: Required[str]
+    results: Required[list[AugmentSearchResult]]
 
 
 class RateLimitLogEntry(TypedDict, total=False):
