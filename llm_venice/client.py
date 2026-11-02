@@ -24,7 +24,16 @@ from .results import (
     SpeechResult,
     SpeechStream,
 )
-from .types import ApiKey, Character, CreatedApiKey, ModelInfo, RateLimitLogEntry, RateLimits
+from .types import (
+    ApiKey,
+    AugmentSearchProvider,
+    AugmentSearchResponse,
+    Character,
+    CreatedApiKey,
+    ModelInfo,
+    RateLimitLogEntry,
+    RateLimits,
+)
 
 ImageInput = str | os.PathLike[str] | bytes | BinaryIO
 
@@ -191,6 +200,19 @@ class VeniceClient(_Configuration):
     def delete_api_key(self, key_id: str) -> None:
         """Delete a key by its resource ID."""
         self._json_operation("delete_key", id=key_id)
+
+    def augment_search(
+        self,
+        query: str,
+        *,
+        limit: int | None = None,
+        provider: AugmentSearchProvider | None = None,
+    ) -> AugmentSearchResponse:
+        """Search the web without a model. Omitted options use Venice's defaults."""
+        return cast(
+            AugmentSearchResponse,
+            self._json_operation("augment_search", query=query, limit=limit, provider=provider),
+        )
 
     def generate_image(
         self,
@@ -399,6 +421,21 @@ class AsyncVeniceClient(_Configuration):
     async def delete_api_key(self, key_id: str) -> None:
         """Delete a key by its resource ID."""
         await self._json_operation("delete_key", id=key_id)
+
+    async def augment_search(
+        self,
+        query: str,
+        *,
+        limit: int | None = None,
+        provider: AugmentSearchProvider | None = None,
+    ) -> AugmentSearchResponse:
+        """Search the web without a model. Omitted options use Venice's defaults."""
+        return cast(
+            AugmentSearchResponse,
+            await self._json_operation(
+                "augment_search", query=query, limit=limit, provider=provider
+            ),
+        )
 
     async def generate_image(
         self,
