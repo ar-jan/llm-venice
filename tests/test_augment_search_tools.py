@@ -177,8 +177,29 @@ def test_generic_tool_rejects_invalid_provider_before_http(provider, httpx2_mock
 def test_generic_tool_requires_provider_before_http(httpx2_mock):
     tool = llm.Tool.function(venice_augment_search)
     assert tool.implementation is not None
-    with pytest.raises(TypeError, match="required positional argument: 'provider'"):
+    with pytest.raises(ValueError, match="provider: choose 'brave', 'google' or 'exa' explicitly"):
         tool.implementation(query="q")
+    assert not httpx2_mock.get_requests()
+
+
+def test_tool_reports_all_problems_in_one_error(httpx2_mock):
+    with pytest.raises(ValueError) as caught:
+        venice_augment_search(query="", provider="bing", limit=21, engine="x")  # type: ignore[call-arg]
+    assert str(caught.value) == (
+        "Invalid search input: query: String should have at least 1 character; "
+        "provider: choose 'brave', 'google' or 'exa' explicitly; "
+        "limit: Input should be less than or equal to 20; "
+        "engine: unexpected argument"
+    )
+    assert not httpx2_mock.get_requests()
+
+
+@pytest.mark.parametrize("function", TOOLS.values())
+def test_tools_report_a_missing_query(function, httpx2_mock):
+    implementation = llm.Tool.function(function).implementation
+    assert implementation is not None
+    with pytest.raises(ValueError, match="^Invalid search input: query: Field required"):
+        implementation(provider="exa") if function is venice_augment_search else implementation()
     assert not httpx2_mock.get_requests()
 
 
@@ -268,8 +289,9 @@ def test_generic_tool_recovers_from_invalid_provider(
     requests = chat_requests(httpx2_mock)
     error = requests[1]["messages"][-1]
     assert error["role"] == "tool"
-    assert error["content"].startswith("Error: ")
-    assert "provider" in error["content"]
+    assert error["content"] == (
+        "Error: Invalid search input: provider: choose 'brave', 'google' or 'exa' explicitly"
+    )
     assert json.loads(requests[2]["messages"][-1]["content"]) == PAYLOAD
     assert len(httpx2_mock.get_requests(url=SEARCH_URL)) == 1
 
