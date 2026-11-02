@@ -40,7 +40,8 @@
   through Venice's `/augment/search` endpoint without a model, with Brave, Google or Exa
   as the provider and 1-20 results.
 - New function tools let models that support function calling search through Venice:
-  `venice_augment_search`, where the model chooses the provider, and
+  `venice_augment_search`, where the model must explicitly choose the provider on
+  each call using guidance in the tool description, and
   `venice_augment_search_brave`, `venice_augment_search_google` and
   `venice_augment_search_exa`, which each use one provider. They also work with models
   from other plugins.

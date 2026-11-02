@@ -48,14 +48,14 @@ def completion(message):
     }
 
 
-def tool_call(name, arguments):
+def tool_call(name, arguments, call_id="call_1"):
     return completion(
         {
             "role": "assistant",
             "content": None,
             "tool_calls": [
                 {
-                    "id": "call_1",
+                    "id": call_id,
                     "type": "function",
                     "function": {"name": name, "arguments": json.dumps(arguments)},
                 }
@@ -91,13 +91,12 @@ def test_tool_schemas():
         "properties": {
             "query": {"type": "string"},
             "provider": {
-                "default": "brave",
                 "enum": ["brave", "google", "exa"],
                 "type": "string",
             },
             "limit": {"default": 10, "type": "integer"},
         },
-        "required": ["query"],
+        "required": ["query", "provider"],
         "type": "object",
     }
     for function in TOOLS.values():
@@ -118,7 +117,16 @@ def test_tool_schemas():
 @pytest.mark.parametrize(
     "function,kwargs,body",
     [
-        (venice_augment_search, {}, {"limit": 10, "search_provider": "brave"}),
+        (
+            venice_augment_search,
+            {"provider": "brave"},
+            {"limit": 10, "search_provider": "brave"},
+        ),
+        (
+            venice_augment_search,
+            {"provider": "google"},
+            {"limit": 10, "search_provider": "google"},
+        ),
         (
             venice_augment_search,
             {"provider": "exa", "limit": 3},
@@ -141,11 +149,13 @@ def test_tools_send_their_provider(function, kwargs, body, httpx2_mock, mock_ven
 @pytest.mark.parametrize(
     "kwargs,message",
     [
-        ({"query": "", "limit": 10}, "query: String should have at least 1 character"),
-        ({"query": "q", "limit": 21}, "limit: Input should be less than or equal to 20"),
         (
-            {"query": "q", "provider": "bing"},
-            "provider: Input should be 'brave', 'google' or 'exa'",
+            {"query": "", "provider": "brave", "limit": 10},
+            "query: String should have at least 1 character",
+        ),
+        (
+            {"query": "q", "provider": "exa", "limit": 21},
+            "limit: Input should be less than or equal to 20",
         ),
     ],
 )
@@ -155,6 +165,113 @@ def test_invalid_input_gives_a_short_error(kwargs, message, httpx2_mock, mock_ve
     assert message in str(caught.value)
     assert "pydantic" not in str(caught.value)
     assert not httpx2_mock.get_requests()
+
+
+@pytest.mark.parametrize("provider", [None, "bing", "", 1, ["exa"], {"provider": "exa"}])
+def test_generic_tool_rejects_invalid_provider_before_http(provider, httpx2_mock):
+    with pytest.raises(ValueError, match="provider: choose 'brave', 'google' or 'exa' explicitly"):
+        venice_augment_search("q", provider=provider)
+    assert not httpx2_mock.get_requests()
+
+
+def test_generic_tool_requires_provider_before_http(httpx2_mock):
+    tool = llm.Tool.function(venice_augment_search)
+    assert tool.implementation is not None
+    with pytest.raises(TypeError, match="required positional argument: 'provider'"):
+        tool.implementation(query="q")
+    assert not httpx2_mock.get_requests()
+
+
+def test_cli_generic_tool_changes_provider_and_continue_restores_it(
+    cli_runner, httpx2_mock, monkeypatch, hermetic_venice_model
+):
+    model_id = hermetic_venice_model(capabilities={"supportsFunctionCalling": True})
+    monkeypatch.setenv("LLM_VENICE_KEY", "test-venice-key")
+    providers = ["exa", "google", "brave"]
+    for provider in providers:
+        query = f"{provider} query"
+        httpx2_mock.add_response(
+            url=CHAT_URL,
+            json=tool_call(
+                "venice_augment_search",
+                {"query": query, "provider": provider, "limit": 2},
+                call_id=f"call_{provider}",
+            ),
+        )
+        httpx2_mock.add_response(
+            method="POST",
+            url=SEARCH_URL,
+            match_json={"query": query, "search_provider": provider, "limit": 2},
+            json={"query": query, "results": PAYLOAD["results"]},
+        )
+    httpx2_mock.add_response(url=CHAT_URL, json=answer())
+    httpx2_mock.add_response(url=CHAT_URL, json=answer("Continued."))
+
+    first = cli_runner.invoke(
+        cli,
+        ["prompt", "-m", model_id, "-T", "venice_augment_search", "--td", "--no-stream", "Search"],
+    )
+    assert first.exit_code == 0, first.output
+    assert "Done" in first.output
+    for provider in providers:
+        assert provider in first.output
+
+    follow_up = cli_runner.invoke(cli, ["prompt", "-c", "--no-stream", "Continue"])
+    assert follow_up.exit_code == 0, follow_up.output
+    assert "Continued." in follow_up.output
+
+    requests = chat_requests(httpx2_mock)
+    assert len(requests) == 5
+    for request in requests:
+        assert len(request["tools"]) == 1
+        function = request["tools"][0]["function"]
+        assert function["name"] == "venice_augment_search"
+        assert function["parameters"]["required"] == ["query", "provider"]
+        assert "default" not in function["parameters"]["properties"]["provider"]
+        assert function["description"] == llm.Tool.function(venice_augment_search).description
+        assert "Choose provider explicitly" in function["description"]
+    for index, provider in enumerate(providers, 1):
+        tool_message = requests[index]["messages"][-1]
+        assert tool_message["role"] == "tool"
+        assert tool_message["tool_call_id"] == f"call_{provider}"
+        assert json.loads(tool_message["content"])["query"] == f"{provider} query"
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize(
+    "arguments",
+    [{"query": "q"}, {"query": "q", "provider": None}, {"query": "q", "provider": "bing"}],
+)
+def test_generic_tool_recovers_from_invalid_provider(
+    is_async, arguments, httpx2_mock, mock_venice_api_key
+):
+    model_class = AsyncVeniceChat if is_async else VeniceChat
+    chat = model_class(model_id="test-model", api_base=API_BASE, supports_tools=True)
+    httpx2_mock.add_response(url=CHAT_URL, json=tool_call("venice_augment_search", arguments))
+    httpx2_mock.add_response(
+        url=CHAT_URL,
+        json=tool_call("venice_augment_search", {"query": "q", "provider": "exa"}, "corrected"),
+    )
+    httpx2_mock.add_response(
+        method="POST",
+        url=SEARCH_URL,
+        match_json={"query": "q", "search_provider": "exa", "limit": 10},
+        json=PAYLOAD,
+    )
+    httpx2_mock.add_response(url=CHAT_URL, json=answer())
+    if isinstance(chat, AsyncVeniceChat):
+        chain = chat.chain("Search", tools=[venice_augment_search], stream=False)
+        assert asyncio.run(chain.text()) == "Done"
+    else:
+        assert chat.chain("Search", tools=[venice_augment_search], stream=False).text() == "Done"
+
+    requests = chat_requests(httpx2_mock)
+    error = requests[1]["messages"][-1]
+    assert error["role"] == "tool"
+    assert error["content"].startswith("Error: ")
+    assert "provider" in error["content"]
+    assert json.loads(requests[2]["messages"][-1]["content"]) == PAYLOAD
+    assert len(httpx2_mock.get_requests(url=SEARCH_URL)) == 1
 
 
 def test_cli_chain_runs_the_tool_and_continue_restores_it(

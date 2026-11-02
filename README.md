@@ -154,7 +154,7 @@ with any model that supports function calling, including models from other plugi
 
 | Tool | Search provider |
 |------|-----------------|
-| `venice_augment_search` | Chosen by the model: `brave` (default), `google` or `exa` |
+| `venice_augment_search` | Required choice by the model on each call: `brave`, `google` or `exa` |
 | `venice_augment_search_brave` | Brave |
 | `venice_augment_search_google` | Google |
 | `venice_augment_search_exa` | Exa |
@@ -163,11 +163,25 @@ Each tool takes a `query` (1-400 characters) and a `limit` (1-20 results, defaul
 the title, URL, snippet and date of each result. Offer one of them per prompt; several at once give
 the model duplicate tools.
 
-`llm -m venice/zai-org-glm-4.6 -T venice_augment_search_exa --td "What is new in private AI inference?"`
+`llm -m venice/zai-org-glm-4.6 -T venice_augment_search --td "What is new in private AI inference?"`
+
+The generic tool asks the model to choose a provider for each query. Its description suggests
+Brave for general keyword searches and news, Google as an alternative keyword engine or when
+explicitly requested, and Exa for natural-language discovery and research. These are starting
+heuristics; the model should respect your provider and privacy preferences and can change
+providers when results are inadequate. `--td` shows tool arguments, including the chosen provider.
 
 Every tool call is a separate, billed search. `--cl/--chain-limit` limits response rounds;
 one round can contain several search calls, so it does not cap the number of billed searches.
 Use `--ta/--tools-approve` to approve each call. Search results are untrusted web content.
+
+For an optional live check, reuse the command above with these prompts and inspect `--td`:
+
+- "Find research comparing approaches to private AI inference." Check how the model applies
+  the research-search guidance; provider suitability is a heuristic.
+- "Find today's AI news using only search providers with zero data retention." Calls should
+  use Brave or Exa.
+- "Use Google to find the Venice API documentation." Calls should use Google.
 
 ### Text-to-speech
 
@@ -361,6 +375,8 @@ and returns the executed `query` and its `results`. Each result has a `title` an
 (Brave, 10 results).
 The search tools are plain functions, such as
 `llm_venice.venice_augment_search_exa`, and can be passed to `model.chain(..., tools=[...])`.
+Direct calls to the generic tool require an explicit provider, for example
+`llm_venice.venice_augment_search("private AI inference", provider="exa")`.
 
 ### Media and explicit saves
 

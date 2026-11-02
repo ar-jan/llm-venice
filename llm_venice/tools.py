@@ -8,6 +8,7 @@ Failures raise, and llm reports them to the model as ``Error: ...`` tool results
 """
 
 import inspect
+from typing import get_args
 
 from pydantic import ValidationError
 
@@ -18,6 +19,12 @@ from .types import AugmentSearchProvider, AugmentSearchResponse
 def _augment_search(
     query: str, provider: AugmentSearchProvider, limit: int
 ) -> AugmentSearchResponse:
+    # llm passes tool arguments directly to Python; annotations do not validate
+    # them. In particular, None would let the client use the API's default.
+    if provider not in get_args(AugmentSearchProvider):
+        raise ValueError(
+            "Invalid search input: provider: choose 'brave', 'google' or 'exa' explicitly"
+        )
     try:
         with VeniceClient() as client:
             return client.augment_search(query, limit=limit, provider=provider)
@@ -31,13 +38,18 @@ def _augment_search(
 
 
 def venice_augment_search(
-    query: str, provider: AugmentSearchProvider = "brave", limit: int = 10
+    query: str, provider: AugmentSearchProvider, limit: int = 10
 ) -> AugmentSearchResponse:
     """Search the web through Venice. Returns JSON with the query and results
     (title, url, content snippet, and date when available).
 
-    provider: "brave" (default) or "google" suit keyword, news and general web
-    searches; "exa" suits natural-language, semantic and research queries.
+    Choose provider explicitly for each query, respecting the user's provider
+    and privacy preferences. These are starting heuristics:
+    - "brave": general keyword searches and news; Zero Data Retention (ZDR).
+    - "google": alternative keyword searches or when requested; anonymized through Venice.
+    - "exa": natural-language discovery, semantic and research queries; ZDR.
+    If results are inadequate, consider a different provider or reformulate the
+    query. Each call is a separate, billed search.
     query: 1-400 characters. limit: 1-20 results.
     """
     return _augment_search(query, provider, limit)
