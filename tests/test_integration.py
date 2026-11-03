@@ -21,7 +21,7 @@ def test_prompt_web_search(cli_runner, isolated_llm_dir):
         [
             "prompt",
             "-m",
-            "venice/llama-3.3-70b",
+            "venice/qwen-3-8-flash",
             "-o",
             "enable_web_search",
             "on",
@@ -50,15 +50,15 @@ def test_prompt_web_search(cli_runner, isolated_llm_dir):
 
 
 def test_thinking_parameters_with_real_api(isolated_llm_dir):
-    """Test that thinking parameters work correctly with the real Venice API using minimax-m25 model.
+    """Test that thinking parameters work correctly with the real Venice API using minimax-m3-1-flash model.
 
     This test requires a valid Venice API key to be set in the environment.
-    It uses minimax-m25 which is a small, fast model suitable for testing.
+    It uses minimax-m3-1-flash which is a small, fast model suitable for testing.
     """
-    # Use minimax-m25 model for testing
+    # Use minimax-m3-1-flash model for testing
     chat = VeniceChat(
-        model_id="venice/minimax-m25",
-        model_name="minimax-m25",
+        model_id="venice/minimax-m3-1-flash",
+        model_name="minimax-m3-1-flash",
         api_base="https://api.venice.ai/api/v1",
     )
 
