@@ -122,7 +122,7 @@ def test_installed_wheel_consumer_types(installed_wheel):
         "include": ["consumer.py"],
         "extraPaths": [str(target)],
         "typeCheckingMode": "strict",
-        "pythonVersion": "3.10",
+        "pythonVersion": "3.11",
     }
     (work / "pyrightconfig.json").write_text(json.dumps(config))
     (work / "consumer.py").write_text("""from pathlib import Path

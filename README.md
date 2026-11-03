@@ -344,7 +344,7 @@ Read the `llm` [docs](https://llm.datasette.io/en/stable/usage.html) for more us
 
 `VeniceClient` and `AsyncVeniceClient` cover catalogs, characters, image generation,
 upscaling, speech, web search, and API-key management. Chat continues to use llm's model API.
-Python 3.10 and later are supported; the installed package includes typing information.
+Python 3.11 and later are supported; the installed package includes typing information.
 
 ```python
 from llm_venice import VeniceClient, ImageParams, SpeechParams
@@ -420,8 +420,7 @@ empty staging is removed. Cancellation that arrives once the file is already
 published attaches `error.published_path` to the complete file instead.
 Library saves print nothing.
 To inspect this metadata on cancellation, catch `asyncio.CancelledError` where
-`stream.save()` is awaited inside the task. Python 3.10 wraps that exception when
-another task awaits the cancelled task.
+`stream.save()` is awaited inside the task.
 
 `content_violation`, `content_policy_violation_count`, and `blurred` are independent
 facts. The library preserves all returned images, including moderated images.
