@@ -18,10 +18,10 @@ pyright
 pyright --pythonpath "$(command -v python)"
 ```
 
-CI (`.github/workflows/test.yml`) runs the same four checks on Python 3.10 and
-3.14, plus two jobs that are not part of the local gate:
+CI (`.github/workflows/test.yml`) runs the same four checks on Python 3.11 and
+3.15, plus two jobs that are not part of the local gate:
 
-- `type-check` runs pyright on Python 3.10. `[tool.pyright]` points `venvPath` at
+- `type-check` runs pyright on Python 3.11. `[tool.pyright]` points `venvPath` at
 the local `.venv`, so CI passes `--pythonpath` explicitly.
 - `test-against-llm-main` installs llm from git `main` and runs the suite. It is
 non-blocking and also runs weekly, to catch upstream internal API changes.

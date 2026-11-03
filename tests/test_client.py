@@ -388,8 +388,7 @@ def test_async_cancel_waits_for_running_file_write(tmp_path, monkeypatch):
                         async with client.stream_speech("m", "text") as stream:
                             await stream.save(tmp_path / "cancelled")
                     except asyncio.CancelledError as exc:
-                        # Python 3.10 wraps this exception when another task awaits
-                        # the cancelled task. Inspect save's own error metadata.
+                        # Inspect save's own error metadata: it survives task cancellation.
                         cancellations.append(exc)
                         raise
 

@@ -2,6 +2,9 @@
 
 ## 0.10.0 (unreleased)
 
+- Requirements raised to `llm>=0.37` and Python 3.11+. llm 0.37 dropped Python 3.10,
+  and the suite already needed llm 0.36 for `Prompt.options` to default to the model's
+  options object.
 - Chat models accept `-o enable_x_search true/false` and the Python `enable_x_search`
   option for xAI native web and X/Twitter search. True requires `supportsXSearch`;
   false is forwarded even on unsupported models, while unset/`None` is omitted.
