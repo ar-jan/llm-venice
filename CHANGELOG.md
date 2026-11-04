@@ -25,6 +25,9 @@
 - Upscaling no longer offers `--enhance`, `--enhance-creativity`, `--enhance-prompt`
   and `--replication` (or the matching `upscale_image()` arguments). The endpoint
   dropped these fields and silently ignores them.
+- Upscaling accepts `--creativity` (and `upscale_image(creativity=...)`), from 0 to
+  0.02, for how much detail and texture the upscaler adds. Out-of-range values fail
+  locally because the endpoint would clamp them silently; unset uses the API default.
 - JSON resources are checked for their required fields; optional fields pass through
   unchanged. Catalog refreshes skip malformed model entries and fail only when no
   usable model remains.

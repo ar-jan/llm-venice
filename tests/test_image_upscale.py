@@ -39,6 +39,8 @@ def test_upscale_cli_with_all_options(
             str(temp_image_file),
             "--scale",
             "2.5",
+            "--creativity",
+            "0.015",
             "--output-path",
             str(output_path),
             "--overwrite",
@@ -53,9 +55,10 @@ def test_upscale_cli_with_all_options(
     assert len(requests) == 1
     request_body = requests[0].read()
     assert b'name="scale"\r\n\r\n2.5' in request_body
+    assert b'name="creativity"\r\n\r\n0.015' in request_body
     assert b'name="image"' in request_body
-    # Only scale and image are sent; no obsolete enhancement fields.
-    assert request_body.count(b"Content-Disposition") == 2
+    # Only scale, creativity and image are sent; no obsolete enhancement fields.
+    assert request_body.count(b"Content-Disposition") == 3
 
 
 def test_upscale_cli_file_not_found(mock_venice_api_key, cli_runner):
@@ -107,6 +110,30 @@ def test_upscale_cli_rejects_out_of_range_scale(httpx2_mock, temp_image_file, cl
     assert result.exit_code == 2
     assert "Invalid value for '--scale'" in result.output
     assert not httpx2_mock.get_requests()
+
+
+@pytest.mark.parametrize("creativity", ["-0.01", "0.03"])
+def test_upscale_cli_rejects_out_of_range_creativity(
+    httpx2_mock, temp_image_file, cli_runner, creativity
+):
+    """The endpoint would clamp these silently, so they fail before any request."""
+    result = cli_runner.invoke(
+        cli, ["venice", "upscale", str(temp_image_file), "--creativity", creativity]
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--creativity'" in result.output
+    assert not httpx2_mock.get_requests()
+
+
+def test_upscale_cli_omits_creativity_by_default(
+    mocked_responses, temp_image_file, mock_venice_api_key, cli_runner
+):
+    """Without --creativity, the API default applies."""
+    result = cli_runner.invoke(cli, ["venice", "upscale", str(temp_image_file)])
+
+    assert result.exit_code == 0, result.output
+    assert b'name="creativity"' not in mocked_responses.get_requests()[0].read()
 
 
 @pytest.mark.parametrize("option", ["--enhance", "--replication"])

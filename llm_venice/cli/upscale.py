@@ -28,6 +28,15 @@ def create_upscale_command():
         help="Scale factor, between 2 and 4",
     )
     @click.option(
+        "--creativity",
+        type=click.FloatRange(0.0, 0.02),
+        default=None,
+        help=(
+            "Detail and texture the upscaler adds, between 0 and 0.02. "
+            "Higher adds more; lower stays closer to the source. [API default: 0.01]"
+        ),
+    )
+    @click.option(
         "--output-path",
         "-o",
         type=click.Path(file_okay=True, dir_okay=True, writable=True),

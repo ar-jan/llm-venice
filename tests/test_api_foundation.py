@@ -119,6 +119,12 @@ def test_endpoint_limits_match_dated_fixture():
     for scale in (1.99, 4.01):
         with pytest.raises(ValidationError):
             UpscaleInput(scale=scale)
+    assert upscale["creativity"]["default"] == 0.01
+    for creativity in (0, 0.01, 0.02):
+        assert UpscaleInput(creativity=creativity).creativity == creativity
+    for creativity in (-0.01, 0.03):
+        with pytest.raises(ValidationError):
+            UpscaleInput(creativity=creativity)
 
 
 def test_key_inputs_and_utc_serialization():

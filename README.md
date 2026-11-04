@@ -296,7 +296,7 @@ The following example saves the returned image as `image_upscaled.<ext>` in the 
 
 By default existing upscaled images are not overwritten; timestamped filenames are used instead.
 
-See `llm venice upscale --help` for the `--scale` (between `2` and `4`, default `2`), `--output-path` and `--overwrite` options.
+See `llm venice upscale --help` for the `--scale` (between `2` and `4`, default `2`), `--creativity` (between `0` and `0.02`), `--output-path` and `--overwrite` options.
 A file name passed to `--output-path` is used as given, even if its extension differs from the returned format.
 
 ### Web search
