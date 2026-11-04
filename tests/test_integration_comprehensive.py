@@ -95,8 +95,8 @@ class TestBasicChatCompletion:
     def test_simple_prompt(self, isolated_llm_dir):
         """Test a simple prompt with a small, fast model."""
         chat = VeniceChat(
-            model_id="venice/llama-3.2-3b",
-            model_name="llama-3.2-3b",
+            model_id="venice/qwen-3-8-flash",
+            model_name="qwen-3-8-flash",
             api_base="https://api.venice.ai/api/v1",
         )
 
@@ -109,8 +109,8 @@ class TestBasicChatCompletion:
     def test_prompt_with_temperature(self, isolated_llm_dir):
         """Test that temperature parameter works."""
         chat = VeniceChat(
-            model_id="venice/llama-3.2-3b",
-            model_name="llama-3.2-3b",
+            model_id="venice/qwen-3-8-flash",
+            model_name="qwen-3-8-flash",
             api_base="https://api.venice.ai/api/v1",
         )
 
@@ -129,8 +129,8 @@ class TestStreamingChat:
     def test_streaming_response(self, isolated_llm_dir):
         """Test that streaming works correctly."""
         chat = VeniceChat(
-            model_id="venice/llama-3.2-3b",
-            model_name="llama-3.2-3b",
+            model_id="venice/qwen-3-8-flash",
+            model_name="qwen-3-8-flash",
             api_base="https://api.venice.ai/api/v1",
         )
 
@@ -158,7 +158,7 @@ class TestConversationHistory:
             [
                 "chat",
                 "-m",
-                "venice/llama-3.2-3b",
+                "venice/qwen-3-8-flash",
             ],
             input="My favorite color is blue.\nexit\n",
         )
@@ -170,7 +170,7 @@ class TestConversationHistory:
             [
                 "chat",
                 "-m",
-                "venice/llama-3.2-3b",
+                "venice/qwen-3-8-flash",
                 "--continue",  # Continue the most recent conversation
             ],
             input="What is my favorite color?\nexit\n",
@@ -186,8 +186,8 @@ class TestNonOpenAIParameters:
     def test_min_p_parameter(self, isolated_llm_dir):
         """Test min_p parameter."""
         chat = VeniceChat(
-            model_id="venice/minimax-m25",
-            model_name="minimax-m25",
+            model_id="venice/minimax-m3-1-flash",
+            model_name="minimax-m3-1-flash",
             api_base="https://api.venice.ai/api/v1",
         )
 
@@ -198,8 +198,8 @@ class TestNonOpenAIParameters:
     def test_top_k_parameter(self, isolated_llm_dir):
         """Test top_k parameter."""
         chat = VeniceChat(
-            model_id="venice/minimax-m25",
-            model_name="minimax-m25",
+            model_id="venice/minimax-m3-1-flash",
+            model_name="minimax-m3-1-flash",
             api_base="https://api.venice.ai/api/v1",
         )
 
@@ -210,8 +210,8 @@ class TestNonOpenAIParameters:
     def test_repetition_penalty_parameter(self, isolated_llm_dir):
         """Test repetition_penalty parameter."""
         chat = VeniceChat(
-            model_id="venice/minimax-m25",
-            model_name="minimax-m25",
+            model_id="venice/minimax-m3-1-flash",
+            model_name="minimax-m3-1-flash",
             api_base="https://api.venice.ai/api/v1",
         )
 
@@ -230,7 +230,7 @@ class TestVeniceSystemPrompt:
             [
                 "prompt",
                 "-m",
-                "venice/llama-3.2-3b",
+                "venice/qwen-3-8-flash",
                 "-o",
                 "include_venice_system_prompt",
                 "0",
@@ -246,13 +246,13 @@ class TestFunctionCalling:
 
     def test_simple_function_call(self, cli_runner, isolated_llm_dir):
         """Test that function calling works with a simple function."""
-        # Use llama-3.3-70b which supports function calling
+        # Use qwen-3-8-flash which supports function calling
         result = cli_runner.invoke(
             cli,
             [
                 "prompt",
                 "-m",
-                "venice/llama-3.3-70b",
+                "venice/qwen-3-8-flash",
                 "--functions",
                 'def multiply(x: int, y: int) -> int:\n    """Multiply two numbers together."""\n    return x * y',
                 "--no-stream",
@@ -269,12 +269,12 @@ class TestStructuredOutputs:
 
     def test_json_schema_output(self, isolated_llm_dir):
         """Test that JSON schema responses work correctly."""
-        # Use zai-org-glm-4.6 which supports response schema
+        # Use z-ai-glm-5-3 which supports response schema
         # Get the model from the registry so it has the right capabilities
-        chat = llm.get_model("venice/zai-org-glm-4.6")
+        chat = llm.get_model("venice/z-ai-glm-5-3")
 
         if not chat.supports_schema:
-            pytest.skip("zai-org-glm-4.6 does not support schema in current model spec")
+            pytest.skip("z-ai-glm-5-3 does not support schema in current model spec")
 
         # Create a simple schema
         schema = {
@@ -305,9 +305,9 @@ class TestCharacterPersonas:
     def test_character_in_prompt(self, cli_runner, isolated_llm_dir):
         """Test using a character persona in a prompt."""
         model_id = _get_available_venice_chat_model(
-            "venice/qwen3-235b-a22b-instruct-2507",
-            "venice/google.gemma-4-26b-a4b-it",
-            "venice/minimax-m25",
+            "venice/qwen-3-8-flash",
+            "venice/google-gemma-4-26b-a4b-it",
+            "venice/minimax-m3-1-flash",
         )
 
         result = cli_runner.invoke(
@@ -337,9 +337,9 @@ class TestVisionModels:
         """
         image_path = _create_test_png(tmp_path / "vision_test.png", size=512)
         model_id = _get_available_venice_vision_model(
-            "venice/mistral-small-2603",
-            "venice/google.gemma-4-26b-a4b-it",
-            "venice/qwen3-vl-235b-a22b",
+            "venice/qwen-3-8-27b",
+            "venice/google-gemma-4-26b-a4b-it",
+            "venice/qwen-3-8-flash",
         )
 
         result = cli_runner.invoke(
@@ -364,13 +364,13 @@ class TestWebSearch:
 
     def test_web_search_with_citations(self, cli_runner, isolated_llm_dir):
         """Test that web search returns citations."""
-        # Use llama-3.3-70b with web search
+        # Use qwen-3-8-flash with web search
         result = cli_runner.invoke(
             cli,
             [
                 "prompt",
                 "-m",
-                "venice/llama-3.3-70b",
+                "venice/qwen-3-8-flash",
                 "-o",
                 "enable_web_search",
                 "on",
@@ -403,8 +403,8 @@ class TestImageGeneration:
 
     def test_basic_image_generation(self, isolated_llm_dir):
         """Test basic image generation with default model."""
-        # Use venice-sd35 (default image model)
-        image_model = llm.get_model("venice/venice-sd35")
+        # Use z-image-turbo (Venice's default, fastest image model)
+        image_model = llm.get_model("venice/z-image-turbo")
 
         # Generate an image
         response = image_model.prompt("A red apple on a table")

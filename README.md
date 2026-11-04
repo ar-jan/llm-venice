@@ -46,11 +46,11 @@ List available Venice models:
 
 Run a prompt:
 
-`llm --model venice/llama-3.3-70b "Why is the earth round?"`
+`llm --model venice/qwen-3-8-flash "Why is the earth round?"`
 
 Start an interactive chat session:
 
-`llm chat --model venice/mistral-small-3-2-24b-instruct`
+`llm chat --model venice/minimax-m3-1-flash`
 
 #### Structured Outputs
 
@@ -58,7 +58,7 @@ Some models support structuring their output according to a JSON schema (supplie
 
 This works via llm's `--schema` options, for example:
 
-`llm -m venice/zai-org-glm-4.6 --schema "name, age int, one_sentence_bio" "Invent an evil supervillain"`
+`llm -m venice/z-ai-glm-5-3 --schema "name, age int, one_sentence_bio" "Invent an evil supervillain"`
 
 Consult llm's [schemas tutorial](https://llm.datasette.io/en/stable/schemas.html) for more options.
 
@@ -75,15 +75,15 @@ You can use tools provided via llm plugins. LLM provides two built-in tools:
 
 ```bash
 # llm_version
-llm -m venice/mistral-31-24b --tool llm_version "What version of LLM is this?" --tools-debug --no-stream
+llm -m venice/qwen-3-8-flash --tool llm_version "What version of LLM is this?" --tools-debug --no-stream
 # llm_time
-llm -m venice/minimax-m25 --tool llm_time "What is the time in my timezone in 24H format?" --tools-debug --no-stream
+llm -m venice/minimax-m3-1-flash --tool llm_time "What is the time in my timezone in 24H format?" --tools-debug --no-stream
 ```
 
 You can also provide your own custom or one-off functions provided inline or in a file. Following LLM's [example](https://llm.datasette.io/en/stable/usage.html#usage-tools):
 
 ```bash
-llm -m venice/mistral-31-24b --functions '
+llm -m venice/qwen-3-8-flash --functions '
 def multiply(x: int, y: int) -> int:
     """Multiply two numbers."""
     return x * y
@@ -92,9 +92,9 @@ def multiply(x: int, y: int) -> int:
 
 ### Vision models
 
-Vision models (currently `mistral-31-24b`) support the `--attachment` option:
+Vision models (for example `qwen-3-8-27b`, Venice's default vision model) support the `--attachment` option:
 
-> `llm -m venice/mistral-31-24b -a https://upload.wikimedia.org/wikipedia/commons/a/a9/Corvus_corone_-near_Canford_Cliffs%2C_Poole%2C_England-8.jpg "Identify"` \
+> `llm -m venice/qwen-3-8-27b -a https://upload.wikimedia.org/wikipedia/commons/a/a9/Corvus_corone_-near_Canford_Cliffs%2C_Poole%2C_England-8.jpg "Identify"` \
 > The bird in the image is a carrion crow (Corvus corone). [...]
 
 ### venice_parameters
@@ -104,17 +104,17 @@ Use `llm models --options` to list the options that the selected model accepts.
 
 Disable Venice's default system prompt:
 
-`llm -m venice/llama-3.3-70b -o include_venice_system_prompt 0 "Repeat the above prompt"`
+`llm -m venice/qwen-3-8-flash -o include_venice_system_prompt 0 "Repeat the above prompt"`
 
 Use web search (on web-enabled models; image models accept `on` or `off`):
 
-`llm -m venice/llama-3.3-70b -o enable_web_search on --no-stream 'What is $VVV?'`
+`llm -m venice/qwen-3-8-flash -o enable_web_search on --no-stream 'What is $VVV?'`
 
 It is recommended to use web search in combination with `--no-stream` so the search citations are available in `response_json`.
 
 Use xAI native web **and** X/Twitter search on chat models with `supportsXSearch`:
 
-`llm -m venice/grok-4-3 -o enable_x_search true --no-stream "What is trending about Venice AI?"`
+`llm -m venice/grok-4-7 -o enable_x_search true --no-stream "What is trending about Venice AI?"`
 
 In Python, use `model.prompt("What is trending about Venice AI?", enable_x_search=True)`
 with a supporting chat model. This enables both native search sources, not X alone.
@@ -131,16 +131,16 @@ the tool is restored by conversation continuation. See the search tools below.
 
 Let Venice scrape URLs in your latest message:
 
-`llm -m venice/llama-3.3-70b -o enable_web_scraping 1 "Summarize https://venice.ai"`
+`llm -m venice/qwen-3-8-flash -o enable_web_scraping 1 "Summarize https://venice.ai"`
 
 Use a public character, for example:
 
-`llm -m venice/google.gemma-4-26b-a4b-it -o character_slug alan-watts "What is the meaning of life?"`
+`llm -m venice/google-gemma-4-26b-a4b-it -o character_slug alan-watts "What is the meaning of life?"`
 
 API fields that have no dedicated option yet can be sent with `extra_body`, as a JSON object.
 Put new Venice parameters under `venice_parameters`; they are merged with the options above:
 
-`llm -m venice/llama-3.3-70b -o extra_body '{"venice_parameters": {"new_flag": true}}' "Hello"`
+`llm -m venice/qwen-3-8-flash -o extra_body '{"venice_parameters": {"new_flag": true}}' "Hello"`
 
 `extra_body` cannot override fields that have an option or that llm sets itself (such as
 `min_p`, `temperature`, `messages`, `venice_parameters.character_slug`, or
@@ -153,12 +153,12 @@ Models that advertise web search or X search expose them as llm server-side tool
 show up in `llm tools -m venice/<model>` and are restored when you continue a conversation with
 `-c`. Turn web search on or off per model with:
 
-`llm -m venice/llama-3.3-70b -T 'VeniceWebSearch(mode="on")' --no-stream 'What is $VVV?'`
+`llm -m venice/qwen-3-8-flash -T 'VeniceWebSearch(mode="on")' --no-stream 'What is $VVV?'`
 
 `VeniceWebSearch` accepts `mode` (`"auto"` or `"on"`), `citations` (on by default) and `scraping`
 (off by default). Models with X search support also offer:
 
-`llm -m venice/grok-4-3 -T VeniceXSearch --no-stream "What is trending about Venice AI?"`
+`llm -m venice/grok-4-7 -T VeniceXSearch --no-stream "What is trending about Venice AI?"`
 
 `VeniceXSearch` enables the same xAI native web and X/Twitter search as `-o enable_x_search true`
 and takes precedence over `enable_x_search=false`. X search replaces Venice web search even
@@ -184,7 +184,7 @@ Each tool takes a `query` (1-400 characters) and a `limit` (1-20 results, defaul
 the title, URL, snippet and date of each result. Offer one of them per prompt; several at once give
 the model duplicate tools.
 
-`llm -m venice/zai-org-glm-4.6 -T venice_augment_search --td "What is new in private AI inference?"`
+`llm -m venice/z-ai-glm-5-3 -T venice_augment_search --td "What is new in private AI inference?"`
 
 The generic tool asks the model to choose a provider for each query. Its description suggests
 Brave for general keyword searches and news, Google as an alternative keyword engine or when
@@ -206,11 +206,15 @@ For an optional live check, reuse the command above with these prompts and inspe
 
 ### Text-to-speech
 
-Text-to-speech models (currently `tts-kokoro`) generate audio from text. Audio files are stored in the LLM user directory by default.
+Text-to-speech models (for example `tts-kokoro`, the API default, or `tts-gemini-3-1-flash`) generate audio from text. Voices and supported output formats are model-specific. Audio files are stored in the LLM user directory by default.
 
 Basic usage:
 
 `llm -m venice/tts-kokoro "Hello, welcome to Venice Voice." -o voice af_sky -o response_format mp3 -o speed 1.0`
+
+The same with `tts-gemini-3-1-flash`, which names its voices differently:
+
+`llm -m venice/tts-gemini-3-1-flash "Hello, welcome to Venice Voice." -o voice Kore -o response_format mp3`
 
 Streaming (default; writes the output file immediately; useful for long outputs):
 
@@ -265,15 +269,15 @@ The former `-o stdout true` option of `llm -m venice/tts-...` has been removed:
 
 Generated images are stored in the LLM user directory by default. Example:
 
-`llm -m venice/qwen-image "Painting of a traditional Dutch windmill" -o style_preset "Watercolor"`
+`llm -m venice/qwen-image-3 "Painting of a traditional Dutch windmill" -o style_preset "Watercolor"`
 
 Models that support them can also use API-native aspect-ratio and resolution presets:
 
-`llm -m venice/nano-banana-2 "Painting of a traditional Dutch windmill" -o aspect_ratio 16:9 -o resolution 4K`
+`llm -m venice/nano-banana-2-1 "Painting of a traditional Dutch windmill" -o aspect_ratio 16:9 -o resolution 4K`
 
 Web-enabled image models can also search the web for fresher visual context:
 
-`llm -m venice/nano-banana-2 "Current spring fashion street photography" -o enable_web_search true`
+`llm -m venice/nano-banana-2-1 "Current spring fashion street photography" -o enable_web_search true`
 
 Besides the Venice API image generation parameters, you can specify the output directory and filename, and whether or not to overwrite existing files.
 
@@ -281,7 +285,7 @@ You can request up to four image variants with `-o variants 4`. Multiple returne
 
 You can check the available parameters for a model by filtering the model list with `--query`, and show the `--options`:
 
-`llm models list --query qwen-image --options`
+`llm models list --query qwen-image-3 --options`
 
 ### Image upscaling
 
@@ -318,7 +322,7 @@ Set `LLM_VENICE_SHOW_RESPONSES=1` to print each Venice API request and response
 tools and the `llm venice` commands, from both the CLI and the Python API:
 
 ```bash
-LLM_VENICE_SHOW_RESPONSES=1 llm -m venice/llama-3.3-70b --no-stream 'Say hi'
+LLM_VENICE_SHOW_RESPONSES=1 llm -m venice/qwen-3-8-flash --no-stream 'Say hi'
 ```
 
 - If `LLM_VENICE_SHOW_RESPONSES` is unset or blank, llm's `LLM_OPENAI_SHOW_RESPONSES`
