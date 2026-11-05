@@ -208,6 +208,8 @@ For an optional live check, reuse the command above with these prompts and inspe
 
 Text-to-speech models (for example `tts-kokoro`, the API default, or `tts-gemini-3-1-flash`) generate audio from text. Voices and supported output formats are model-specific. Audio files are stored in the LLM user directory by default.
 
+Speech models are single-turn: `llm -c`, `--cid` and `llm chat` are rejected with "does not support conversations". Run each prompt on its own.
+
 Basic usage:
 
 `llm -m venice/tts-kokoro "Hello, welcome to Venice Voice." -o voice af_sky -o response_format mp3 -o speed 1.0`
@@ -267,7 +269,7 @@ The former `-o stdout true` option of `llm -m venice/tts-...` has been removed:
 
 ### Image generation
 
-Generated images are stored in the LLM user directory by default. Example:
+Generated images are stored in the LLM user directory by default. Image models are single-turn, like speech models: `llm -c`, `--cid` and `llm chat` are rejected. Example:
 
 `llm -m venice/qwen-image-3 "Painting of a traditional Dutch windmill" -o style_preset "Watercolor"`
 
