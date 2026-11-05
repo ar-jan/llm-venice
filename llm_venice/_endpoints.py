@@ -32,18 +32,8 @@ class _SpeechInput(_Input):
 class UpscaleInput(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True, allow_inf_nan=False)
     scale: float = Field(default=2.0, ge=2, le=4)
-
-    @field_validator("scale")
-    @classmethod
-    def _scale(cls, value: float) -> float:
-        if value not in {2, 4}:
-            raise ValueError("scale must be 2 or 4")
-        return value
-
-    enhance: bool = False
-    enhance_creativity: float | None = Field(default=None, ge=0, le=1, alias="enhanceCreativity")
-    enhance_prompt: str | None = Field(default=None, alias="enhancePrompt")
-    replication: float | None = Field(default=None, ge=0, le=1)
+    # The endpoint clamps to 0-0.02; reject instead so values are not silently changed.
+    creativity: float | None = Field(default=None, ge=0, le=0.02)
 
 
 class KeyInput(BaseModel):

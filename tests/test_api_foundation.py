@@ -113,8 +113,18 @@ def test_endpoint_limits_match_dated_fixture():
     speech = fixture["schemas"]["CreateSpeechRequestSchema"]["properties"]
     for speed in (speech["speed"]["minimum"], speech["speed"]["maximum"]):
         assert SpeechParams(speed=speed).speed == speed
-    with pytest.raises(ValidationError):
-        UpscaleInput(scale=3)
+    upscale = fixture["schemas"]["UpscaleImageRequest"]["properties"]
+    for scale in (upscale["scale"]["minimum"], 3, 3.5, upscale["scale"]["maximum"]):
+        assert UpscaleInput(scale=scale).scale == scale
+    for scale in (1.99, 4.01):
+        with pytest.raises(ValidationError):
+            UpscaleInput(scale=scale)
+    assert upscale["creativity"]["default"] == 0.01
+    for creativity in (0, 0.01, 0.02):
+        assert UpscaleInput(creativity=creativity).creativity == creativity
+    for creativity in (-0.01, 0.03):
+        with pytest.raises(ValidationError):
+            UpscaleInput(creativity=creativity)
 
 
 def test_key_inputs_and_utc_serialization():

@@ -38,14 +38,9 @@ def test_upscale_cli_with_all_options(
             "upscale",
             str(temp_image_file),
             "--scale",
-            "4",
-            "--enhance",
-            "--enhance-creativity",
-            "0.8",
-            "--enhance-prompt",
-            "spooky",
-            "--replication",
-            "0.3",
+            "2.5",
+            "--creativity",
+            "0.015",
             "--output-path",
             str(output_path),
             "--overwrite",
@@ -59,10 +54,11 @@ def test_upscale_cli_with_all_options(
     requests = mocked_responses.get_requests()
     assert len(requests) == 1
     request_body = requests[0].read()
-    assert b'name="enhance"\r\n\r\ntrue' in request_body
-    assert b'name="enhanceCreativity"\r\n\r\n0.8' in request_body
-    assert b'name="enhancePrompt"\r\n\r\nspooky' in request_body
-    assert b'name="replication"\r\n\r\n0.3' in request_body
+    assert b'name="scale"\r\n\r\n2.5' in request_body
+    assert b'name="creativity"\r\n\r\n0.015' in request_body
+    assert b'name="image"' in request_body
+    # Only scale, creativity and image are sent; no obsolete enhancement fields.
+    assert request_body.count(b"Content-Disposition") == 3
 
 
 def test_upscale_cli_file_not_found(mock_venice_api_key, cli_runner):
@@ -106,12 +102,46 @@ UPSCALE_URL = "https://api.venice.ai/api/v1/image/upscale"
 PNG = b"\x89PNG\r\n\x1a\nupscaled"
 
 
-def test_upscale_cli_rejects_unsupported_scale(httpx2_mock, temp_image_file, cli_runner):
-    """Only 2 and 4 are accepted; other values fail before any request."""
-    result = cli_runner.invoke(cli, ["venice", "upscale", str(temp_image_file), "--scale", "3"])
+@pytest.mark.parametrize("scale", ["1.5", "4.5"])
+def test_upscale_cli_rejects_out_of_range_scale(httpx2_mock, temp_image_file, cli_runner, scale):
+    """Scales outside 2 to 4 fail before any request."""
+    result = cli_runner.invoke(cli, ["venice", "upscale", str(temp_image_file), "--scale", scale])
 
     assert result.exit_code == 2
     assert "Invalid value for '--scale'" in result.output
+    assert not httpx2_mock.get_requests()
+
+
+@pytest.mark.parametrize("creativity", ["-0.01", "0.03"])
+def test_upscale_cli_rejects_out_of_range_creativity(
+    httpx2_mock, temp_image_file, cli_runner, creativity
+):
+    """The endpoint would clamp these silently, so they fail before any request."""
+    result = cli_runner.invoke(
+        cli, ["venice", "upscale", str(temp_image_file), "--creativity", creativity]
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--creativity'" in result.output
+    assert not httpx2_mock.get_requests()
+
+
+def test_upscale_cli_omits_creativity_by_default(
+    mocked_responses, temp_image_file, mock_venice_api_key, cli_runner
+):
+    """Without --creativity, the API default applies."""
+    result = cli_runner.invoke(cli, ["venice", "upscale", str(temp_image_file)])
+
+    assert result.exit_code == 0, result.output
+    assert b'name="creativity"' not in mocked_responses.get_requests()[0].read()
+
+
+@pytest.mark.parametrize("option", ["--enhance", "--replication"])
+def test_upscale_cli_obsolete_options_removed(httpx2_mock, temp_image_file, cli_runner, option):
+    result = cli_runner.invoke(cli, ["venice", "upscale", str(temp_image_file), option])
+
+    assert result.exit_code == 2
+    assert "No such option" in result.output
     assert not httpx2_mock.get_requests()
 
 

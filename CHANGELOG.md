@@ -20,8 +20,14 @@
 - Image output always uses JSON/base64. The `return_binary` option has been removed;
   omit it and use `variants` for multi-image output.
 - Saving creates requested parent directories without an interactive confirmation.
-- Parameter validation follows endpoint bounds; upscale scale must be 2 or 4, and
-  `llm venice upscale --scale` accepts only `2` or `4`.
+- Parameter validation follows endpoint bounds. Upscale `scale` and
+  `llm venice upscale --scale` accept any value from 2 to 4.
+- Upscaling no longer offers `--enhance`, `--enhance-creativity`, `--enhance-prompt`
+  and `--replication` (or the matching `upscale_image()` arguments). The endpoint
+  dropped these fields and silently ignores them.
+- Upscaling accepts `--creativity` (and `upscale_image(creativity=...)`), from 0 to
+  0.02, for how much detail and texture the upscaler adds. Out-of-range values fail
+  locally because the endpoint would clamp them silently; unset uses the API default.
 - JSON resources are checked for their required fields; optional fields pass through
   unchanged. Catalog refreshes skip malformed model entries and fail only when no
   usable model remains.

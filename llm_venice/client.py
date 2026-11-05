@@ -230,21 +230,12 @@ class VeniceClient(_Configuration):
         image: ImageInput,
         *,
         scale: float = 2,
-        enhance: bool = False,
-        enhance_creativity: float | None = None,
-        enhance_prompt: str | None = None,
-        replication: float | None = None,
+        creativity: float | None = None,
     ) -> GeneratedImage:
         """Upscale a path, bytes or borrowed file read from its current position."""
         self._ensure_open()
         data = ep.UpscaleInput.model_validate(
-            {
-                "scale": scale,
-                "enhance": enhance,
-                "enhance_creativity": enhance_creativity,
-                "enhance_prompt": enhance_prompt,
-                "replication": replication,
-            }
+            {"scale": scale, "creativity": creativity}
         ).model_dump(by_alias=True, exclude_none=True)
         file = _image_file(image)
         return ep.parse_upscale(
@@ -453,21 +444,12 @@ class AsyncVeniceClient(_Configuration):
         image: ImageInput,
         *,
         scale: float = 2,
-        enhance: bool = False,
-        enhance_creativity: float | None = None,
-        enhance_prompt: str | None = None,
-        replication: float | None = None,
+        creativity: float | None = None,
     ) -> GeneratedImage:
         """Upscale a path, bytes or borrowed file read from its current position."""
         self._ensure_open()
         data = ep.UpscaleInput.model_validate(
-            {
-                "scale": scale,
-                "enhance": enhance,
-                "enhance_creativity": enhance_creativity,
-                "enhance_prompt": enhance_prompt,
-                "replication": replication,
-            }
+            {"scale": scale, "creativity": creativity}
         ).model_dump(by_alias=True, exclude_none=True)
         file = await async_file_call(_image_file, image)
         return ep.parse_upscale(
