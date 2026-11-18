@@ -19,7 +19,6 @@ from collections.abc import AsyncGenerator, Iterator
 from typing import Any, cast
 
 import httpx2
-import openai
 
 VENICE_ENV = "LLM_VENICE_SHOW_RESPONSES"
 OPENAI_ENV = "LLM_OPENAI_SHOW_RESPONSES"
@@ -270,6 +269,9 @@ async def async_log_chat_response(response: httpx2.Response) -> None:
 
 def chat_http_client() -> httpx2.Client:
     """HTTP client for the OpenAI SDK that logs requests and response bodies."""
+    # Deferred like in llm: importing openai at plugin load slows every llm command.
+    import openai
+
     return openai.DefaultHttpxClient(
         event_hooks={"request": [log_request], "response": [log_chat_response]},
     )
@@ -277,6 +279,8 @@ def chat_http_client() -> httpx2.Client:
 
 def async_chat_http_client() -> httpx2.AsyncClient:
     """Async counterpart of :func:`chat_http_client`."""
+    import openai
+
     return openai.DefaultAsyncHttpxClient(
         event_hooks={"request": [async_log_request], "response": [async_log_chat_response]},
     )

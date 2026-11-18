@@ -5,7 +5,6 @@ import json
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Union
 
 import llm
-import openai
 from llm_venice import _logging
 from llm_venice._options import CatalogOptionsMixin, normalize_policy, parse_json_object
 from ._common import model_error_boundary
@@ -421,6 +420,10 @@ def _build_venice_kwargs(
 
 def _openai_client(model: Union[Chat, AsyncChat], key, *, async_: bool):
     """Build the SDK client, using Venice's logging setting instead of llm's."""
+    # Deferred like in llm (0.38+): importing openai at plugin load would slow
+    # down every llm command, including ones that never use a Venice model.
+    import openai
+
     kwargs: Dict[str, Any] = {"api_key": model.get_key(key)}
     if model.api_base:
         kwargs["base_url"] = model.api_base

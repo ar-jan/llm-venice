@@ -157,8 +157,10 @@ def test_execute_sends_tools_and_parses_response(chat_model_with_tools, mock_ven
         usage=usage,
     )
 
-    # Mock the OpenAI client's chat.completions.create method
-    with patch("llm.default_plugins.openai_models.openai.OpenAI") as mock_openai:
+    # Mock the OpenAI client's chat.completions.create method. Patch the openai
+    # module itself: VeniceChat builds its own client, and since llm 0.38
+    # llm.default_plugins.openai_models no longer has an `openai` attribute.
+    with patch("openai.OpenAI") as mock_openai:
         mock_client = Mock()
         mock_openai.return_value = mock_client
         mock_client.chat.completions.create.return_value = mock_completion
@@ -172,6 +174,11 @@ def test_execute_sends_tools_and_parses_response(chat_model_with_tools, mock_ven
         # Force the response to execute by accessing the text
         # This triggers the API call
         response_text = response.text()
+
+        # The plugin's client uses the Venice key and endpoint
+        mock_openai.assert_called_once()
+        assert mock_openai.call_args.kwargs["api_key"] == mock_venice_api_key
+        assert mock_openai.call_args.kwargs["base_url"] == "https://api.venice.ai/api/v1"
 
         # Verify the client was called with correct parameters
         mock_client.chat.completions.create.assert_called_once()
