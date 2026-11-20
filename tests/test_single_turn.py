@@ -126,7 +126,7 @@ def test_async_conversation_reply_raises(model_id, media, httpx2_mock):
 
 
 @pytest.mark.parametrize("model_id", MEDIA_MODELS)
-def test_single_turn_with_system_prompt_still_works(model_id, media, cli_runner, httpx2_mock):
+def test_system_prompt_is_not_treated_as_history(model_id, media, cli_runner, httpx2_mock):
     result = cli_runner.invoke(
         cli, ["-m", model_id, "-s", "be brief", "-o", "output_dir", media, "only"]
     )
