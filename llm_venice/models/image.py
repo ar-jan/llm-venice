@@ -153,6 +153,9 @@ class VeniceImage(CatalogOptionsMixin, llm.KeyModel):
     """Venice image adapter, with file naming and moderation output policy."""
 
     can_stream = False
+    # Venice media endpoints take a single prompt, so llm rejects -c, --cid,
+    # llm chat and conversation replies instead of silently dropping history.
+    supports_conversation = False
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
     model_name: str
@@ -199,6 +202,9 @@ class AsyncVeniceImage(CatalogOptionsMixin, llm.AsyncKeyModel):
     """Venice image adapter using native async network I/O."""
 
     can_stream = False
+    # Venice media endpoints take a single prompt, so llm rejects -c, --cid,
+    # llm chat and conversation replies instead of silently dropping history.
+    supports_conversation = False
     needs_key = "venice"
     key_env_var = "LLM_VENICE_KEY"
     model_name: str

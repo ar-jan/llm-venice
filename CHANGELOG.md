@@ -15,6 +15,12 @@
   `extra_body.venice_parameters.enable_x_search` overrides remain forbidden; use the
   dedicated option instead.
 - Media adapters and Venice commands use reusable synchronous/asynchronous clients.
+- Image and speech models are single-turn. `llm -c`, `llm --cid`, `llm chat` and
+  Python conversation replies now fail with "does not support conversations"
+  (`llm.ConversationNotSupported`) before any request. Previously they silently sent
+  only the latest prompt and logged it as part of the conversation. Start a new
+  prompt without the continuation options instead; for scripted speech, use
+  `llm venice tts`. `llm models list --json` reports `supports_conversation: false`.
 - Image and speech logs include `output_paths`; image logs preserve moderation and
   omitted-variant metadata. Successful partial image responses are saved.
 - Image output always uses JSON/base64. The `return_binary` option has been removed;
