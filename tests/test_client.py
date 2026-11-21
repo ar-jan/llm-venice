@@ -558,6 +558,21 @@ SPEECH_WITHOUT_AUDIO = [
         id="text",
     ),
     pytest.param(
+        {"content": PNG, "headers": {"content-type": "image/png"}},
+        "expected audio but received image/png$",
+        id="image",
+    ),
+    pytest.param(
+        {"content": b"%PDF-1.7", "headers": {"content-type": "application/pdf"}},
+        "expected audio but received application/pdf$",
+        id="pdf",
+    ),
+    pytest.param(
+        {"content": b"\x00\x00\x00\x18ftypmp42", "headers": {"content-type": "video/mp4"}},
+        "expected audio but received video/mp4$",
+        id="video",
+    ),
+    pytest.param(
         {"content": b"", "headers": {"content-type": "audio/mpeg"}},
         "response did not include any audio",
         id="empty",
@@ -599,11 +614,28 @@ def test_streamed_speech_requires_audio_before_publishing(
     assert [path.name for path in tmp_path.iterdir()] == ["speech.mp3"]
 
 
-@pytest.mark.parametrize("content_type", [None, "application/octet-stream", "audio/mpeg"])
-def test_speech_accepts_binary_content_types(content_type, httpx2_mock):
+OGG_OPUS = b"OggS\x00\x02" + b"\x00" * 22 + b"OpusHead"
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize(
+    "content_type, content, format",
+    [
+        (None, b"ID3audio", "mp3"),
+        ("application/octet-stream", b"ID3audio", "mp3"),
+        ("binary/octet-stream", b"ID3audio", "mp3"),
+        ("application/ogg", OGG_OPUS, "opus"),
+        ("audio/mpeg", b"ID3audio", "mp3"),
+        ("audio/aac", b"\xff\xf1\x50\x40", "aac"),
+    ],
+)
+def test_speech_accepts_audio_and_generic_binary_types(
+    is_async, content_type, content, format, httpx2_mock
+):
     headers = {"content-type": content_type} if content_type else {}
-    httpx2_mock.add_response(content=b"ID3audio", headers=headers)
-    assert invoke(False, "generate_speech", "m", "text").data == b"ID3audio"
+    httpx2_mock.add_response(content=content, headers=headers)
+    speech = invoke(is_async, "generate_speech", "m", "text")
+    assert (speech.data, speech.format) == (content, format)
 
 
 @pytest.mark.parametrize("is_async", [False, True])

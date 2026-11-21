@@ -282,8 +282,8 @@ class VeniceClient(_Configuration):
             try:
                 response = stack.enter_context(self._http.stream("POST", url, **options))
                 content_type = response.headers.get("content-type")
-                # Buffer error bodies, including a 200 that carries JSON instead of audio.
-                if not response.is_success or ep.is_text_media(content_type):
+                # Buffer error bodies, including a 200 that carries something other than audio.
+                if not response.is_success or not ep.is_speech_content_type(content_type):
                     response.read()
                     if self._owned:
                         _logging.log_buffered(response)
@@ -508,8 +508,8 @@ class AsyncVeniceClient(_Configuration):
                     self._http.stream("POST", url, **options)
                 )
                 content_type = response.headers.get("content-type")
-                # Buffer error bodies, including a 200 that carries JSON instead of audio.
-                if not response.is_success or ep.is_text_media(content_type):
+                # Buffer error bodies, including a 200 that carries something other than audio.
+                if not response.is_success or not ep.is_speech_content_type(content_type):
                     await response.aread()
                     if self._owned:
                         _logging.log_buffered(response)

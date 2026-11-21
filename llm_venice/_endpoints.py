@@ -318,9 +318,17 @@ def parse_upscale(response: httpx2.Response) -> GeneratedImage:
 SPEECH_ACTION = "Generating speech"
 
 
-def is_text_media(content_type: str | None) -> bool:
-    """Whether a Content-Type names a text or structured (JSON/XML) body, never audio."""
+# Speech without an audio type is identified by its bytes, so accept these too.
+_GENERIC_BINARY_TYPES = {"", "application/octet-stream", "binary/octet-stream", "application/ogg"}
+
+
+def is_speech_content_type(content_type: str | None) -> bool:
+    """Whether a speech response may carry audio: audio/*, generic binary, or no type."""
     media_type = _media_type(content_type)
+    return media_type.startswith("audio/") or media_type in _GENERIC_BINARY_TYPES
+
+
+def _is_text_media(media_type: str) -> bool:
     return (
         media_type.startswith("text/")
         or media_type in {"application/json", "application/xml"}
@@ -329,23 +337,24 @@ def is_text_media(content_type: str | None) -> bool:
 
 
 def check_speech_content_type(content_type: str | None, body: bytes) -> None:
-    """Reject a successful response whose body is text or JSON instead of audio."""
-    if not is_text_media(content_type):
+    """Reject a successful response that is not audio, citing a text body's message."""
+    if is_speech_content_type(content_type):
         return
     media_type = _media_type(content_type)
     detail = f"expected audio but received {media_type}"
-    message: Any = None
-    try:
-        payload: Any = json.loads(body)
-        if isinstance(payload, dict):
-            obj = cast(dict[str, Any], payload)
-            message = obj.get("message") or obj.get("error")
-    except (ValueError, UnicodeError):
-        pass
-    if message is None:
-        message = body.decode("utf-8", "replace").strip()
-    if message:
-        detail += f": {str(message)[:200]}"
+    if _is_text_media(media_type):
+        message: Any = None
+        try:
+            payload: Any = json.loads(body)
+            if isinstance(payload, dict):
+                obj = cast(dict[str, Any], payload)
+                message = obj.get("message") or obj.get("error")
+        except (ValueError, UnicodeError):
+            pass
+        if message is None:
+            message = body.decode("utf-8", "replace").strip()
+        if message:
+            detail += f": {str(message)[:200]}"
     raise VeniceResponseError(SPEECH_ACTION, detail)
 
 

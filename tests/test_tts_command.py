@@ -227,6 +227,11 @@ def test_overwrite_versus_unique_name(
             id="json-error-body",
         ),
         pytest.param(
+            {"content": b"\x89PNG\r\n\x1a\nimage", "headers": {"Content-Type": "image/png"}},
+            "expected audio but received image/png",
+            id="image-body",
+        ),
+        pytest.param(
             {"content": b"", "headers": {"Content-Type": "audio/mpeg"}},
             "response did not include any audio",
             id="empty-audio-body",
