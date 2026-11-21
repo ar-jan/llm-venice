@@ -131,6 +131,41 @@ def test_characters_cli_stops_when_offset_is_ignored(cli_runner, httpx2_mock, mo
     assert result.exit_code == 0, result.output
     assert len(saved_characters()["data"]) == 100
     assert requested_offsets(httpx2_mock) == ["0", "100"]
+    assert (
+        "Warning: Venice returned a full page with no new characters at offset 100; "
+        "the saved list may be incomplete"
+    ) in result.stderr
+    assert "100 characters saved to" in result.stderr
+
+
+def test_characters_cli_drops_duplicate_ids_within_a_page(
+    cli_runner, httpx2_mock, mock_venice_api_key
+):
+    duplicated = page(0, 3)
+    duplicated["data"].append(dict(duplicated["data"][0]))
+    httpx2_mock.add_response(url=FIRST_PAGE, json=duplicated)
+
+    result = cli_runner.invoke(cli, ["venice", "characters"])
+
+    assert result.exit_code == 0, result.output
+    assert [c["id"] for c in saved_characters()["data"]] == ["c0", "c1", "c2"]
+    assert "3 characters saved to" in result.stderr
+    assert "Warning" not in result.stderr
+
+
+def test_characters_cli_continues_past_partly_repeated_full_page(
+    cli_runner, httpx2_mock, mock_venice_api_key
+):
+    """Overlapping pages still make progress, so paging continues without a warning."""
+    httpx2_mock.add_response(url=FIRST_PAGE, json=page(0, 100))
+    httpx2_mock.add_response(url=f"{CHARACTERS_URL}?limit=100&offset=100", json=page(50, 100))
+    httpx2_mock.add_response(url=f"{CHARACTERS_URL}?limit=100&offset=200", json=page(150, 10))
+
+    result = cli_runner.invoke(cli, ["venice", "characters"])
+
+    assert result.exit_code == 0, result.output
+    assert len(saved_characters()["data"]) == 160
+    assert "Warning" not in result.stderr
 
 
 def test_characters_cli_warns_when_page_cap_is_reached(
