@@ -431,6 +431,10 @@ def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[st
         resource(obj.get("data"), RateLimits, action)
     elif name == "create_key":
         resource(obj.get("data"), CreatedApiKey, action)
+    elif name == "delete_key":
+        # A 200 must confirm the revocation; anything else may have left the key live.
+        if obj.get("success") is not True:
+            raise VeniceResponseError(action, "Venice did not confirm the deletion")
     elif name == "augment_search":
         # Not an envelope. Check items one by one so that drift in their optional
         # fields (such as a null date) does not fail the whole search.

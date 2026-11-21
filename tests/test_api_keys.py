@@ -1,3 +1,4 @@
+import asyncio
 import httpx2
 import json
 import pathlib
@@ -6,8 +7,8 @@ from jsonschema import Draft202012Validator
 from llm.cli import cli
 import pytest
 
-from llm_venice.errors import VeniceAPIError
-from llm_venice.client import VeniceClient
+from llm_venice.errors import VeniceAPIError, VeniceResponseError
+from llm_venice.client import AsyncVeniceClient, VeniceClient
 
 
 @pytest.mark.parametrize(
@@ -165,3 +166,54 @@ def test_rate_limits(cli_runner):
             pytest.fail(error_message)
     except json.JSONDecodeError:
         pytest.fail("Response was not valid JSON")
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [{"success": False}, {}, {"success": "true"}, {"success": 1}],
+    ids=["false", "missing", "string", "int"],
+)
+def test_delete_without_confirmation_fails(cli_runner, httpx2_mock, mock_venice_api_key, payload):
+    """Only an explicit success: true confirms that the key was revoked."""
+    httpx2_mock.add_response(
+        method="DELETE", url="https://api.venice.ai/api/v1/api_keys?id=key", json=payload
+    )
+
+    result = cli_runner.invoke(cli, ["venice", "api-keys", "delete", "key"])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "Deleting API key failed: Venice did not confirm the deletion" in result.stderr
+    assert "Traceback" not in result.output
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize("payload", [{"success": False}, {}])
+def test_delete_api_key_requires_confirmation(is_async, httpx2_mock, payload):
+    httpx2_mock.add_response(json=payload)
+
+    async def run_async():
+        async with AsyncVeniceClient(key="k") as client:
+            await client.delete_api_key("key")
+
+    def run_sync():
+        with VeniceClient(key="k") as client:
+            client.delete_api_key("key")
+
+    with pytest.raises(VeniceResponseError, match="did not confirm"):
+        asyncio.run(run_async()) if is_async else run_sync()
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_delete_api_key_accepts_no_content(is_async, httpx2_mock):
+    httpx2_mock.add_response(status_code=204)
+
+    async def run_async():
+        async with AsyncVeniceClient(key="k") as client:
+            return await client.delete_api_key("key")
+
+    def run_sync():
+        with VeniceClient(key="k") as client:
+            return client.delete_api_key("key")
+
+    assert (asyncio.run(run_async()) if is_async else run_sync()) is None
