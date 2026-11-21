@@ -13,7 +13,7 @@ from llm_venice._options import (
     parse_json_object,
     validate_request,
 )
-from ._common import initialize_model, warn_deprecated, model_error_boundary
+from ._common import initialize_model, model_error_boundary, single_turn_text, warn_deprecated
 from llm_venice.client import VeniceClient, AsyncVeniceClient
 from llm_venice.params import ImageParams, copy_params
 from llm_venice.results import ImageResult
@@ -84,11 +84,12 @@ def _image_options(model, prompt):
     warn_deprecated(model)
     opts = cast(_ImageOptions, model.Options.model_validate(prompt.options.model_dump()))
     validate_output_directory(opts.output_dir)
-    validate_request(model.catalog_policy, prompt.prompt, opts)
+    text = single_turn_text(model, prompt)
+    validate_request(model.catalog_policy, text, opts)
     params = copy_params(ImageParams, opts)
     if params.enable_web_search and not model.supports_web_search:
         raise ValueError(f"Model {model.model_id} does not support web search")
-    return opts, params
+    return opts, params, text
 
 
 def _save_adapter_images(model, opts, result, paths=None):
@@ -184,9 +185,9 @@ class VeniceImage(CatalogOptionsMixin, llm.KeyModel):
     def execute(self, prompt, stream, response, conversation=None, key=None):
         with model_error_boundary():
             api_key = require_model_key(self, key)
-            opts, params = _image_options(self, prompt)
+            opts, params, text = _image_options(self, prompt)
             with VeniceClient(key=api_key) as client:
-                result = client.generate_image(self.model_name, prompt.prompt, params)
+                result = client.generate_image(self.model_name, text, params)
             paths = [] if result.content_violation else _save_adapter_images(self, opts, result)
             _image_response(response, result, paths)
             rendered = _image_notices(result)
@@ -232,9 +233,9 @@ class AsyncVeniceImage(CatalogOptionsMixin, llm.AsyncKeyModel):
     async def execute(self, prompt, stream, response, conversation=None, key=None):
         with model_error_boundary():
             api_key = require_model_key(self, key)
-            opts, params = _image_options(self, prompt)
+            opts, params, text = _image_options(self, prompt)
             async with AsyncVeniceClient(key=api_key) as client:
-                result = await client.generate_image(self.model_name, prompt.prompt, params)
+                result = await client.generate_image(self.model_name, text, params)
             paths = (
                 []
                 if result.content_violation
