@@ -152,14 +152,21 @@ class VeniceClient(_Configuration):
         *,
         web_enabled: bool | None = None,
         adult: bool | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> list[Character]:
-        """List characters with optional boolean filters, unwrapping the envelope."""
+        """List one page of characters (Venice default 50, max 100 per page).
+
+        Page with ``offset``; a page shorter than ``limit`` is the last one.
+        """
         return cast(
             list[Character],
             self._json_operation(
                 "characters",
                 web_enabled=web_enabled,
                 adult=adult,
+                limit=limit,
+                offset=offset,
             )["data"],
         )
 
@@ -361,8 +368,13 @@ class AsyncVeniceClient(_Configuration):
         *,
         web_enabled: bool | None = None,
         adult: bool | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> list[Character]:
-        """List characters with optional boolean filters, unwrapping the envelope."""
+        """List one page of characters (Venice default 50, max 100 per page).
+
+        Page with ``offset``; a page shorter than ``limit`` is the last one.
+        """
         return cast(
             list[Character],
             (
@@ -370,6 +382,8 @@ class AsyncVeniceClient(_Configuration):
                     "characters",
                     web_enabled=web_enabled,
                     adult=adult,
+                    limit=limit,
+                    offset=offset,
                 )
             )["data"],
         )

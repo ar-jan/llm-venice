@@ -394,7 +394,9 @@ Use a registered model's `.Options` for its published limits and choices; class
 JSON methods return ordinary typed dictionaries and unwrap `data` envelopes:
 `list_models()`, `list_characters(web_enabled=True, adult=False)`, `list_api_keys()`,
 `get_rate_limits()`, and `get_rate_limits_log()`. Unknown JSON fields and wire-format
-timestamps are preserved. Key management requires an ADMIN key; `create_api_key()`
+timestamps are preserved. `list_characters()` returns one page: pass `limit=` (Venice's
+default is 50, the maximum 100) and `offset=`, and stop at a page shorter than `limit`.
+`llm venice characters` fetches every page. Key management requires an ADMIN key; `create_api_key()`
 takes `key_type=`, `description=`, optional `limit_usd=`/`limit_vcu=`, and an optional
 timezone-aware `expires_at` datetime. `delete_api_key(id)` returns `None`.
 Resource annotations are available from `llm_venice.types`.

@@ -85,19 +85,24 @@ class AugmentSearchInput(BaseModel):
         return body
 
 
+CHARACTER_PAGE_LIMIT = 100
+
+
 class CharacterFilters(BaseModel):
     web_enabled: bool | None = None
     adult: bool | None = None
+    # Venice pages with limit (default 50) and offset, and reports no total.
+    limit: int | None = Field(default=None, ge=1, le=CHARACTER_PAGE_LIMIT, strict=True)
+    offset: int | None = Field(default=None, ge=0, strict=True)
 
     def query(self) -> dict[str, str]:
-        return {
-            key: str(value).lower()
-            for key, value in {
-                "isWebEnabled": self.web_enabled,
-                "isAdult": self.adult,
-            }.items()
-            if value is not None
-        }
+        flags = {"isWebEnabled": self.web_enabled, "isAdult": self.adult}
+        query = {key: str(value).lower() for key, value in flags.items() if value is not None}
+        if self.limit is not None:
+            query["limit"] = str(self.limit)
+        if self.offset is not None:
+            query["offset"] = str(self.offset)
+        return query
 
 
 def image_body(model: str, prompt: str, params: ImageParams | None) -> dict[str, Any]:
