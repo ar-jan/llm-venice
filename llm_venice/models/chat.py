@@ -321,7 +321,14 @@ def _make_json_schema_strict(schema: Dict, path: str = "$") -> Dict:
     ``dict[str, int]`` field). Closing it would silently change its meaning to
     "always empty", so such a schema raises ``llm.ModelError`` instead.
     """
-    if "patternProperties" in schema or schema.get("additionalProperties", False) is not False:
+    if schema.get("patternProperties") == {}:
+        # Matches no keys, so it adds nothing once the object is closed.
+        del schema["patternProperties"]
+    if (
+        "patternProperties" in schema
+        or schema.get("additionalProperties", False) is not False
+        or schema.get("unevaluatedProperties", False) is not False
+    ):
         raise llm.ModelError(
             "Venice structured output uses strict JSON schema mode, which cannot "
             f"express an object with arbitrary keys at {path}. Declare fixed "

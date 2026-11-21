@@ -335,6 +335,14 @@ def test_build_kwargs_leaves_object_without_properties_closed():
         ({"type": "object", "additionalProperties": True}, "$"),
         ({"type": "object", "additionalProperties": {}}, "$"),
         ({"type": "object", "patternProperties": {"^x-": {"type": "string"}}}, "$"),
+        ({"type": "object", "unevaluatedProperties": {"type": "integer"}}, "$"),
+        (
+            {
+                "type": "object",
+                "properties": {"meta": {"type": "object", "unevaluatedProperties": True}},
+            },
+            "$.properties.meta",
+        ),
         (
             {
                 "type": "array",
@@ -376,6 +384,28 @@ def test_pydantic_dict_field_fails_before_request(httpx2_mock, mock_venice_api_k
         chat.prompt("Count the fruit", schema=Inventory, stream=False).text()
 
     assert httpx2_mock.get_requests() == []
+
+
+def test_build_kwargs_drops_empty_pattern_properties():
+    """An empty patternProperties matches no keys, so closing the object keeps its meaning."""
+    chat = VeniceChat(model_id="venice/test-model")
+    schema = {
+        "type": "object",
+        "properties": {"a": {"type": "string"}},
+        "patternProperties": {},
+        "unevaluatedProperties": False,
+    }
+    prompt = Prompt(prompt="Generate a test object", model=chat, schema=schema)
+
+    sent = chat.build_kwargs(prompt, stream=False)["response_format"]["json_schema"]["schema"]
+
+    assert sent == {
+        "type": "object",
+        "properties": {"a": {"type": "string"}},
+        "unevaluatedProperties": False,
+        "additionalProperties": False,
+    }
+    assert schema["patternProperties"] == {}
 
 
 def test_build_kwargs_accepts_explicitly_closed_objects():
