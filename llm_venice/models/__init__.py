@@ -14,7 +14,6 @@ from llm_venice.models.chat import (
 )
 from llm_venice.models.audio import AsyncVeniceSpeech, VeniceSpeech
 from llm_venice.models.image import AsyncVeniceImage, VeniceImage
-from llm_venice.constants import VENICE_API_BASE
 from llm_venice.catalog import catalog_path, read_catalog, save_catalog
 from llm_venice.client import VeniceClient
 from llm_venice import _catalog_state
@@ -95,9 +94,9 @@ def register_venice_models(register):
         x_search = spec.get("supportsXSearch", capabilities.get("supportsXSearch")) is True
         if model["type"] == "text":
             common.update(
-                api_base=VENICE_API_BASE,
                 can_stream=True,
                 vision=capabilities.get("supportsVision") is True,
+                audio=capabilities.get("supportsAudioInput") is True,
                 supports_schema=capabilities.get("supportsResponseSchema") is True,
                 supports_tools=capabilities.get("supportsFunctionCalling") is True,
                 supports_web_search=web,

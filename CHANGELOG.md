@@ -43,6 +43,11 @@
 - `llm venice upscale --creativity` (`upscale_image(creativity=...)`) sets how much
   detail and texture the upscaler adds, from 0 to 0.02. Values outside that range fail
   locally, since the API would clamp them silently.
+- Chat models whose catalog entry lists `supportsAudioInput` accept WAV and MP3
+  attachments, for example `-a recording.wav`.
+- `list_characters()` takes `limit` (1 to 100) and `offset` for paging, and
+  `llm venice characters` saves every page instead of only the first 50 characters,
+  and warns when paging stops before the last page.
 
 ### Other changes and fixes
 
@@ -71,6 +76,22 @@
   confirmation.
 - API responses are checked for required fields; other fields pass through unchanged.
   Model refreshes skip malformed entries and fail only if no usable model remains.
+- `VeniceChat` and `AsyncVeniceChat` built directly in Python use the Venice API by
+  default. Previously, without `api_base`, they sent prompts and the Venice key to the
+  OpenAI API.
+- Speech fails when a successful response is not audio: a content type other than
+  `audio/*` or generic binary, such as JSON, text or an image, or an empty body.
+  Previously such a response was saved as the audio file, and `--overwrite` replaced
+  an existing file with it. Upscales with no image data fail the same way.
+- `delete_api_key()` and `llm venice api-keys delete` fail when an HTTP 200 response
+  does not confirm the deletion with `success: true`. HTTP 204 still counts as success.
+- Structured output fails locally, naming the field, when the schema has a map with
+  arbitrary keys, such as a Pydantic `dict[str, int]` field. Venice's strict schema
+  mode would otherwise only accept an empty object for it.
+- Image and speech models accept a prompt passed as `messages=[llm.user(...)]`.
+- Buffered AAC speech returned as `application/octet-stream` is identified as AAC, not
+  MP3. Streamed speech still takes its format from the content type or the requested
+  format.
 
 ### Python migration
 

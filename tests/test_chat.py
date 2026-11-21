@@ -2,8 +2,9 @@
 
 import asyncio
 
+import llm
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from llm import Prompt, Response
 from llm_venice import AsyncVeniceChat, VeniceChat
 
@@ -79,6 +80,65 @@ def test_direct_construction_sends_unprefixed_model(
     text = asyncio.run(run_async()) if is_async else chat.prompt("hi", stream=False).text()
     assert text == "ok"
     assert request_json()["model"] == "llama-3.3-70b"
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize("kwargs", [{}, {"api_base": None}])
+def test_direct_construction_defaults_to_venice_base_url(is_async, kwargs, monkeypatch):
+    """A chat model built without api_base must never fall back to OpenAI."""
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    cls = AsyncVeniceChat if is_async else VeniceChat
+    chat = cls(model_id="llama-3.3-70b", **kwargs)
+
+    client = chat.get_client("fake-venice-api-key", async_=is_async)
+
+    assert chat.api_base == "https://api.venice.ai/api/v1"
+    assert str(client.base_url) == "https://api.venice.ai/api/v1/"
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_direct_construction_keeps_explicit_base_url(is_async):
+    cls = AsyncVeniceChat if is_async else VeniceChat
+    chat = cls(model_id="llama-3.3-70b", api_base="https://proxy.example/v1")
+
+    client = chat.get_client("fake-venice-api-key", async_=is_async)
+
+    assert str(client.base_url) == "https://proxy.example/v1/"
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_direct_construction_without_base_url_sends_to_venice(
+    is_async, httpx2_mock, mock_venice_api_key
+):
+    httpx2_mock.add_response(
+        method="POST",
+        url="https://api.venice.ai/api/v1/chat/completions",
+        json={
+            "id": "x",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "llama-3.3-70b",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        },
+    )
+    cls = AsyncVeniceChat if is_async else VeniceChat
+    chat = cls(model_id="llama-3.3-70b")
+
+    async def run_async():
+        return await chat.prompt("hi", stream=False).text()  # type: ignore[union-attr]
+
+    text = asyncio.run(run_async()) if is_async else chat.prompt("hi", stream=False).text()
+
+    assert text == "ok"
+    request = httpx2_mock.get_requests()[-1]
+    assert request.headers["authorization"] == f"Bearer {mock_venice_api_key}"
 
 
 def test_venice_chat_build_kwargs_json_schema():
@@ -260,6 +320,106 @@ def test_build_kwargs_leaves_object_without_properties_closed():
 
     schema = kwargs["response_format"]["json_schema"]["schema"]
     assert schema["properties"]["meta"]["additionalProperties"] is False
+
+
+@pytest.mark.parametrize(
+    "schema, path",
+    [
+        (
+            {
+                "type": "object",
+                "properties": {"counts": {"additionalProperties": {"type": "integer"}}},
+            },
+            "$.properties.counts",
+        ),
+        ({"type": "object", "additionalProperties": True}, "$"),
+        ({"type": "object", "additionalProperties": {}}, "$"),
+        ({"type": "object", "patternProperties": {"^x-": {"type": "string"}}}, "$"),
+        ({"type": "object", "unevaluatedProperties": {"type": "integer"}}, "$"),
+        (
+            {
+                "type": "object",
+                "properties": {"meta": {"type": "object", "unevaluatedProperties": True}},
+            },
+            "$.properties.meta",
+        ),
+        (
+            {
+                "type": "array",
+                "items": {"type": "object", "additionalProperties": {"type": "string"}},
+            },
+            "$.items",
+        ),
+        (
+            {
+                "$ref": "#/$defs/Item",
+                "$defs": {"Item": {"type": "object", "additionalProperties": True}},
+            },
+            "$.$defs.Item",
+        ),
+        (
+            {"anyOf": [{"type": "string"}, {"type": "object", "additionalProperties": True}]},
+            "$.anyOf[1]",
+        ),
+    ],
+)
+def test_build_kwargs_rejects_maps_strict_mode_cannot_express(schema, path):
+    """Closing a map would make it always empty, so fail with the offending path."""
+    chat = VeniceChat(model_id="venice/test-model")
+    prompt = Prompt(prompt="Generate a test object", model=chat, schema=schema)
+
+    with pytest.raises(llm.ModelError, match="cannot express an object with arbitrary keys") as exc:
+        chat.build_kwargs(prompt, stream=False)
+
+    assert f"at {path}." in str(exc.value)
+
+
+def test_pydantic_dict_field_fails_before_request(httpx2_mock, mock_venice_api_key):
+    class Inventory(BaseModel):
+        counts: dict[str, int]
+
+    chat = VeniceChat(model_id="venice/test-model", supports_schema=True)
+
+    with pytest.raises(llm.ModelError, match=r"at \$\.properties\.counts\."):
+        chat.prompt("Count the fruit", schema=Inventory, stream=False).text()
+
+    assert httpx2_mock.get_requests() == []
+
+
+def test_build_kwargs_drops_empty_pattern_properties():
+    """An empty patternProperties matches no keys, so closing the object keeps its meaning."""
+    chat = VeniceChat(model_id="venice/test-model")
+    schema = {
+        "type": "object",
+        "properties": {"a": {"type": "string"}},
+        "patternProperties": {},
+        "unevaluatedProperties": False,
+    }
+    prompt = Prompt(prompt="Generate a test object", model=chat, schema=schema)
+
+    sent = chat.build_kwargs(prompt, stream=False)["response_format"]["json_schema"]["schema"]
+
+    assert sent == {
+        "type": "object",
+        "properties": {"a": {"type": "string"}},
+        "unevaluatedProperties": False,
+        "additionalProperties": False,
+    }
+    assert schema["patternProperties"] == {}
+
+
+def test_build_kwargs_accepts_explicitly_closed_objects():
+    chat = VeniceChat(model_id="venice/test-model")
+    schema = {
+        "type": "object",
+        "properties": {"a": {"type": "string"}},
+        "additionalProperties": False,
+    }
+    prompt = Prompt(prompt="Generate a test object", model=chat, schema=schema)
+
+    kwargs = chat.build_kwargs(prompt, stream=False)
+
+    assert kwargs["response_format"]["json_schema"]["schema"]["additionalProperties"] is False
 
 
 def test_web_search_off_on_model_without_web_search():

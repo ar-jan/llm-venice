@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import json
+from typing import Any
 
 import llm
 import pytest
@@ -149,3 +150,102 @@ def test_models_json_reports_conversation_support(media, cli_runner):
         "venice/tts-model": False,
         "venice/text-model": True,
     }
+
+
+def run_messages(model_id, is_async, messages, output_dir):
+    """Send a messages= prompt through the sync or async adapter and return its text."""
+    if is_async:
+
+        async def run():
+            model = llm.get_async_model(model_id)
+            return await model.prompt(messages=messages, output_dir=output_dir).text()
+
+        return asyncio.run(run())
+    return llm.get_model(model_id).prompt(messages=messages, output_dir=output_dir).text()
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize("model_id", MEDIA_MODELS)
+def test_messages_prompt_sends_user_text(model_id, is_async, media, httpx2_mock):
+    """With messages= the user text is only in prompt.messages, not prompt.prompt."""
+    run_messages(model_id, is_async, [llm.user("A red apple")], media)
+
+    assert sent_prompts(httpx2_mock) == ["A red apple"]
+
+
+@pytest.mark.parametrize("model_id", MEDIA_MODELS)
+def test_messages_prompt_ignores_system_message(model_id, media, httpx2_mock):
+    run_messages(model_id, False, [llm.system("be brief"), llm.user("only")], media)
+
+    assert sent_prompts(httpx2_mock) == ["only"]
+
+
+@pytest.mark.parametrize("model_id", MEDIA_MODELS)
+def test_messages_prompt_joins_text_parts(model_id, media, httpx2_mock):
+    run_messages(model_id, False, [llm.user("first line", "second line")], media)
+
+    assert sent_prompts(httpx2_mock) == ["first line\nsecond line"]
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize("model_id", MEDIA_MODELS)
+@pytest.mark.parametrize(
+    "messages, error",
+    [
+        ([llm.user("one"), llm.user("two")], "takes a single prompt"),
+        (
+            [llm.user("hi", llm.Attachment(content=b"x", type="image/png"))],
+            "accepts only text",
+        ),
+        ([llm.system("be brief")], "at least 1 character"),
+    ],
+    ids=["two-user-messages", "attachment", "no-user-message"],
+)
+def test_messages_prompt_rejects_unsupported_input(
+    model_id, is_async, messages, error, media, httpx2_mock
+):
+    with pytest.raises(llm.ModelError, match=error):
+        run_messages(model_id, is_async, messages, media)
+
+    assert httpx2_mock.get_requests() == []
+
+
+@pytest.mark.parametrize("model_id", MEDIA_MODELS)
+def test_messages_prompt_with_history_is_rejected(model_id, media, httpx2_mock):
+    messages = [llm.user("first"), llm.assistant("done"), llm.user("second")]
+
+    with pytest.raises(llm.ConversationNotSupported):
+        run_messages(model_id, False, messages, media)
+
+    assert httpx2_mock.get_requests() == []
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize("model_id", MEDIA_MODELS)
+def test_positional_text_outside_messages_is_not_sent(model_id, is_async, media, httpx2_mock):
+    """messages= is authoritative: text that only a direct llm.Prompt carries is not sent."""
+    model: Any = llm.get_async_model(model_id) if is_async else llm.get_model(model_id)
+    prompt = llm.Prompt(
+        "positional",
+        model,
+        messages=[llm.system("be brief")],
+        options=model.Options(output_dir=media),
+    )
+
+    with pytest.raises(llm.ModelError, match="at least 1 character"):
+        if is_async:
+            asyncio.run(llm.AsyncResponse(prompt, model, stream=False).text())
+        else:
+            llm.Response(prompt, model, stream=False).text()
+
+    assert httpx2_mock.get_requests() == []
+
+
+@pytest.mark.parametrize("model_id", MEDIA_MODELS)
+def test_model_prompt_with_system_messages_sends_positional_text(model_id, media, httpx2_mock):
+    """model.prompt() adds positional text to messages= as the user turn."""
+    llm.get_model(model_id).prompt(
+        "positional", messages=[llm.system("be brief")], output_dir=media
+    ).text()
+
+    assert sent_prompts(httpx2_mock) == ["positional"]

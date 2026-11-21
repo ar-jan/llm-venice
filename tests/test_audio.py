@@ -2,6 +2,7 @@ from llm_venice import _files
 import asyncio
 import json
 import pathlib
+from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 
 import httpx2
@@ -31,8 +32,7 @@ def test_venice_speech_payload_includes_options(
     monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
 
     model = VeniceSpeech("tts-kokoro")
-    prompt = MagicMock()
-    prompt.prompt = "Hello from Venice"
+    prompt = llm.Prompt("Hello from Venice", model)
 
     options = Mock()
     options.model_dump.return_value = {
@@ -71,8 +71,7 @@ def test_venice_speech_streaming_writes_file(
     monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
 
     model = VeniceSpeech("tts-kokoro")
-    prompt = MagicMock()
-    prompt.prompt = "Stream me"
+    prompt = llm.Prompt("Stream me", model)
     prompt.options = VeniceSpeech.Options(response_format="mp3")
 
     chunks = [b"chunk-1", b"chunk-2"]
@@ -111,8 +110,7 @@ def test_venice_speech_streaming_http_error_has_detail(httpx2_mock, mock_venice_
         json={"error": "Invalid voice"},
     )
     model = VeniceSpeech("tts-kokoro")
-    prompt = MagicMock()
-    prompt.prompt = "Hello"
+    prompt = llm.Prompt("Hello", model)
     prompt.options = VeniceSpeech.Options(output_dir=tmp_path)
 
     with pytest.raises(llm.ModelError, match="Invalid voice"):
@@ -349,8 +347,7 @@ def test_venice_speech_streaming_failure_keeps_partial(
     import llm
 
     model = VeniceSpeech("tts-kokoro")
-    prompt = MagicMock()
-    prompt.prompt = "Stream me"
+    prompt = llm.Prompt("Stream me", model)
     prompt.options = VeniceSpeech.Options(output_dir=tmp_path, output_filename="out.mp3")
 
     class FailingStream(httpx2.SyncByteStream):
@@ -381,8 +378,7 @@ def test_async_speech_payload_and_file_output(httpx2_mock, mock_venice_api_key, 
     """ "AsyncVeniceSpeech should send the same payload and save the same file as the sync model."""
     add_speech_response(httpx2_mock, content=b"async-audio")
     model = AsyncVeniceSpeech("tts-kokoro")
-    prompt = MagicMock()
-    prompt.prompt = "Hello async"
+    prompt = llm.Prompt("Hello async", model)
     prompt.options = _async_speech_options(voice="af_sky", speed=1.25)
 
     async def run():
@@ -408,8 +404,7 @@ def test_async_speech_streaming_writes_file(httpx2_mock, mock_venice_api_key, tm
     """The async model streams to a file through the same writer as the sync model."""
     add_speech_response(httpx2_mock, content=b"async-chunked")
     model = AsyncVeniceSpeech("tts-kokoro")
-    prompt = MagicMock()
-    prompt.prompt = "Stream me"
+    prompt = llm.Prompt("Stream me", model)
     prompt.options = _async_speech_options(output_dir=tmp_path, output_filename="out.mp3")
 
     async def run():
@@ -433,8 +428,7 @@ def test_async_speech_streaming_failure_keeps_partial(
 
     httpx2_mock.add_response(method="POST", url=ENDPOINT_AUDIO_SPEECH, stream=FailingStream())
     model = AsyncVeniceSpeech("tts-kokoro")
-    prompt = MagicMock()
-    prompt.prompt = "Stream me"
+    prompt = llm.Prompt("Stream me", model)
     prompt.options = _async_speech_options(output_dir=tmp_path, output_filename="out.mp3")
 
     async def run():
@@ -455,8 +449,7 @@ def test_async_speech_http_error_is_model_error(httpx2_mock, mock_venice_api_key
         method="POST", url=ENDPOINT_AUDIO_SPEECH, status_code=400, json={"error": "Invalid voice"}
     )
     model = AsyncVeniceSpeech("tts-kokoro")
-    prompt = MagicMock()
-    prompt.prompt = "Hello"
+    prompt = llm.Prompt("Hello", model)
     prompt.options = _async_speech_options(output_dir=tmp_path)
 
     async def run():
@@ -474,18 +467,14 @@ def test_async_speech_sync_and_async_payloads_match(httpx2_mock, mock_venice_api
     def options():
         return VeniceSpeech.Options(voice="af_sky", response_format="flac", speed=0.75)
 
-    sync_prompt = MagicMock()
-    sync_prompt.prompt = "Same"
-    sync_prompt.options = options()
     sync_model = VeniceSpeech("tts-kokoro")
+    sync_prompt = llm.Prompt("Same", sync_model, options=options())
     with patch.object(sync_model, "get_key", return_value=mock_venice_api_key):
         list(sync_model.execute(sync_prompt, False, MagicMock(), None))
     sync_payload = request_json(-1)
 
-    async_prompt = MagicMock()
-    async_prompt.prompt = "Same"
-    async_prompt.options = options()
     async_model = AsyncVeniceSpeech("tts-kokoro")
+    async_prompt = llm.Prompt("Same", async_model, options=options())
 
     async def run():
         return [c async for c in async_model.execute(async_prompt, False, MagicMock(), None)]
@@ -495,3 +484,54 @@ def test_async_speech_sync_and_async_payloads_match(httpx2_mock, mock_venice_api
     async_payload = request_json(-1)
 
     assert sync_payload == async_payload
+
+
+INVALID_SPEECH_RESPONSES = [
+    pytest.param(
+        {"json": {"error": "Quota exhausted"}},
+        "expected audio but received application/json: Quota exhausted",
+        id="json-error-body",
+    ),
+    pytest.param(
+        {"content": b"\x89PNG\r\n\x1a\n", "headers": {"Content-Type": "image/png"}},
+        "expected audio but received image/png",
+        id="image-body",
+    ),
+    pytest.param(
+        {"content": b"", "headers": {"Content-Type": "audio/mpeg"}},
+        "response did not include any audio",
+        id="empty-audio-body",
+    ),
+]
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("response, message", INVALID_SPEECH_RESPONSES)
+def test_invalid_speech_response_never_replaces_existing_file(
+    is_async, stream, response, message, httpx2_mock, mock_venice_api_key, tmp_path
+):
+    """A 200 without audio fails and leaves an existing file untouched, even with overwrite."""
+    httpx2_mock.add_response(method="POST", url=ENDPOINT_AUDIO_SPEECH, **response)
+    target = tmp_path / "out.mp3"
+    target.write_bytes(b"good audio")
+    model: Any = (AsyncVeniceSpeech if is_async else VeniceSpeech)("tts-kokoro")
+    options = VeniceSpeech.Options(
+        output_dir=tmp_path, output_filename="out.mp3", overwrite_files=True
+    )
+    prompt = llm.Prompt("Hello", model, options=options)
+
+    if is_async:
+
+        async def run():
+            async for _ in model.execute(prompt, stream, MagicMock(), None):
+                pass
+
+        with pytest.raises(llm.ModelError, match=message):
+            _run(run())
+    else:
+        with pytest.raises(llm.ModelError, match=message):
+            list(model.execute(prompt, stream, MagicMock(), None))
+
+    assert target.read_bytes() == b"good audio"
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["out.mp3"]

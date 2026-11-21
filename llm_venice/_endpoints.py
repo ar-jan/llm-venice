@@ -2,6 +2,7 @@
 
 import base64
 import binascii
+import json
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Literal, TypeVar, cast
@@ -12,7 +13,7 @@ from typing_extensions import get_type_hints
 
 from .errors import VeniceResponseError
 from .params import ImageParams, SpeechParams, copy_params, parameter_body
-from .results import GeneratedImage, ImageResult, SpeechResult
+from .results import NO_AUDIO, GeneratedImage, ImageResult, SpeechResult
 from .types import AugmentSearchProvider, ModelInfo
 
 
@@ -84,19 +85,24 @@ class AugmentSearchInput(BaseModel):
         return body
 
 
+CHARACTER_PAGE_LIMIT = 100
+
+
 class CharacterFilters(BaseModel):
     web_enabled: bool | None = None
     adult: bool | None = None
+    # Venice pages with limit (default 50) and offset, and reports no total.
+    limit: int | None = Field(default=None, ge=1, le=CHARACTER_PAGE_LIMIT, strict=True)
+    offset: int | None = Field(default=None, ge=0, strict=True)
 
     def query(self) -> dict[str, str]:
-        return {
-            key: str(value).lower()
-            for key, value in {
-                "isWebEnabled": self.web_enabled,
-                "isAdult": self.adult,
-            }.items()
-            if value is not None
-        }
+        flags = {"isWebEnabled": self.web_enabled, "isAdult": self.adult}
+        query = {key: str(value).lower() for key, value in flags.items() if value is not None}
+        if self.limit is not None:
+            query["limit"] = str(self.limit)
+        if self.offset is not None:
+            query["offset"] = str(self.offset)
+        return query
 
 
 def image_body(model: str, prompt: str, params: ImageParams | None) -> dict[str, Any]:
@@ -196,6 +202,10 @@ _AUDIO_TYPES = {
 }
 
 
+def _media_type(content_type: str | None) -> str:
+    return (content_type or "").split(";", 1)[0].strip().lower()
+
+
 def media_format(
     content_type: str | None,
     data: bytes,
@@ -204,7 +214,7 @@ def media_format(
     image: bool,
 ) -> str:
     types = _IMAGE_TYPES if image else _AUDIO_TYPES
-    media_type = (content_type or "").split(";", 1)[0].strip().lower()
+    media_type = _media_type(content_type)
     if media_type in types:
         return types[media_type]
     if image:
@@ -215,7 +225,13 @@ def media_format(
         if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
             return "webp"
     else:
-        if data.startswith(b"ID3") or (len(data) > 1 and data[0] == 255 and data[1] & 0xE0 == 0xE0):
+        # ADTS (AAC) and MPEG audio frames share the sync bits. ADTS always has
+        # layer 00, which MPEG audio reserves, so check it first.
+        if len(data) > 1 and data[0] == 0xFF and data[1] & 0xF6 == 0xF0:
+            return "aac"
+        if data.startswith(b"ID3") or (
+            len(data) > 1 and data[0] == 0xFF and data[1] & 0xE0 == 0xE0 and data[1] & 0x06
+        ):
             return "mp3"
         if data.startswith(b"fLaC"):
             return "flac"
@@ -290,6 +306,8 @@ def parse_image(response: httpx2.Response, model: str, requested: str | None) ->
 
 def parse_upscale(response: httpx2.Response) -> GeneratedImage:
     content_type = response.headers.get("content-type")
+    if not response.content:
+        raise VeniceResponseError("Upscaling image", "response did not include an image")
     return GeneratedImage(
         response.content,
         media_format(content_type, response.content, None, image=True),
@@ -297,8 +315,54 @@ def parse_upscale(response: httpx2.Response) -> GeneratedImage:
     )
 
 
+SPEECH_ACTION = "Generating speech"
+
+
+# Speech without an audio type is identified by its bytes, so accept these too.
+_GENERIC_BINARY_TYPES = {"", "application/octet-stream", "binary/octet-stream", "application/ogg"}
+
+
+def is_speech_content_type(content_type: str | None) -> bool:
+    """Whether a speech response may carry audio: audio/*, generic binary, or no type."""
+    media_type = _media_type(content_type)
+    return media_type.startswith("audio/") or media_type in _GENERIC_BINARY_TYPES
+
+
+def _is_text_media(media_type: str) -> bool:
+    return (
+        media_type.startswith("text/")
+        or media_type in {"application/json", "application/xml"}
+        or media_type.endswith(("+json", "+xml"))
+    )
+
+
+def check_speech_content_type(content_type: str | None, body: bytes) -> None:
+    """Reject a successful response that is not audio, citing a text body's message."""
+    if is_speech_content_type(content_type):
+        return
+    media_type = _media_type(content_type)
+    detail = f"expected audio but received {media_type}"
+    if _is_text_media(media_type):
+        message: Any = None
+        try:
+            payload: Any = json.loads(body)
+            if isinstance(payload, dict):
+                obj = cast(dict[str, Any], payload)
+                message = obj.get("message") or obj.get("error")
+        except (ValueError, UnicodeError):
+            pass
+        if message is None:
+            message = body.decode("utf-8", "replace").strip()
+        if message:
+            detail += f": {str(message)[:200]}"
+    raise VeniceResponseError(SPEECH_ACTION, detail)
+
+
 def parse_speech(response: httpx2.Response, model: str, requested: str | None) -> SpeechResult:
     content_type = response.headers.get("content-type")
+    check_speech_content_type(content_type, response.content)
+    if not response.content:
+        raise VeniceResponseError(SPEECH_ACTION, NO_AUDIO)
     return SpeechResult(
         model,
         response.content,
@@ -387,6 +451,10 @@ def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[st
         resource(obj.get("data"), RateLimits, action)
     elif name == "create_key":
         resource(obj.get("data"), CreatedApiKey, action)
+    elif name == "delete_key":
+        # A 200 must confirm the revocation; anything else may have left the key live.
+        if obj.get("success") is not True:
+            raise VeniceResponseError(action, "Venice did not confirm the deletion")
     elif name == "augment_search":
         # Not an envelope. Check items one by one so that drift in their optional
         # fields (such as a null date) does not fail the whole search.

@@ -218,6 +218,55 @@ def test_overwrite_versus_unique_name(
         assert saved.read_bytes() == AUDIO
 
 
+@pytest.mark.parametrize(
+    "response, message",
+    [
+        pytest.param(
+            {"json": {"error": "Quota exhausted"}},
+            "expected audio but received application/json: Quota exhausted",
+            id="json-error-body",
+        ),
+        pytest.param(
+            {"content": b"\x89PNG\r\n\x1a\nimage", "headers": {"Content-Type": "image/png"}},
+            "expected audio but received image/png",
+            id="image-body",
+        ),
+        pytest.param(
+            {"content": b"", "headers": {"Content-Type": "audio/mpeg"}},
+            "response did not include any audio",
+            id="empty-audio-body",
+        ),
+    ],
+)
+def test_overwrite_keeps_file_when_response_has_no_audio(
+    user_dir, httpx2_mock, mock_venice_api_key, cli_runner, tmp_path, response, message
+):
+    httpx2_mock.add_response(method="POST", url=SPEECH_URL, **response)
+    target = tmp_path / "hello.mp3"
+    target.write_bytes(b"good audio")
+
+    result = tts(cli_runner, "Hello", "-o", str(target), "--overwrite")
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert f"Error: Generating speech failed: {message}" in result.stderr
+    assert "Traceback" not in result.output
+    assert target.read_bytes() == b"good audio"
+    assert sorted(path.name for path in tmp_path.glob("hello*")) == ["hello.mp3"]
+
+
+def test_stdout_empty_response_fails(user_dir, httpx2_mock, mock_venice_api_key, cli_runner):
+    httpx2_mock.add_response(
+        method="POST", url=SPEECH_URL, content=b"", headers={"Content-Type": "audio/mpeg"}
+    )
+
+    result = tts(cli_runner, "Hello", "-o", "-")
+
+    assert result.exit_code == 1
+    assert result.stdout_bytes == b""
+    assert "response did not include any audio" in result.stderr
+
+
 # option validation
 
 

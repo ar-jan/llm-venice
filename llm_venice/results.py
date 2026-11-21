@@ -9,7 +9,10 @@ from typing import Any
 import httpx2
 
 from ._files import write_chunks, write_async_chunks
-from .errors import VeniceConnectionError
+from .errors import VeniceConnectionError, VeniceResponseError
+
+# Shared with the buffered speech parser in _endpoints.
+NO_AUDIO = "response did not include any audio"
 
 
 @dataclass(frozen=True)
@@ -106,6 +109,7 @@ class SpeechStream:
     def _iterate(self) -> Iterator[bytes]:
         if not self._active:
             raise ValueError("speech stream context has exited")
+        received = False
         try:
             iterator = self._response.iter_bytes()
             while True:
@@ -115,7 +119,12 @@ class SpeechStream:
                     chunk = next(iterator)
                 except StopIteration:
                     break
+                received = received or bool(chunk)
                 yield chunk
+            # Fail before the consumer publishes a file, so an empty body never
+            # replaces an existing one.
+            if not received:
+                raise VeniceResponseError("Generating speech", NO_AUDIO)
         except httpx2.RequestError as exc:
             raise VeniceConnectionError(f"Generating speech failed: {exc}") from exc
         finally:
@@ -156,6 +165,7 @@ class AsyncSpeechStream:
     async def _iterate(self) -> AsyncIterator[bytes]:
         if not self._active:
             raise ValueError("speech stream context has exited")
+        received = False
         try:
             iterator = self._response.aiter_bytes()
             while True:
@@ -165,7 +175,10 @@ class AsyncSpeechStream:
                     chunk = await anext(iterator)
                 except StopAsyncIteration:
                     break
+                received = received or bool(chunk)
                 yield chunk
+            if not received:
+                raise VeniceResponseError("Generating speech", NO_AUDIO)
         except httpx2.RequestError as exc:
             raise VeniceConnectionError(f"Generating speech failed: {exc}") from exc
         finally:

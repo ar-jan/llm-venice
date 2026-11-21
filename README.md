@@ -97,6 +97,10 @@ Vision models (for example `qwen-3-8-27b`, Venice's default vision model) suppor
 > `llm -m venice/qwen-3-8-27b -a https://upload.wikimedia.org/wikipedia/commons/a/a9/Corvus_corone_-near_Canford_Cliffs%2C_Poole%2C_England-8.jpg "Identify"` \
 > The bird in the image is a carrion crow (Corvus corone). [...]
 
+Models that list `supportsAudioInput` in the catalog also accept WAV and MP3 attachments:
+
+`llm -m venice/<audio-model> -a recording.wav "Transcribe this"`
+
 ### venice_parameters
 
 Venice-specific parameters are configured with llm's standard `-o/--option key value` flag.
@@ -390,7 +394,9 @@ Use a registered model's `.Options` for its published limits and choices; class
 JSON methods return ordinary typed dictionaries and unwrap `data` envelopes:
 `list_models()`, `list_characters(web_enabled=True, adult=False)`, `list_api_keys()`,
 `get_rate_limits()`, and `get_rate_limits_log()`. Unknown JSON fields and wire-format
-timestamps are preserved. Key management requires an ADMIN key; `create_api_key()`
+timestamps are preserved. `list_characters()` returns one page: pass `limit=` (Venice's
+default is 50, the maximum 100) and `offset=`, and stop at a page shorter than `limit`.
+`llm venice characters` fetches every page. Key management requires an ADMIN key; `create_api_key()`
 takes `key_type=`, `description=`, optional `limit_usd=`/`limit_vcu=`, and an optional
 timezone-aware `expires_at` datetime. `delete_api_key(id)` returns `None`.
 Resource annotations are available from `llm_venice.types`.

@@ -22,7 +22,7 @@ PNG = b"\x89PNG\r\n\x1a\nbytes"
 
 def execute_image(is_async, tmp_path, **options):
     model: Any = (AsyncVeniceImage if is_async else VeniceImage)("model")
-    prompt = MagicMock(prompt="hello", options=model.Options(output_dir=tmp_path, **options))
+    prompt = llm.Prompt("hello", model, options=model.Options(output_dir=tmp_path, **options))
     response = MagicMock(response_json=None)
 
     async def run():
@@ -149,7 +149,7 @@ def test_async_buffered_speech_cancel_reports_saved_path(
         _files, "publish_media_file", _blocking(_files.publish_media_file, started, release)
     )
     model: Any = AsyncVeniceSpeech("tts")
-    prompt = MagicMock(prompt="hello", options=model.Options(output_dir=tmp_path))
+    prompt = llm.Prompt("hello", model, options=model.Options(output_dir=tmp_path))
 
     async def execute():
         async for _ in model.execute(prompt, False, MagicMock(), key="provided-key"):
@@ -170,7 +170,7 @@ def test_async_image_cancel_reports_saved_paths(tmp_path, httpx2_mock, monkeypat
         image_module, "write_chunks", _blocking(image_module.write_chunks, started, release)
     )
     model: Any = AsyncVeniceImage("model")
-    prompt = MagicMock(prompt="hello", options=model.Options(output_dir=tmp_path))
+    prompt = llm.Prompt("hello", model, options=model.Options(output_dir=tmp_path))
 
     async def execute():
         async for _ in model.execute(prompt, False, MagicMock(), key="provided-key"):

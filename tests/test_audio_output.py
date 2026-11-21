@@ -8,6 +8,7 @@ import stat
 from unittest.mock import MagicMock
 
 import httpx2
+import llm
 import pytest
 
 from llm_venice.models.audio import (
@@ -36,8 +37,7 @@ def test_model_output_collision(
         racing_response, method="POST", url="https://api.venice.ai/api/v1/audio/speech"
     )
     model = AsyncVeniceSpeech("tts-kokoro") if asynchronous else VeniceSpeech("tts-kokoro")
-    prompt = MagicMock()
-    prompt.prompt = "Hello"
+    prompt = llm.Prompt("Hello", model)
     prompt.options = model.Options(
         output_dir=tmp_path, output_filename=target.name, overwrite_files=overwrite
     )

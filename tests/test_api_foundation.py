@@ -127,6 +127,19 @@ def test_endpoint_limits_match_dated_fixture():
             UpscaleInput(creativity=creativity)
 
 
+@pytest.mark.parametrize(
+    "resource_name, kind",
+    [("GET /api_keys", ApiKey), ("POST /api_keys", CreatedApiKey)],
+)
+def test_api_key_types_match_dated_fixture(resource_name, kind):
+    """Each key type declares exactly the wire fields of the response it describes."""
+    fixture = json.loads((Path(__file__).parent / "fixtures/openapi-2026-10-26.json").read_text())
+    schema = fixture["resources"][resource_name]["response"]["content"]["application/json"]
+    data = schema["schema"]["properties"]["data"]
+    item = data.get("items", data)
+    assert set(kind.__annotations__) == set(item["properties"])
+
+
 def test_key_inputs_and_utc_serialization():
     with pytest.raises(ValidationError, match="timezone-aware"):
         KeyInput(key_type="ADMIN", expires_at=datetime(2026, 1, 1))
@@ -246,6 +259,29 @@ def test_actual_media_formats_and_unknown_formats():
     assert parse_upscale(response(content=PNG)).format == "png"
     with pytest.raises(VeniceResponseError, match="unknown output format"):
         parse_speech(response(content=b"unknown"), "m", None)
+
+
+@pytest.mark.parametrize(
+    "header, expected",
+    [
+        (b"\xff\xf1\x50\x40", "aac"),  # ADTS, MPEG-4 AAC (ffmpeg -f adts)
+        (b"\xff\xf9\x50\x40", "aac"),  # ADTS, MPEG-2 AAC
+        (b"\xff\xfb\x50\xc4", "mp3"),  # MPEG-1 Layer III (ffmpeg -f mp3)
+        (b"\xff\xf3\x50\xc4", "mp3"),  # MPEG-2 Layer III
+        (b"\xff\xe3\x50\xc4", "mp3"),  # MPEG-2.5 Layer III
+        (b"ID3\x04\x00", "mp3"),
+    ],
+)
+def test_binary_speech_is_identified_by_frame_header(header, expected):
+    """ADTS shares MPEG audio's sync bits; its zero layer field tells them apart."""
+    result = parse_speech(
+        response(
+            content=header + b"\x00" * 16, headers={"content-type": "application/octet-stream"}
+        ),
+        "m",
+        None,
+    )
+    assert result.format == expected
 
 
 def test_service_errors_and_retry_after():

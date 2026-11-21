@@ -82,7 +82,7 @@ def test_prompt_limit_is_checked_outside_options(is_async, httpx2_mock, mock_ven
     model: Any = (AsyncVeniceImage if is_async else VeniceImage)(
         "m", image_constraints={"promptCharacterLimit": 3}
     )
-    prompt = MagicMock(prompt="too long", options=model.Options())
+    prompt = llm.Prompt("too long", model, options=model.Options())
 
     async def run():
         return [part async for part in model.execute(prompt, False, MagicMock())]

@@ -147,7 +147,7 @@ class RateLimits(TypedDict, total=False):
 
 
 class ApiKey(TypedDict, total=False):
-    """An API key resource; timestamps remain wire-format strings."""
+    """A listed API key; timestamps and usage amounts remain wire-format strings."""
 
     id: Required[str]
     apiKeyType: str
@@ -160,12 +160,27 @@ class ApiKey(TypedDict, total=False):
     limitPeriod: str
     modelPrivacy: str
     ipAllowlist: list[str]
+    usage: dict[str, Any]
+    currentPeriodUsage: dict[str, str]
 
 
-class CreatedApiKey(ApiKey, total=False):
-    """A newly created key, including the returned secret."""
+class CreatedApiKey(TypedDict, total=False):
+    """A newly created key with its one-time secret.
 
+    The create response differs from a listed ApiKey: its limit is the singular
+    ``consumptionLimit``, and it has no usage, ``last6Chars`` or creation and
+    last-use timestamps.
+    """
+
+    id: Required[str]
     apiKey: Required[str]
+    apiKeyType: str
+    description: str
+    consumptionLimit: dict[str, float | None]
+    expiresAt: str | None
+    limitPeriod: str
+    modelPrivacy: str
+    ipAllowlist: list[str]
 
 
 class AugmentSearchResult(TypedDict, total=False):

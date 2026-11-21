@@ -15,7 +15,7 @@ from llm_venice._options import (
 )
 from pydantic import Field, field_validator
 from typing import cast
-from ._common import initialize_model, warn_deprecated, model_error_boundary
+from ._common import initialize_model, model_error_boundary, single_turn_text, warn_deprecated
 from llm_venice.client import VeniceClient, AsyncVeniceClient
 from llm_venice.params import SpeechParams, copy_params
 from llm_venice._endpoints import speech_body
@@ -205,9 +205,10 @@ def _speech_options(model, prompt):
     warn_deprecated(model)
     opts = cast(_SpeechOptions, model.Options.model_validate(prompt.options.model_dump()))
     validate_output_directory(opts.output_dir)
-    validate_request(model.catalog_policy, prompt.prompt, opts)
+    text = single_turn_text(model, prompt)
+    validate_request(model.catalog_policy, text, opts)
     params = copy_params(SpeechParams, opts)
-    return opts, params
+    return opts, params, text
 
 
 def speech_output_path(model_name, opts, format):
@@ -244,12 +245,12 @@ class VeniceSpeech(CatalogOptionsMixin, llm.KeyModel):
 
     def execute(self, prompt, stream, response, conversation=None, key=None):
         with model_error_boundary():
-            opts, params = _speech_options(self, prompt)
+            opts, params, text = _speech_options(self, prompt)
             use_stream = stream or opts.progress
             reporter = DownloadProgress(opts.progress)
             with VeniceClient(key=require_model_key(self, key)) as client:
                 if use_stream:
-                    with client.stream_speech(self.model_name, prompt.prompt, params) as result:
+                    with client.stream_speech(self.model_name, text, params) as result:
                         path = speech_output_path(self.model_name, opts, result.format)
                         yield f"Writing audio to {path}\n"
                         saved = write_audio_file(
@@ -258,7 +259,7 @@ class VeniceSpeech(CatalogOptionsMixin, llm.KeyModel):
                         content_type = result.content_type
                         size = reporter.bytes_written
                 else:
-                    buffered = client.generate_speech(self.model_name, prompt.prompt, params)
+                    buffered = client.generate_speech(self.model_name, text, params)
                     path = speech_output_path(self.model_name, opts, buffered.format)
                     saved = write_audio_file(
                         [buffered.data], path, reporter, overwrite=opts.overwrite_files
@@ -266,7 +267,7 @@ class VeniceSpeech(CatalogOptionsMixin, llm.KeyModel):
                     content_type, size = buffered.content_type, len(buffered.data)
             _set_speech_response_json(
                 response,
-                payload=speech_body(self.model_name, prompt.prompt, params, streaming=use_stream),
+                payload=speech_body(self.model_name, text, params, streaming=use_stream),
                 content_type=content_type,
                 bytes_written=size,
                 output_path=saved,
@@ -297,14 +298,12 @@ class AsyncVeniceSpeech(CatalogOptionsMixin, llm.AsyncKeyModel):
 
     async def execute(self, prompt, stream, response, conversation=None, key=None):
         with model_error_boundary():
-            opts, params = _speech_options(self, prompt)
+            opts, params, text = _speech_options(self, prompt)
             use_stream = stream or opts.progress
             reporter = DownloadProgress(opts.progress)
             async with AsyncVeniceClient(key=require_model_key(self, key)) as client:
                 if use_stream:
-                    async with client.stream_speech(
-                        self.model_name, prompt.prompt, params
-                    ) as result:
+                    async with client.stream_speech(self.model_name, text, params) as result:
                         path = speech_output_path(self.model_name, opts, result.format)
                         yield f"Writing audio to {path}\n"
                         saved = await write_async_audio_file(
@@ -313,7 +312,7 @@ class AsyncVeniceSpeech(CatalogOptionsMixin, llm.AsyncKeyModel):
                         content_type = result.content_type
                         size = reporter.bytes_written
                 else:
-                    buffered = await client.generate_speech(self.model_name, prompt.prompt, params)
+                    buffered = await client.generate_speech(self.model_name, text, params)
                     path = speech_output_path(self.model_name, opts, buffered.format)
                     saved = await write_async_audio_file(
                         _single_chunk(buffered.data),
@@ -324,7 +323,7 @@ class AsyncVeniceSpeech(CatalogOptionsMixin, llm.AsyncKeyModel):
                     content_type, size = buffered.content_type, len(buffered.data)
             _set_speech_response_json(
                 response,
-                payload=speech_body(self.model_name, prompt.prompt, params, streaming=use_stream),
+                payload=speech_body(self.model_name, text, params, streaming=use_stream),
                 content_type=content_type,
                 bytes_written=size,
                 output_path=saved,

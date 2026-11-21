@@ -10,7 +10,11 @@ from llm_venice._options import CatalogOptionsMixin, normalize_policy, parse_jso
 from ._common import model_error_boundary
 from ._common import initialize_model, warn_deprecated
 from llm.default_plugins.openai_models import AsyncChat, Chat
-from llm_venice.constants import VENICE_PARAMETERS, NON_OPENAI_COMPATIBLE_PARAMS
+from llm_venice.constants import (
+    NON_OPENAI_COMPATIBLE_PARAMS,
+    VENICE_API_BASE,
+    VENICE_PARAMETERS,
+)
 from pydantic import Field, field_validator, model_validator
 from typing_extensions import Self
 
@@ -306,41 +310,53 @@ def _apply_server_side_tools(kwargs: Dict, server_side_tools: List) -> Dict:
     return kwargs
 
 
-def _make_json_schema_strict(schema: Dict) -> Dict:
+def _make_json_schema_strict(schema: Dict, path: str = "$") -> Dict:
     """Recursively set ``additionalProperties: false`` on every object schema.
 
     Venice (like OpenAI strict mode) requires every object in a JSON schema to
     disallow additional properties, including nested objects, objects in arrays
     and objects under ``$defs``.
+
+    Strict mode cannot express a map with arbitrary keys (such as a Pydantic
+    ``dict[str, int]`` field). Closing it would silently change its meaning to
+    "always empty", so such a schema raises ``llm.ModelError`` instead.
     """
-    schema_maps = (
-        "properties",
-        "patternProperties",
-        "$defs",
-        "definitions",
-        "dependentSchemas",
-    )
+    if schema.get("patternProperties") == {}:
+        # Matches no keys, so it adds nothing once the object is closed.
+        del schema["patternProperties"]
+    if (
+        "patternProperties" in schema
+        or schema.get("additionalProperties", False) is not False
+        or schema.get("unevaluatedProperties", False) is not False
+    ):
+        raise llm.ModelError(
+            "Venice structured output uses strict JSON schema mode, which cannot "
+            f"express an object with arbitrary keys at {path}. Declare fixed "
+            "properties, or use a list of key/value objects instead of a dict."
+        )
+
+    schema_maps = ("properties", "$defs", "definitions", "dependentSchemas")
     schema_lists = ("anyOf", "oneOf", "allOf", "prefixItems")
     schema_values = ("items", "not", "contains", "if", "then", "else", "propertyNames")
 
     for key in schema_maps:
         subschemas = schema.get(key)
         if isinstance(subschemas, dict):
-            for subschema in subschemas.values():
+            for name, subschema in subschemas.items():
                 if isinstance(subschema, dict):
-                    _make_json_schema_strict(subschema)
+                    _make_json_schema_strict(subschema, f"{path}.{key}.{name}")
 
     for key in schema_lists:
         subschemas = schema.get(key)
         if isinstance(subschemas, list):
-            for subschema in subschemas:
+            for index, subschema in enumerate(subschemas):
                 if isinstance(subschema, dict):
-                    _make_json_schema_strict(subschema)
+                    _make_json_schema_strict(subschema, f"{path}.{key}[{index}]")
 
     for key in schema_values:
         subschema = schema.get(key)
         if isinstance(subschema, dict):
-            _make_json_schema_strict(subschema)
+            _make_json_schema_strict(subschema, f"{path}.{key}")
 
     schema_type = schema.get("type")
     if (
@@ -456,6 +472,8 @@ class VeniceChat(CatalogOptionsMixin, Chat):
         super().__init__(*args, **kwargs)
         # The llm model ID carries the plugin prefix; the API needs the bare ID.
         initialize_model(self, self.model_id, self.model_name, model_spec)
+        # Without a base URL the OpenAI SDK would send the Venice key to OpenAI.
+        self.api_base = self.api_base or VENICE_API_BASE
         self.catalog_policy = normalize_policy("text", self.model_spec)
         self.supports_web_search = supports_web_search
         self.supports_x_search = supports_x_search
@@ -511,6 +529,8 @@ class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
         super().__init__(*args, **kwargs)
         # The llm model ID carries the plugin prefix; the API needs the bare ID.
         initialize_model(self, self.model_id, self.model_name, model_spec)
+        # Without a base URL the OpenAI SDK would send the Venice key to OpenAI.
+        self.api_base = self.api_base or VENICE_API_BASE
         self.catalog_policy = normalize_policy("text", self.model_spec)
         self.supports_web_search = supports_web_search
         self.supports_x_search = supports_x_search

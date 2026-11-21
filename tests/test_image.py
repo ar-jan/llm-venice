@@ -57,8 +57,7 @@ def test_venice_image_sends_model_name_in_payload(
 ):
     """The request payload uses model_name, not the registered model_id."""
     model = VeniceImage("my-alias", model_name="real-model")
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
     prompt.options = VeniceImage.Options(output_dir=str(tmp_path))
 
     image_json = {
@@ -99,8 +98,7 @@ def test_venice_image_format_in_payload(mock_venice_api_key, httpx2_mock, reques
     model = VeniceImage("test-model")
 
     # Create a prompt object with the format option
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
 
     image_json = {
         "images": [
@@ -138,8 +136,7 @@ def test_venice_image_aspect_ratio_and_resolution_in_payload(
     """Test that aspect_ratio and resolution are included in the API payload."""
     model = VeniceImage("test-model")
 
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
     prompt.options = VeniceImage.Options(
         aspect_ratio="16:9",
         resolution="1K",
@@ -158,8 +155,7 @@ def test_venice_image_enable_web_search_in_payload(mock_venice_api_key, httpx2_m
     """Test that enable_web_search is included as a top-level image payload field."""
     model = VeniceImage("test-model", supports_web_search=True)
 
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
     prompt.options = VeniceImage.Options(enable_web_search=True)
 
     add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
@@ -174,8 +170,7 @@ def test_venice_image_variants_in_payload(mock_venice_api_key, httpx2_mock, requ
     """Test that variants is included for JSON image responses."""
     model = VeniceImage("test-model")
 
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
     prompt.options = VeniceImage.Options(variants=3)
 
     base64_encoded = base64.b64encode(b"\x89PNG\r\n\x1a\n").decode("utf-8")
@@ -199,8 +194,7 @@ def test_venice_image_omits_unset_dimensions_from_payload(
     """Test that unset width and height are omitted from the API payload."""
     model = VeniceImage("test-model")
 
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
     prompt.options = VeniceImage.Options(
         aspect_ratio="16:9",
         resolution="1K",
@@ -221,8 +215,7 @@ def test_venice_image_content_violation_handling(mock_venice_api_key, httpx2_moc
     model = VeniceImage("test-model")
 
     # Create a prompt object
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt with inappropriate content"
+    prompt = llm.Prompt("Test prompt with inappropriate content", model)
 
     # Setup minimal options
     options = Mock()
@@ -250,8 +243,7 @@ def test_venice_image_content_violation_handling(mock_venice_api_key, httpx2_moc
 def test_venice_image_web_search_capability_guard():
     """Requesting image web search on unsupported models should raise ModelError."""
     model = VeniceImage("test-model")
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
     prompt.options = VeniceImage.Options(enable_web_search=True)
 
     with patch.object(model, "get_key", return_value="test-key"):
@@ -265,8 +257,7 @@ def test_venice_image_blurred_header_exposed_for_json_response(
     """Blurred image responses should be surfaced via response_json metadata."""
     model = VeniceImage("test-model")
 
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt with adult content"
+    prompt = llm.Prompt("Test prompt with adult content", model)
     prompt.options = VeniceImage.Options()
 
     raw_binary_content = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
@@ -300,8 +291,7 @@ def test_venice_image_variants_save_all_images_and_expose_response_json(
     """JSON image responses with variants should save every returned image."""
     model = VeniceImage("test-model")
 
-    prompt = MagicMock()
-    prompt.prompt = "Test variants"
+    prompt = llm.Prompt("Test variants", model)
     prompt.options = VeniceImage.Options(
         variants=2,
         output_dir=tmp_path,
@@ -340,8 +330,7 @@ def test_venice_image_default_output_directory_creation(mock_venice_api_key, tmp
     model = VeniceImage("test-model")
 
     # Create a prompt object
-    prompt = MagicMock()
-    prompt.prompt = "Test default directory"
+    prompt = llm.Prompt("Test default directory", model)
 
     # Setup options without specifying output_dir
     options = Mock()
@@ -367,8 +356,7 @@ def test_venice_image_default_filename_path(mock_venice_api_key, tmp_path, httpx
     """Test that default filename path is generated under llm.user_dir()/images."""
     model = VeniceImage("test-model")
 
-    prompt = MagicMock()
-    prompt.prompt = "Test default filename"
+    prompt = llm.Prompt("Test default filename", model)
 
     options = Mock()
     options.model_dump.return_value = {
@@ -405,8 +393,7 @@ def test_existing_file_no_overwrite_adds_timestamp(mock_venice_api_key, tmp_path
     existing_file.write_bytes(b"existing content")
 
     # Create a prompt object
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
 
     # Setup options with overwrite_files=False
     options = Mock()
@@ -452,8 +439,7 @@ def test_existing_file_with_overwrite_replaces_file(mock_venice_api_key, tmp_pat
     existing_file.write_bytes(b"old content to be replaced")
 
     # Create a prompt object
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
 
     # Setup options with overwrite_files=True
     options = Mock()
@@ -495,8 +481,7 @@ def test_non_writable_directory_raises_model_error(mock_venice_api_key, tmp_path
     non_writable_dir.chmod(0o444)  # Read-only
 
     # Create a prompt object
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
 
     # Setup options pointing to non-writable directory
     options = Mock()
@@ -528,8 +513,7 @@ def test_nonexistent_directory_is_created_when_saving(mock_venice_api_key, tmp_p
     nonexistent_dir = tmp_path / "does_not_exist"
 
     # Create a prompt object
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
 
     # Setup options pointing to nonexistent directory
     options = Mock()
@@ -565,8 +549,7 @@ def test_file_path_instead_of_directory_raises_model_error(
     file_path.write_text("not a directory")
 
     # Create a prompt object
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
 
     # Setup options pointing to a file instead of directory
     options = Mock()
@@ -597,8 +580,7 @@ def test_timestamp_format_in_appended_filename(mock_venice_api_key, tmp_path, ht
     existing_file.write_bytes(b"existing")
 
     # Create a prompt object
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
 
     # Setup options
     options = Mock()
@@ -641,8 +623,7 @@ def test_no_existing_file_no_timestamp(mock_venice_api_key, tmp_path, httpx2_moc
     model = VeniceImage("test-model")
 
     # Create a prompt object
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
 
     # Setup options - file doesn't exist yet
     options = Mock()
@@ -684,8 +665,7 @@ def test_multiple_collisions_create_multiple_timestamped_files(
 
     # Function to execute model with same filename
     def execute_model(content):
-        prompt = MagicMock()
-        prompt.prompt = "Test prompt"
+        prompt = llm.Prompt("Test prompt", model)
 
         options = Mock()
         options.model_dump.return_value = {
@@ -722,8 +702,7 @@ def test_http_error_raises_model_error(mock_venice_api_key, httpx2_mock):
     model = VeniceImage("test-model")
 
     # Create a prompt object
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
 
     # Setup options with actual Pydantic model so payload is serialized via model_dump
     prompt.options = VeniceImage.Options()
@@ -748,8 +727,7 @@ def test_invalid_base64_data_raises_model_error(mock_venice_api_key, httpx2_mock
     model = VeniceImage("test-model")
 
     # Create a prompt object
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
 
     # Setup options with  to trigger base64 decoding
     options = Mock()
@@ -780,8 +758,7 @@ def test_file_write_failure_raises_model_error(mock_venice_api_key, tmp_path, ht
     model = VeniceImage("test-model")
 
     # Create a prompt object
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
 
     # Overwriting with an existing directory as the file name fails for real
     (tmp_path / "test.png").mkdir()
@@ -808,8 +785,7 @@ def test_http_500_error_with_json_body(mock_venice_api_key, httpx2_mock):
     model = VeniceImage("test-model")
 
     # Create a prompt object
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
 
     # Setup options
     options = Mock()
@@ -914,8 +890,7 @@ def test_venice_image_keeps_aspect_ratio_when_support_is_unknown(
         image_constraints={"resolutions": ["1K", "2K"]},
     )
 
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
     prompt.options = VeniceImage.Options(aspect_ratio="9:16")
 
     add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
@@ -937,8 +912,7 @@ def test_venice_image_keeps_resolution_when_support_is_unknown(
         image_constraints={"aspectRatios": ["1:1", "16:9"]},
     )
 
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
     prompt.options = VeniceImage.Options(resolution="4K")
 
     add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
@@ -1005,8 +979,7 @@ def test_venice_image_rejects_invalid_aspect_ratio_for_supported_model(mock_veni
         image_constraints={"aspectRatios": ["1:1", "16:9"]},
     )
 
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
     prompt.options = VeniceImage.Options(aspect_ratio="9:16")
 
     with patch.object(model, "get_key", return_value=mock_venice_api_key):
@@ -1024,8 +997,7 @@ def test_venice_image_rejects_invalid_resolution_for_supported_model(mock_venice
         image_constraints={"resolutions": ["1K", "2K"]},
     )
 
-    prompt = MagicMock()
-    prompt.prompt = "Test prompt"
+    prompt = llm.Prompt("Test prompt", model)
     prompt.options = VeniceImage.Options(resolution="4K")
 
     with patch.object(model, "get_key", return_value=mock_venice_api_key):

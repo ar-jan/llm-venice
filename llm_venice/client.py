@@ -152,14 +152,21 @@ class VeniceClient(_Configuration):
         *,
         web_enabled: bool | None = None,
         adult: bool | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> list[Character]:
-        """List characters with optional boolean filters, unwrapping the envelope."""
+        """List one page of characters (Venice default 50, max 100 per page).
+
+        Page with ``offset``; a page shorter than ``limit`` is the last one.
+        """
         return cast(
             list[Character],
             self._json_operation(
                 "characters",
                 web_enabled=web_enabled,
                 adult=adult,
+                limit=limit,
+                offset=offset,
             )["data"],
         )
 
@@ -274,15 +281,18 @@ class VeniceClient(_Configuration):
             # SpeechStream, and errors from the caller's block must pass through.
             try:
                 response = stack.enter_context(self._http.stream("POST", url, **options))
-                if not response.is_success:
+                content_type = response.headers.get("content-type")
+                # Buffer error bodies, including a 200 that carries something other than audio.
+                if not response.is_success or not ep.is_speech_content_type(content_type):
                     response.read()
                     if self._owned:
                         _logging.log_buffered(response)
                     check_status(response, "Generating speech")
+                    ep.check_speech_content_type(content_type, response.content)
             except httpx2.RequestError as exc:
                 raise VeniceConnectionError(f"Generating speech failed: {exc}") from exc
             format = ep.media_format(
-                response.headers.get("content-type"),
+                content_type,
                 b"",
                 body.get("response_format"),
                 image=False,
@@ -358,8 +368,13 @@ class AsyncVeniceClient(_Configuration):
         *,
         web_enabled: bool | None = None,
         adult: bool | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> list[Character]:
-        """List characters with optional boolean filters, unwrapping the envelope."""
+        """List one page of characters (Venice default 50, max 100 per page).
+
+        Page with ``offset``; a page shorter than ``limit`` is the last one.
+        """
         return cast(
             list[Character],
             (
@@ -367,6 +382,8 @@ class AsyncVeniceClient(_Configuration):
                     "characters",
                     web_enabled=web_enabled,
                     adult=adult,
+                    limit=limit,
+                    offset=offset,
                 )
             )["data"],
         )
@@ -490,15 +507,18 @@ class AsyncVeniceClient(_Configuration):
                 response = await stack.enter_async_context(
                     self._http.stream("POST", url, **options)
                 )
-                if not response.is_success:
+                content_type = response.headers.get("content-type")
+                # Buffer error bodies, including a 200 that carries something other than audio.
+                if not response.is_success or not ep.is_speech_content_type(content_type):
                     await response.aread()
                     if self._owned:
                         _logging.log_buffered(response)
                     check_status(response, "Generating speech")
+                    ep.check_speech_content_type(content_type, response.content)
             except httpx2.RequestError as exc:
                 raise VeniceConnectionError(f"Generating speech failed: {exc}") from exc
             format = ep.media_format(
-                response.headers.get("content-type"),
+                content_type,
                 b"",
                 body.get("response_format"),
                 image=False,
