@@ -122,3 +122,171 @@ and progress output goes to stderr. Existing CLI JSON envelopes remain intact.
 
 L9 reasoning/stream metadata, embeddings, additional media endpoints, automatic
 catalog TTL refresh and trait handling remain deferred.
+
+## 0.9.1 (2026-08-24)
+
+- Update to `llm>=0.33`, and various test and development changes
+  ([#66](https://github.com/ar-jan/llm-venice/pull/66)):
+  - Simplify AGENTS.md.
+  - Use a test fixture with model id: decouples tests from live model catalog IDs,
+    which can get stale.
+  - pyproject.toml: Resolve `missingDefaultExcludes` warning.
+  - Make `supports_web_search` a constructor parameter.
+  - Redeclare `VeniceChatOptions` inherited fields for pyright compatibility.
+  - pyproject.toml: `tool.ruff.lint`: use legacy rules for now with newer ruff versions.
+  - Update to `llm>=0.33`, httpx2, httpx2-pytest, and transitively OpenAI 3.
+  - Tests: Avoid legacy responses table by using `prompt --json`.
+
+**Full Changelog**: https://github.com/ar-jan/llm-venice/compare/0.9.0...0.9.1
+
+## 0.9.0 (2026-04-04)
+
+- Use `llm.KeyModel` ([#56](https://github.com/ar-jan/llm-venice/pull/56))
+- Redesign for programmatic use as Python library
+  ([#57](https://github.com/ar-jan/llm-venice/pull/57))
+- Add HTTP status error handling for API, CLI
+  ([#58](https://github.com/ar-jan/llm-venice/pull/58))
+- Add async classes ([#59](https://github.com/ar-jan/llm-venice/pull/59))
+- Add some more checks and tests ([#60](https://github.com/ar-jan/llm-venice/pull/60))
+- Add text-to-speech (TTS) ([#61](https://github.com/ar-jan/llm-venice/pull/61))
+- Fix tests ([#62](https://github.com/ar-jan/llm-venice/pull/62))
+- Add `aspect_ratio` and `resolution` support for image generation
+  ([#63](https://github.com/ar-jan/llm-venice/pull/63))
+- Add `x-venice-is-blurred` response header handling
+  ([#64](https://github.com/ar-jan/llm-venice/pull/64))
+- Add image `web_search` and `variants` options
+  ([#65](https://github.com/ar-jan/llm-venice/pull/65))
+- Add jpeg output format to image generation
+
+**Full Changelog**: https://github.com/ar-jan/llm-venice/compare/0.8.2...0.9.0
+
+## 0.8.2 (2025-12-07)
+
+- Add support for more generation parameters
+  ([#47](https://github.com/ar-jan/llm-venice/pull/47))
+- Handle `venice_parameters` as Pydantic fields in `VeniceChatOptions`
+  ([#48](https://github.com/ar-jan/llm-venice/pull/48))
+- Add more integration tests; deduplicate options
+  ([#49](https://github.com/ar-jan/llm-venice/pull/49))
+- Add web citations, search results options
+  ([#50](https://github.com/ar-jan/llm-venice/pull/50))
+- Update project config: Python versions; add Ruff, pre-commit config, GH workflows
+  ([#51](https://github.com/ar-jan/llm-venice/pull/51))
+- Various minor fixes ([#52](https://github.com/ar-jan/llm-venice/pull/52))
+- Add support for `enable_web_scraping` parameter
+  ([#53](https://github.com/ar-jan/llm-venice/pull/53))
+
+**Full Changelog**: https://github.com/ar-jan/llm-venice/compare/0.8.1...0.8.2
+
+## 0.8.1 (2025-10-07)
+
+- Add more unit tests, and check `output_dir` before making API call
+  ([#43](https://github.com/ar-jan/llm-venice/pull/43))
+- Refactor into multiple modules ([#44](https://github.com/ar-jan/llm-venice/pull/44))
+
+**Full Changelog**: https://github.com/ar-jan/llm-venice/compare/0.8.0...0.8.1
+
+## 0.8.0 (2025-09-22)
+
+- Add and reorganize tests ([#40](https://github.com/ar-jan/llm-venice/pull/40))
+- Add tool support (function calling) ([#41](https://github.com/ar-jan/llm-venice/pull/41))
+- Add thinking-related `venice_parameters`
+  ([#42](https://github.com/ar-jan/llm-venice/pull/42))
+
+**Full Changelog**: https://github.com/ar-jan/llm-venice/compare/0.7.0...0.8.0
+
+## 0.7.0 (2025-05-24)
+
+- Add new image generation options for image format, `embed_exif_metadata`
+  ([#32](https://github.com/ar-jan/llm-venice/pull/32))
+- Use `supportsVision` model spec for image `--attachment` capability
+- Add logging client option to `VeniceImage`
+  ([#33](https://github.com/ar-jan/llm-venice/pull/33))
+- Do not save empty black image in case of content violation response header
+- Add image upscaling functionality ([#35](https://github.com/ar-jan/llm-venice/pull/35))
+- Add `output_dir` option for image generation
+  ([#36](https://github.com/ar-jan/llm-venice/pull/36))
+- Add new upscaling image enhancement options; support 1x and fractional scaling; add
+  more extensive tests ([#37](https://github.com/ar-jan/llm-venice/pull/37))
+
+**Full Changelog**: https://github.com/ar-jan/llm-venice/compare/0.6.0...0.7.0
+
+## 0.6.0 (2025-03-06)
+
+- Use Accept-Encoding to allow gzip compression (for images)
+  ([#25](https://github.com/ar-jan/llm-venice/pull/25))
+- Add characters command ([#11](https://github.com/ar-jan/llm-venice/pull/11))
+- Use fetched model capabilities to check web search option
+  ([#29](https://github.com/ar-jan/llm-venice/pull/29))
+- Add support for Structured Outputs (JSON schemas) using OpenAI `response_format`
+  ([#30](https://github.com/ar-jan/llm-venice/pull/30))
+- Add consumption limits options (VCU, USD) for API key creation
+  ([#31](https://github.com/ar-jan/llm-venice/pull/31))
+- Add `venice api-keys rate-limits-log` command (experimental API endpoint)
+- Require `llm>=0.23` for structured output support and remove use of Pydantic 1
+
+**Full Changelog**: https://github.com/ar-jan/llm-venice/compare/0.5.0...0.6.0
+
+## 0.5.0 (2025-02-23)
+
+- Add expiration date option to `api-keys create` command
+  ([#15](https://github.com/ar-jan/llm-venice/pull/15))
+- Add image generation ([#16](https://github.com/ar-jan/llm-venice/pull/16))
+- Add web search option ([#22](https://github.com/ar-jan/llm-venice/pull/22))
+- Various maintenance chores
+
+**Full Changelog**: https://github.com/ar-jan/llm-venice/compare/0.4.1...0.5.0
+
+## 0.4.1 (2025-02-18)
+
+- Fix rate-limit command and add test; option to run API-calling tests also in GH
+  Actions ([#14](https://github.com/ar-jan/llm-venice/pull/14))
+
+**Full Changelog**: https://github.com/ar-jan/llm-venice/compare/0.4.0...0.4.1
+
+## 0.4.0 (2025-02-16)
+
+- Add `api-keys create`/`delete` commands
+  ([#12](https://github.com/ar-jan/llm-venice/pull/12))
+- Always use fetched available models, prepares for using model traits (stored as
+  `venice_models.json`)
+- Enable attachments for vision models ([#13](https://github.com/ar-jan/llm-venice/pull/13))
+
+**Full Changelog**: https://github.com/ar-jan/llm-venice/compare/0.3.0...0.4.0
+
+## 0.3.0 (2025-02-09)
+
+- Add CLI options `--no-venice-system-prompt` and `--character character_slug`, to
+  avoid having to write the `venice_parameters` JSON string manually
+  ([#9](https://github.com/ar-jan/llm-venice/pull/9))
+- Add provisional `api-keys` commands ([#10](https://github.com/ar-jan/llm-venice/pull/10))
+
+**Full Changelog**: https://github.com/ar-jan/llm-venice/compare/0.2.0...0.3.0
+
+## 0.2.0 (2025-02-05)
+
+- Add `extra_body` parameter to options, allowing to disable Venice default system
+  prompt, and enabling use of public characters
+  ([#6](https://github.com/ar-jan/llm-venice/pull/6))
+- Updated currently available models
+
+**Full Changelog**: https://github.com/ar-jan/llm-venice/compare/0.1.1...0.2.0
+
+## 0.1.1 (2025-01-06)
+
+- Update supported models
+- Enable streaming responses
+
+**Full Changelog**: https://github.com/ar-jan/llm-venice/compare/0.1.0...0.1.1
+
+## 0.1.0 (2024-11-26)
+
+- Add `refresh` command to fetch available models via API
+
+**Full Changelog**: https://github.com/ar-jan/llm-venice/compare/0.0.1...0.1.0
+
+## 0.0.1 (2024-11-14)
+
+- Initial release
+
+**Full Changelog**: https://github.com/ar-jan/llm-venice/commits/0.0.1
