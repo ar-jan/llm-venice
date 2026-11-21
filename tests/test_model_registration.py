@@ -102,6 +102,76 @@ def test_registers_text_model_x_search_capability(
         assert model.Options().enable_x_search is None
 
 
+@pytest.mark.parametrize("supports_audio", [False, True])
+def test_registers_text_model_audio_input_capability(hermetic_venice_catalog, supports_audio):
+    """supportsAudioInput lets llm accept audio attachments, like supportsVision for images."""
+    hermetic_venice_catalog(
+        [
+            {
+                "id": "test-model",
+                "type": "text",
+                "model_spec": {"capabilities": {"supportsAudioInput": supports_audio}},
+            }
+        ]
+    )
+    registered = []
+
+    def register(model, async_model=None, aliases=None):
+        registered.extend([model, async_model])
+
+    register_venice_models(register)
+
+    assert len(registered) == 2
+    for model in registered:
+        assert ({"audio/wav", "audio/mpeg"} <= model.attachment_types) is supports_audio
+        assert "image/png" not in model.attachment_types
+
+
+def test_audio_attachment_is_sent_as_input_audio(
+    hermetic_venice_catalog, httpx2_mock, request_json, mock_venice_api_key
+):
+    hermetic_venice_catalog(
+        [
+            {
+                "id": "test-model",
+                "type": "text",
+                "model_spec": {"capabilities": {"supportsAudioInput": True}},
+            }
+        ]
+    )
+    httpx2_mock.add_response(
+        method="POST",
+        url="https://api.venice.ai/api/v1/chat/completions",
+        json={
+            "id": "x",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test-model",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "a beep"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        },
+    )
+    wav = llm.Attachment(content=b"RIFF\x00\x00\x00\x00WAVEfmt ", type="audio/wav")
+
+    text = (
+        llm.get_model("venice/test-model")
+        .prompt("Describe this", attachments=[wav], stream=False)
+        .text()
+    )
+
+    assert text == "a beep"
+    (message,) = request_json()["messages"]
+    audio_part = message["content"][-1]
+    assert audio_part["type"] == "input_audio"
+    assert audio_part["input_audio"]["format"] == "wav"
+
+
 def test_register_skips_without_cache_or_key(monkeypatch, tmp_path):
     """Skip registration when cache is missing and no key is available."""
     monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))

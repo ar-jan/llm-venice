@@ -97,6 +97,10 @@ Vision models (for example `qwen-3-8-27b`, Venice's default vision model) suppor
 > `llm -m venice/qwen-3-8-27b -a https://upload.wikimedia.org/wikipedia/commons/a/a9/Corvus_corone_-near_Canford_Cliffs%2C_Poole%2C_England-8.jpg "Identify"` \
 > The bird in the image is a carrion crow (Corvus corone). [...]
 
+Models that list `supportsAudioInput` in the catalog also accept WAV and MP3 attachments:
+
+`llm -m venice/<audio-model> -a recording.wav "Transcribe this"`
+
 ### venice_parameters
 
 Venice-specific parameters are configured with llm's standard `-o/--option key value` flag.
