@@ -274,15 +274,18 @@ class VeniceClient(_Configuration):
             # SpeechStream, and errors from the caller's block must pass through.
             try:
                 response = stack.enter_context(self._http.stream("POST", url, **options))
-                if not response.is_success:
+                content_type = response.headers.get("content-type")
+                # Buffer error bodies, including a 200 that carries JSON instead of audio.
+                if not response.is_success or ep.is_text_media(content_type):
                     response.read()
                     if self._owned:
                         _logging.log_buffered(response)
                     check_status(response, "Generating speech")
+                    ep.check_speech_content_type(content_type, response.content)
             except httpx2.RequestError as exc:
                 raise VeniceConnectionError(f"Generating speech failed: {exc}") from exc
             format = ep.media_format(
-                response.headers.get("content-type"),
+                content_type,
                 b"",
                 body.get("response_format"),
                 image=False,
@@ -490,15 +493,18 @@ class AsyncVeniceClient(_Configuration):
                 response = await stack.enter_async_context(
                     self._http.stream("POST", url, **options)
                 )
-                if not response.is_success:
+                content_type = response.headers.get("content-type")
+                # Buffer error bodies, including a 200 that carries JSON instead of audio.
+                if not response.is_success or ep.is_text_media(content_type):
                     await response.aread()
                     if self._owned:
                         _logging.log_buffered(response)
                     check_status(response, "Generating speech")
+                    ep.check_speech_content_type(content_type, response.content)
             except httpx2.RequestError as exc:
                 raise VeniceConnectionError(f"Generating speech failed: {exc}") from exc
             format = ep.media_format(
-                response.headers.get("content-type"),
+                content_type,
                 b"",
                 body.get("response_format"),
                 image=False,

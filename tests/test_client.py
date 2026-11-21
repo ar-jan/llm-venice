@@ -544,3 +544,70 @@ def test_async_early_exit_closes_and_rejects_retained_iterator():
                     await anext(iterator)
 
     asyncio.run(run())
+
+
+SPEECH_WITHOUT_AUDIO = [
+    pytest.param(
+        {"json": {"message": "Quota exhausted"}},
+        "expected audio but received application/json: Quota exhausted",
+        id="json",
+    ),
+    pytest.param(
+        {"text": "upstream unavailable"},
+        "expected audio but received text/plain: upstream unavailable",
+        id="text",
+    ),
+    pytest.param(
+        {"content": b"", "headers": {"content-type": "audio/mpeg"}},
+        "response did not include any audio",
+        id="empty",
+    ),
+]
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize("response, message", SPEECH_WITHOUT_AUDIO)
+def test_buffered_speech_requires_audio(is_async, response, message, httpx2_mock):
+    httpx2_mock.add_response(**response)
+    with pytest.raises(VeniceResponseError, match=f"Generating speech failed: {message}"):
+        invoke(is_async, "generate_speech", "m", "text")
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize("response, message", SPEECH_WITHOUT_AUDIO)
+def test_streamed_speech_requires_audio_before_publishing(
+    is_async, response, message, httpx2_mock, tmp_path
+):
+    """Neither a text body nor an empty one may replace an existing file."""
+    httpx2_mock.add_response(**response)
+    target = tmp_path / "speech.mp3"
+    target.write_bytes(b"good audio")
+
+    async def run_async():
+        async with AsyncVeniceClient(key="k") as client:
+            async with client.stream_speech("m", "text") as stream:
+                await stream.save(target, overwrite=True)
+
+    def run_sync():
+        with VeniceClient(key="k") as client:
+            with client.stream_speech("m", "text") as stream:
+                stream.save(target, overwrite=True)
+
+    with pytest.raises(VeniceResponseError, match=f"Generating speech failed: {message}"):
+        asyncio.run(run_async()) if is_async else run_sync()
+    assert target.read_bytes() == b"good audio"
+    assert [path.name for path in tmp_path.iterdir()] == ["speech.mp3"]
+
+
+@pytest.mark.parametrize("content_type", [None, "application/octet-stream", "audio/mpeg"])
+def test_speech_accepts_binary_content_types(content_type, httpx2_mock):
+    headers = {"content-type": content_type} if content_type else {}
+    httpx2_mock.add_response(content=b"ID3audio", headers=headers)
+    assert invoke(False, "generate_speech", "m", "text").data == b"ID3audio"
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_upscale_requires_image_bytes(is_async, httpx2_mock):
+    httpx2_mock.add_response(content=b"", headers={"content-type": "image/png"})
+    with pytest.raises(VeniceResponseError, match="did not include an image"):
+        invoke(is_async, "upscale_image", io.BytesIO(PNG))

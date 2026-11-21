@@ -2,6 +2,7 @@
 
 import base64
 import binascii
+import json
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Literal, TypeVar, cast
@@ -12,7 +13,7 @@ from typing_extensions import get_type_hints
 
 from .errors import VeniceResponseError
 from .params import ImageParams, SpeechParams, copy_params, parameter_body
-from .results import GeneratedImage, ImageResult, SpeechResult
+from .results import NO_AUDIO, GeneratedImage, ImageResult, SpeechResult
 from .types import AugmentSearchProvider, ModelInfo
 
 
@@ -196,6 +197,10 @@ _AUDIO_TYPES = {
 }
 
 
+def _media_type(content_type: str | None) -> str:
+    return (content_type or "").split(";", 1)[0].strip().lower()
+
+
 def media_format(
     content_type: str | None,
     data: bytes,
@@ -204,7 +209,7 @@ def media_format(
     image: bool,
 ) -> str:
     types = _IMAGE_TYPES if image else _AUDIO_TYPES
-    media_type = (content_type or "").split(";", 1)[0].strip().lower()
+    media_type = _media_type(content_type)
     if media_type in types:
         return types[media_type]
     if image:
@@ -290,6 +295,8 @@ def parse_image(response: httpx2.Response, model: str, requested: str | None) ->
 
 def parse_upscale(response: httpx2.Response) -> GeneratedImage:
     content_type = response.headers.get("content-type")
+    if not response.content:
+        raise VeniceResponseError("Upscaling image", "response did not include an image")
     return GeneratedImage(
         response.content,
         media_format(content_type, response.content, None, image=True),
@@ -297,8 +304,45 @@ def parse_upscale(response: httpx2.Response) -> GeneratedImage:
     )
 
 
+SPEECH_ACTION = "Generating speech"
+
+
+def is_text_media(content_type: str | None) -> bool:
+    """Whether a Content-Type names a text or structured (JSON/XML) body, never audio."""
+    media_type = _media_type(content_type)
+    return (
+        media_type.startswith("text/")
+        or media_type in {"application/json", "application/xml"}
+        or media_type.endswith(("+json", "+xml"))
+    )
+
+
+def check_speech_content_type(content_type: str | None, body: bytes) -> None:
+    """Reject a successful response whose body is text or JSON instead of audio."""
+    if not is_text_media(content_type):
+        return
+    media_type = _media_type(content_type)
+    detail = f"expected audio but received {media_type}"
+    message: Any = None
+    try:
+        payload: Any = json.loads(body)
+        if isinstance(payload, dict):
+            obj = cast(dict[str, Any], payload)
+            message = obj.get("message") or obj.get("error")
+    except (ValueError, UnicodeError):
+        pass
+    if message is None:
+        message = body.decode("utf-8", "replace").strip()
+    if message:
+        detail += f": {str(message)[:200]}"
+    raise VeniceResponseError(SPEECH_ACTION, detail)
+
+
 def parse_speech(response: httpx2.Response, model: str, requested: str | None) -> SpeechResult:
     content_type = response.headers.get("content-type")
+    check_speech_content_type(content_type, response.content)
+    if not response.content:
+        raise VeniceResponseError(SPEECH_ACTION, NO_AUDIO)
     return SpeechResult(
         model,
         response.content,

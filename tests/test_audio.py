@@ -495,3 +495,50 @@ def test_async_speech_sync_and_async_payloads_match(httpx2_mock, mock_venice_api
     async_payload = request_json(-1)
 
     assert sync_payload == async_payload
+
+
+INVALID_SPEECH_RESPONSES = [
+    pytest.param(
+        {"json": {"error": "Quota exhausted"}},
+        "expected audio but received application/json: Quota exhausted",
+        id="json-error-body",
+    ),
+    pytest.param(
+        {"content": b"", "headers": {"Content-Type": "audio/mpeg"}},
+        "response did not include any audio",
+        id="empty-audio-body",
+    ),
+]
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("response, message", INVALID_SPEECH_RESPONSES)
+def test_invalid_speech_response_never_replaces_existing_file(
+    is_async, stream, response, message, httpx2_mock, mock_venice_api_key, tmp_path
+):
+    """A 200 without audio fails and leaves an existing file untouched, even with overwrite."""
+    httpx2_mock.add_response(method="POST", url=ENDPOINT_AUDIO_SPEECH, **response)
+    target = tmp_path / "out.mp3"
+    target.write_bytes(b"good audio")
+    prompt = MagicMock()
+    prompt.prompt = "Hello"
+    prompt.options = VeniceSpeech.Options(
+        output_dir=tmp_path, output_filename="out.mp3", overwrite_files=True
+    )
+
+    if is_async:
+        model = AsyncVeniceSpeech("tts-kokoro")
+
+        async def run():
+            async for _ in model.execute(prompt, stream, MagicMock(), None):
+                pass
+
+        with pytest.raises(llm.ModelError, match=message):
+            _run(run())
+    else:
+        with pytest.raises(llm.ModelError, match=message):
+            list(VeniceSpeech("tts-kokoro").execute(prompt, stream, MagicMock(), None))
+
+    assert target.read_bytes() == b"good audio"
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["out.mp3"]
