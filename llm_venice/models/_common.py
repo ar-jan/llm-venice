@@ -29,14 +29,15 @@ def initialize_model(
 def single_turn_text(model: Any, prompt: Any) -> str:
     """Return the text of the single user turn that a media endpoint receives.
 
-    With ``messages=`` the user text is only in ``prompt.messages``, so read it
-    from there. llm rejects assistant and tool messages for single-turn models
-    before execute() runs; system messages are ignored, as ``-s`` is.
+    ``prompt.messages`` is authoritative: with ``messages=`` the user text is
+    only there, and positional text outside it is not sent. llm rejects
+    assistant and tool messages for single-turn models before execute() runs;
+    system messages are ignored, as ``-s`` is. Without a user message the text
+    is empty, which request validation rejects.
     """
     user_messages = [message for message in prompt.messages if message.role == "user"]
     if not user_messages:
-        # Explicit messages without a user turn: use the prompt text, if any.
-        return prompt.prompt
+        return ""
     if len(user_messages) > 1:
         raise ValueError(f"{model.model_id} takes a single prompt, not several user messages")
     parts = user_messages[0].parts

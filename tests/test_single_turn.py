@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import json
+from typing import Any
 
 import llm
 import pytest
@@ -217,3 +218,34 @@ def test_messages_prompt_with_history_is_rejected(model_id, media, httpx2_mock):
         run_messages(model_id, False, messages, media)
 
     assert httpx2_mock.get_requests() == []
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize("model_id", MEDIA_MODELS)
+def test_positional_text_outside_messages_is_not_sent(model_id, is_async, media, httpx2_mock):
+    """messages= is authoritative: text that only a direct llm.Prompt carries is not sent."""
+    model: Any = llm.get_async_model(model_id) if is_async else llm.get_model(model_id)
+    prompt = llm.Prompt(
+        "positional",
+        model,
+        messages=[llm.system("be brief")],
+        options=model.Options(output_dir=media),
+    )
+
+    with pytest.raises(llm.ModelError, match="at least 1 character"):
+        if is_async:
+            asyncio.run(llm.AsyncResponse(prompt, model, stream=False).text())
+        else:
+            llm.Response(prompt, model, stream=False).text()
+
+    assert httpx2_mock.get_requests() == []
+
+
+@pytest.mark.parametrize("model_id", MEDIA_MODELS)
+def test_model_prompt_with_system_messages_sends_positional_text(model_id, media, httpx2_mock):
+    """model.prompt() adds positional text to messages= as the user turn."""
+    llm.get_model(model_id).prompt(
+        "positional", messages=[llm.system("be brief")], output_dir=media
+    ).text()
+
+    assert sent_prompts(httpx2_mock) == ["positional"]
