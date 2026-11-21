@@ -1,88 +1,90 @@
 # Changelog
 
-## 0.10.0 (unreleased)
+## 0.10.0 (2026-11-21)
 
-- Requirements raised to `llm>=0.37` and Python 3.11+. llm 0.37 dropped Python 3.10,
-  and the suite already needed llm 0.36 for `Prompt.options` to default to the model's
-  options object.
-- Chat models accept `-o enable_x_search true/false` and the Python `enable_x_search`
-  option for xAI native web and X/Twitter search. True requires `supportsXSearch`;
-  false is forwarded even on unsupported models, while unset/`None` is omitted.
-  `VeniceXSearch` remains available for discovery and conversation continuation and
-  overrides an explicit false option. After tool settings override options, effective
-  X search replaces all Venice web-search settings, including `VeniceWebSearch`.
-  False/unset retains existing web-search validation and behavior. Reserved
-  `extra_body.venice_parameters.enable_x_search` overrides remain forbidden; use the
-  dedicated option instead.
-- Media adapters and Venice commands use reusable synchronous/asynchronous clients.
-- Image and speech models are single-turn. `llm -c`, `llm --cid`, `llm chat` and
-  Python conversation replies now fail with "does not support conversations"
-  (`llm.ConversationNotSupported`) before any request. Previously they silently sent
-  only the latest prompt and logged it as part of the conversation. Start a new
-  prompt without the continuation options instead; for scripted speech, use
-  `llm venice tts`. `llm models list --json` reports `supports_conversation: false`.
-- Image and speech logs include `output_paths`; image logs preserve moderation and
-  omitted-variant metadata. Successful partial image responses are saved.
-- Image output always uses JSON/base64. The `return_binary` option has been removed;
-  omit it and use `variants` for multi-image output.
-- Saving creates requested parent directories without an interactive confirmation.
-- Parameter validation follows endpoint bounds. Upscale `scale` and
-  `llm venice upscale --scale` accept any value from 2 to 4.
-- Upscaling no longer offers `--enhance`, `--enhance-creativity`, `--enhance-prompt`
-  and `--replication` (or the matching `upscale_image()` arguments). The endpoint
-  dropped these fields and silently ignores them.
-- Upscaling accepts `--creativity` (and `upscale_image(creativity=...)`), from 0 to
-  0.02, for how much detail and texture the upscaler adds. Out-of-range values fail
-  locally because the endpoint would clamp them silently; unset uses the API default.
-- JSON resources are checked for their required fields; optional fields pass through
-  unchanged. Catalog refreshes skip malformed model entries and fail only when no
-  usable model remains.
-- Speech filenames follow the returned media format, including model-specific defaults.
-- Model Options now expose published limits and choices. Explicit unsupported
-  values fail locally; missing metadata retains endpoint validation. Prompt/text
-  limits also apply. Speech accepts cloned and custom voice IDs.
-- Chat models accept an `extra_body` option for API fields without a dedicated option,
-  including new `venice_parameters` entries, which are merged with option-derived ones.
-  Fields that would override an option or request field are rejected rather than
-  silently overridden. `-o extra_body '{...}'` JSON strings now also work for image
-  and speech models.
-- `LLM_VENICE_SHOW_RESPONSES` now logs every Venice request: chat, image, speech
-  (including streaming), upscale, characters, API keys and catalog refreshes.
-  Previously it covered only image generation and speech, and chat responded only
-  to `LLM_OPENAI_SHOW_RESPONSES`.
-  - When the Venice variable is unset or blank, `LLM_OPENAI_SHOW_RESPONSES` is used.
-    A Venice value of `0` now also silences Venice chat.
-  - `0`, `false`, `off` and `no` now disable logging. In 0.9, any non-empty value,
+### Breaking changes
+
+- Requires `llm>=0.37` and Python 3.11 or later.
+- The 0.9 Python helper functions, result classes and `llm_venice.api` package are
+  removed. See Python migration below.
+- The Venice-specific `llm prompt` and `llm chat` flags, such as `--web-search` and
+  `--character`, are removed in favour of `-o` options. See CLI migration below.
+- The speech `-o stdout true` option is removed. Use `llm venice tts` to write audio
+  to stdout.
+- Image and speech models are single-turn. `llm -c`, `--cid`, `llm chat` and Python
+  conversation replies fail with `llm.ConversationNotSupported` before any request is
+  sent. Previously only the latest prompt was sent, but it was logged as part of the
+  conversation.
+- The image `return_binary` option is removed. Images are always requested as base64
+  JSON; use `variants` for multiple images.
+- `llm venice upscale` no longer offers `--enhance`, `--enhance-creativity`,
+  `--enhance-prompt` and `--replication`, which the API dropped and silently ignored.
+  `--scale` now accepts 2 to 4 (previously 1 to 4).
+
+### New features
+
+- Typed Python client, `VeniceClient` and `AsyncVeniceClient`, with typed parameters
+  and results such as `ImageParams` and `ImageResult`. The plugin's models and
+  `llm venice` commands use the same clients.
+- `llm venice search` command and `augment_search()` client method, for web search
+  through Venice without a model, using Brave, Google or Exa and 1 to 20 results.
+- Web search tools for any model that supports tool calls, including models from other
+  plugins: `venice_augment_search`, where the model picks the provider on each call,
+  and `venice_augment_search_brave`, `venice_augment_search_google` and
+  `venice_augment_search_exa`, which each use one provider.
+- `enable_x_search` chat option (`-o enable_x_search true`) for xAI's native web and
+  X/Twitter search on models with `supportsXSearch`. When enabled, it replaces the
+  Venice web-search settings, including those from `VeniceWebSearch`. The
+  `VeniceXSearch` tool overrides `-o enable_x_search false`.
+- `extra_body` option on chat, image and speech models, a JSON object for API fields
+  without a dedicated option. Chat `venice_parameters` entries are merged with those
+  set by options. Fields that an option or llm already sets are rejected rather than
+  overwritten.
+- `llm venice upscale --creativity` (`upscale_image(creativity=...)`) sets how much
+  detail and texture the upscaler adds, from 0 to 0.02. Values outside that range fail
+  locally, since the API would clamp them silently.
+
+### Other changes and fixes
+
+- Options are checked locally against the API's bounds and each model's published
+  limits and choices, which `llm models --options` lists. Where Venice publishes no
+  metadata, the API validates as before. Prompt and text length limits are checked
+  too. Speech accepts cloned and custom voice IDs.
+- `LLM_VENICE_SHOW_RESPONSES` logs every Venice request, including chat, upscale,
+  characters, API keys and model refreshes. In 0.9 it covered only image and speech,
+  and chat was logged only with `LLM_OPENAI_SHOW_RESPONSES`.
+  - If it is unset or blank, `LLM_OPENAI_SHOW_RESPONSES` is used. Setting it to `0`
+    also silences Venice chat.
+  - `0`, `false`, `off` and `no` disable logging. In 0.9, any non-empty value,
     including `0`, enabled it.
-  - Logs show request and response headers and bodies, with credential headers and
-    `apiKey`/`api_key` fields redacted, base64 data shortened and binary bodies
-    summarised. Enabling logging keeps environment proxy settings. This fixes the 0.9 crash
-    when logging binary speech responses.
-  - Async chat no longer fails with `TypeError: Invalid http_client argument` when
-    `LLM_OPENAI_SHOW_RESPONSES` is set.
-- New `llm venice search` command and `augment_search()` client methods search the web
-  through Venice's `/augment/search` endpoint without a model, with Brave, Google or Exa
-  as the provider and 1-20 results.
-- New function tools let models that support function calling search through Venice:
-  `venice_augment_search`, where the model must explicitly choose the provider on
-  each call using guidance in the tool description, and
-  `venice_augment_search_brave`, `venice_augment_search_google` and
-  `venice_augment_search_exa`, which each use one provider. They also work with models
-  from other plugins.
+  - Logs include request and response headers and bodies. Credential headers and
+    `apiKey`/`api_key` fields are redacted, base64 data is shortened and binary bodies
+    are summarised. Proxy settings from the environment still apply.
+  - Fixed: logging binary speech responses crashed in 0.9, and async chat failed with
+    `TypeError: Invalid http_client argument` when `LLM_OPENAI_SHOW_RESPONSES` was set.
+- Image and speech logs record `output_paths`. Image logs also record moderation
+  details. When the content policy omits some image variants, the remaining images are
+  saved, with a warning.
+- Speech file extensions follow the format the API returned, including a model's
+  default format.
+- Saving to a directory that doesn't exist creates it, instead of asking for
+  confirmation.
+- API responses are checked for required fields; other fields pass through unchanged.
+  Model refreshes skip malformed entries and fail only if no usable model remains.
 
 ### Python migration
 
-The legacy names, result classes, `llm_venice.api` package and public `notices`
-module are removed outright. There are no compatibility shims or deprecation warnings.
-`VeniceWebSearch` and `VeniceXSearch` remain public. Plugin hooks remain module
-attributes but are excluded from `__all__`.
+The 0.9 helper functions, result classes, `llm_venice.api` package and public `notices`
+module are removed, with no compatibility shims or deprecation warnings.
+`VeniceWebSearch` and `VeniceXSearch` remain public. Plugin hooks are still module
+attributes but are no longer in `__all__`.
 
 | Old (0.9) | New |
 |---|---|
 | `fetch_models(key)` | `with VeniceClient(key=key) as client: models = client.list_models()` |
 | `persist_models(models, path)` | `from llm_venice.catalog import save_catalog`; `save_catalog(models, path)` / `refresh_catalog()` |
 | `list_characters(key, web_enabled="true")` → envelope dict | `client.list_characters(web_enabled=True)` → `list[Character]` |
-| `persist_characters(data)` | removed from public API (CLI-internal) |
+| `persist_characters(data)` | removed (now CLI-internal) |
 | `list_api_keys(headers)` / `get_rate_limits(headers)` / `get_rate_limits_log(headers)` | `client.list_api_keys()` / `client.get_rate_limits()` / `client.get_rate_limits_log()` |
 | `create_api_key(headers, description, key_type, "2026-…Z", vcu, usd)` | `client.create_api_key(key_type=…, description=…, expires_at=datetime, limit_vcu=…, limit_usd=…)` |
 | `delete_api_key(headers, id)` | `client.delete_api_key(id)` |
@@ -93,35 +95,44 @@ attributes but are excluded from `__all__`.
 | `ImageGenerationResult` / `SpeechGenerationResult` / `SpeechStreamResult` | `ImageResult` / `SpeechResult` / `SpeechStream` |
 | `UpscaleResult` | `GeneratedImage`, also used for generated image items |
 | Mixed binary attributes on results | `.data` on all buffered media results |
-| Automatic paths in library generation/save helpers | Exact-path single-result saves; directory-only batch image saves; CLI naming policy unchanged |
+| Automatic file paths in save helpers | `.save(path)` writes a single image or speech result to exactly `path`; `ImageResult.save(dir)` saves all images into `dir`. CLI file naming is unchanged |
 | `VeniceChatOptions` / `VeniceImageOptions` / `VeniceSpeechOptions` | Base class `.Options`, or `llm.get_model(...).Options` for model-specific validation |
-| `VeniceNotice` | internal (adapters render notices from result facts) |
+| `VeniceNotice` | internal |
 | `VeniceAPIError` / catching `RuntimeError` | `VeniceAPIError` under `VeniceError`, no longer a `RuntimeError` |
 | Raw transport/response-decoding failures | `VeniceConnectionError` / `VeniceResponseError`; local file failures remain `OSError` |
 | `-o return_binary true` | removed; the client always requests JSON/base64 images |
 | Interactive output-directory confirmation | parent directories created automatically on an explicit save |
 
+### CLI migration
 
-### CLI migration included in this release
+The Venice-specific flags that 0.9 added to `llm prompt` and `llm chat` are removed,
+and llm rejects them with `No such option`. Each has an `-o` option with the same
+effect:
 
-The Venice-specific `llm prompt`/`llm chat` flag overrides are removed. Use the
-`-o` equivalents in the README or the public `VeniceWebSearch`/`VeniceXSearch` tools.
-Those replacements ship together in 0.10, so no released version loses first-class
-search support between changes.
+| Old (0.9) | New |
+|---|---|
+| `--no-venice-system-prompt` | `-o include_venice_system_prompt 0` |
+| `--web-search MODE` | `-o enable_web_search MODE` (`auto`, `on` or `off`; image models accept `on` or `off`) |
+| `--web-scraping` | `-o enable_web_scraping 1` |
+| `--web-citations` | `-o enable_web_citations 1` |
+| `--include-search-results-in-stream` | `-o include_search_results_in_stream 1` |
+| `--character SLUG` | `-o character_slug SLUG` |
+| `--strip-thinking-response` | `-o strip_thinking_response 1` |
+| `--disable-thinking` | `-o disable_thinking 1` |
 
-Binary speech stdout now belongs to `llm venice tts`:
+For web and X search you can also use the `VeniceWebSearch` and `VeniceXSearch` tools
+described in the README.
+
+The speech `-o stdout true` option is removed. Use `llm venice tts` to write audio to
+stdout:
 
 | Old | New |
 |---|---|
 | `llm -m venice/tts-kokoro "Hello" -o stdout true > out.mp3` | `llm venice tts "Hello" -o - > out.mp3` |
 | Save a copy while using `-o stdout true` | `llm venice tts "Hello" -o - \| tee out.mp3`, or `-o out.mp3` |
 
-The speech `stdout` option is removed. llm owns stdout on its model paths and adds
-text after generation; the dedicated command emits exact audio bytes. Diagnostic
-and progress output goes to stderr. Existing CLI JSON envelopes remain intact.
-
-L9 reasoning/stream metadata, embeddings, additional media endpoints, automatic
-catalog TTL refresh and trait handling remain deferred.
+`llm venice tts` writes only the audio bytes to stdout, and progress and diagnostics
+to stderr. With `llm -m`, llm adds its own text to stdout after generation.
 
 ## 0.9.1 (2026-08-24)
 

@@ -3,7 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/llm-venice.svg)](https://pypi.org/project/llm-venice/)
 [![Changelog](https://img.shields.io/github/v/release/ar-jan/llm-venice?label=changelog)](https://github.com/ar-jan/llm-venice/releases)
 [![Tests](https://github.com/ar-jan/llm-venice/actions/workflows/test.yml/badge.svg)](https://github.com/ar-jan/llm-venice/actions/workflows/test.yml)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/ar-jan/llm-venice/blob/main/LICENSE)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/ar-jan/llm-venice/blob/develop/LICENSE)
 
 [LLM](https://llm.datasette.io/) plugin to access models available via the [Venice AI](https://venice.ai/chat?ref=Oeo9ku) API.
 
@@ -494,7 +494,7 @@ the same path/key until explicit successful refresh. Offline models are skipped;
 deprecation notices appear when a model is used. There is no automatic TTL refresh,
 trait routing, or trait alias registration.
 
-See [the 0.9-to-0.10 migration guide](CHANGELOG.md) for removed helpers and options.
+See [the 0.9-to-0.10 migration guide](https://github.com/ar-jan/llm-venice/blob/develop/CHANGELOG.md) for removed helpers and options.
 
 ## Development
 
