@@ -225,7 +225,13 @@ def media_format(
         if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
             return "webp"
     else:
-        if data.startswith(b"ID3") or (len(data) > 1 and data[0] == 255 and data[1] & 0xE0 == 0xE0):
+        # ADTS (AAC) and MPEG audio frames share the sync bits. ADTS always has
+        # layer 00, which MPEG audio reserves, so check it first.
+        if len(data) > 1 and data[0] == 0xFF and data[1] & 0xF6 == 0xF0:
+            return "aac"
+        if data.startswith(b"ID3") or (
+            len(data) > 1 and data[0] == 0xFF and data[1] & 0xE0 == 0xE0 and data[1] & 0x06
+        ):
             return "mp3"
         if data.startswith(b"fLaC"):
             return "flac"
