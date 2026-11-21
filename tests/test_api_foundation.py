@@ -127,6 +127,19 @@ def test_endpoint_limits_match_dated_fixture():
             UpscaleInput(creativity=creativity)
 
 
+@pytest.mark.parametrize(
+    "resource_name, kind",
+    [("GET /api_keys", ApiKey), ("POST /api_keys", CreatedApiKey)],
+)
+def test_api_key_types_match_dated_fixture(resource_name, kind):
+    """Each key type declares exactly the wire fields of the response it describes."""
+    fixture = json.loads((Path(__file__).parent / "fixtures/openapi-2026-10-26.json").read_text())
+    schema = fixture["resources"][resource_name]["response"]["content"]["application/json"]
+    data = schema["schema"]["properties"]["data"]
+    item = data.get("items", data)
+    assert set(kind.__annotations__) == set(item["properties"])
+
+
 def test_key_inputs_and_utc_serialization():
     with pytest.raises(ValidationError, match="timezone-aware"):
         KeyInput(key_type="ADMIN", expires_at=datetime(2026, 1, 1))
