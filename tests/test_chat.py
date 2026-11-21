@@ -2,8 +2,9 @@
 
 import asyncio
 
+import llm
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from llm import Prompt, Response
 from llm_venice import AsyncVeniceChat, VeniceChat
 
@@ -319,6 +320,76 @@ def test_build_kwargs_leaves_object_without_properties_closed():
 
     schema = kwargs["response_format"]["json_schema"]["schema"]
     assert schema["properties"]["meta"]["additionalProperties"] is False
+
+
+@pytest.mark.parametrize(
+    "schema, path",
+    [
+        (
+            {
+                "type": "object",
+                "properties": {"counts": {"additionalProperties": {"type": "integer"}}},
+            },
+            "$.properties.counts",
+        ),
+        ({"type": "object", "additionalProperties": True}, "$"),
+        ({"type": "object", "additionalProperties": {}}, "$"),
+        ({"type": "object", "patternProperties": {"^x-": {"type": "string"}}}, "$"),
+        (
+            {
+                "type": "array",
+                "items": {"type": "object", "additionalProperties": {"type": "string"}},
+            },
+            "$.items",
+        ),
+        (
+            {
+                "$ref": "#/$defs/Item",
+                "$defs": {"Item": {"type": "object", "additionalProperties": True}},
+            },
+            "$.$defs.Item",
+        ),
+        (
+            {"anyOf": [{"type": "string"}, {"type": "object", "additionalProperties": True}]},
+            "$.anyOf[1]",
+        ),
+    ],
+)
+def test_build_kwargs_rejects_maps_strict_mode_cannot_express(schema, path):
+    """Closing a map would make it always empty, so fail with the offending path."""
+    chat = VeniceChat(model_id="venice/test-model")
+    prompt = Prompt(prompt="Generate a test object", model=chat, schema=schema)
+
+    with pytest.raises(llm.ModelError, match="cannot express an object with arbitrary keys") as exc:
+        chat.build_kwargs(prompt, stream=False)
+
+    assert f"at {path}." in str(exc.value)
+
+
+def test_pydantic_dict_field_fails_before_request(httpx2_mock, mock_venice_api_key):
+    class Inventory(BaseModel):
+        counts: dict[str, int]
+
+    chat = VeniceChat(model_id="venice/test-model", supports_schema=True)
+
+    with pytest.raises(llm.ModelError, match=r"at \$\.properties\.counts\."):
+        chat.prompt("Count the fruit", schema=Inventory, stream=False).text()
+
+    assert httpx2_mock.get_requests() == []
+
+
+def test_build_kwargs_accepts_explicitly_closed_objects():
+    chat = VeniceChat(model_id="venice/test-model")
+    schema = {
+        "type": "object",
+        "properties": {"a": {"type": "string"}},
+        "additionalProperties": False,
+    }
+    prompt = Prompt(prompt="Generate a test object", model=chat, schema=schema)
+
+    kwargs = chat.build_kwargs(prompt, stream=False)
+
+    assert kwargs["response_format"]["json_schema"]["schema"]["additionalProperties"] is False
 
 
 def test_web_search_off_on_model_without_web_search():

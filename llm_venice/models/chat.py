@@ -310,41 +310,46 @@ def _apply_server_side_tools(kwargs: Dict, server_side_tools: List) -> Dict:
     return kwargs
 
 
-def _make_json_schema_strict(schema: Dict) -> Dict:
+def _make_json_schema_strict(schema: Dict, path: str = "$") -> Dict:
     """Recursively set ``additionalProperties: false`` on every object schema.
 
     Venice (like OpenAI strict mode) requires every object in a JSON schema to
     disallow additional properties, including nested objects, objects in arrays
     and objects under ``$defs``.
+
+    Strict mode cannot express a map with arbitrary keys (such as a Pydantic
+    ``dict[str, int]`` field). Closing it would silently change its meaning to
+    "always empty", so such a schema raises ``llm.ModelError`` instead.
     """
-    schema_maps = (
-        "properties",
-        "patternProperties",
-        "$defs",
-        "definitions",
-        "dependentSchemas",
-    )
+    if "patternProperties" in schema or schema.get("additionalProperties", False) is not False:
+        raise llm.ModelError(
+            "Venice structured output uses strict JSON schema mode, which cannot "
+            f"express an object with arbitrary keys at {path}. Declare fixed "
+            "properties, or use a list of key/value objects instead of a dict."
+        )
+
+    schema_maps = ("properties", "$defs", "definitions", "dependentSchemas")
     schema_lists = ("anyOf", "oneOf", "allOf", "prefixItems")
     schema_values = ("items", "not", "contains", "if", "then", "else", "propertyNames")
 
     for key in schema_maps:
         subschemas = schema.get(key)
         if isinstance(subschemas, dict):
-            for subschema in subschemas.values():
+            for name, subschema in subschemas.items():
                 if isinstance(subschema, dict):
-                    _make_json_schema_strict(subschema)
+                    _make_json_schema_strict(subschema, f"{path}.{key}.{name}")
 
     for key in schema_lists:
         subschemas = schema.get(key)
         if isinstance(subschemas, list):
-            for subschema in subschemas:
+            for index, subschema in enumerate(subschemas):
                 if isinstance(subschema, dict):
-                    _make_json_schema_strict(subschema)
+                    _make_json_schema_strict(subschema, f"{path}.{key}[{index}]")
 
     for key in schema_values:
         subschema = schema.get(key)
         if isinstance(subschema, dict):
-            _make_json_schema_strict(subschema)
+            _make_json_schema_strict(subschema, f"{path}.{key}")
 
     schema_type = schema.get("type")
     if (
