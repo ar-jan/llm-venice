@@ -10,7 +10,11 @@ from llm_venice._options import CatalogOptionsMixin, normalize_policy, parse_jso
 from ._common import model_error_boundary
 from ._common import initialize_model, warn_deprecated
 from llm.default_plugins.openai_models import AsyncChat, Chat
-from llm_venice.constants import VENICE_PARAMETERS, NON_OPENAI_COMPATIBLE_PARAMS
+from llm_venice.constants import (
+    NON_OPENAI_COMPATIBLE_PARAMS,
+    VENICE_API_BASE,
+    VENICE_PARAMETERS,
+)
 from pydantic import Field, field_validator, model_validator
 from typing_extensions import Self
 
@@ -456,6 +460,8 @@ class VeniceChat(CatalogOptionsMixin, Chat):
         super().__init__(*args, **kwargs)
         # The llm model ID carries the plugin prefix; the API needs the bare ID.
         initialize_model(self, self.model_id, self.model_name, model_spec)
+        # Without a base URL the OpenAI SDK would send the Venice key to OpenAI.
+        self.api_base = self.api_base or VENICE_API_BASE
         self.catalog_policy = normalize_policy("text", self.model_spec)
         self.supports_web_search = supports_web_search
         self.supports_x_search = supports_x_search
@@ -511,6 +517,8 @@ class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
         super().__init__(*args, **kwargs)
         # The llm model ID carries the plugin prefix; the API needs the bare ID.
         initialize_model(self, self.model_id, self.model_name, model_spec)
+        # Without a base URL the OpenAI SDK would send the Venice key to OpenAI.
+        self.api_base = self.api_base or VENICE_API_BASE
         self.catalog_policy = normalize_policy("text", self.model_spec)
         self.supports_web_search = supports_web_search
         self.supports_x_search = supports_x_search

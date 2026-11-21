@@ -81,6 +81,65 @@ def test_direct_construction_sends_unprefixed_model(
     assert request_json()["model"] == "llama-3.3-70b"
 
 
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize("kwargs", [{}, {"api_base": None}])
+def test_direct_construction_defaults_to_venice_base_url(is_async, kwargs, monkeypatch):
+    """A chat model built without api_base must never fall back to OpenAI."""
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    cls = AsyncVeniceChat if is_async else VeniceChat
+    chat = cls(model_id="llama-3.3-70b", **kwargs)
+
+    client = chat.get_client("fake-venice-api-key", async_=is_async)
+
+    assert chat.api_base == "https://api.venice.ai/api/v1"
+    assert str(client.base_url) == "https://api.venice.ai/api/v1/"
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_direct_construction_keeps_explicit_base_url(is_async):
+    cls = AsyncVeniceChat if is_async else VeniceChat
+    chat = cls(model_id="llama-3.3-70b", api_base="https://proxy.example/v1")
+
+    client = chat.get_client("fake-venice-api-key", async_=is_async)
+
+    assert str(client.base_url) == "https://proxy.example/v1/"
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_direct_construction_without_base_url_sends_to_venice(
+    is_async, httpx2_mock, mock_venice_api_key
+):
+    httpx2_mock.add_response(
+        method="POST",
+        url="https://api.venice.ai/api/v1/chat/completions",
+        json={
+            "id": "x",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "llama-3.3-70b",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        },
+    )
+    cls = AsyncVeniceChat if is_async else VeniceChat
+    chat = cls(model_id="llama-3.3-70b")
+
+    async def run_async():
+        return await chat.prompt("hi", stream=False).text()  # type: ignore[union-attr]
+
+    text = asyncio.run(run_async()) if is_async else chat.prompt("hi", stream=False).text()
+
+    assert text == "ok"
+    request = httpx2_mock.get_requests()[-1]
+    assert request.headers["authorization"] == f"Bearer {mock_venice_api_key}"
+
+
 def test_venice_chat_build_kwargs_json_schema():
     """Test that build_kwargs modifies JSON schema responses correctly.
 
