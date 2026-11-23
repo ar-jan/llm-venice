@@ -208,6 +208,31 @@ def test_reasoning_capabilities(cls):
     assert cls(model_id="m").Options(reasoning_effort="future").reasoning_effort == "future"
 
 
+@pytest.mark.parametrize("cls", [VeniceChat, AsyncVeniceChat])
+def test_reasoning_object_effort_uses_the_same_catalog_choices(cls):
+    """-o reasoning '{"effort": ...}' cannot bypass the reasoning_effort check."""
+    supported = cls(
+        model_id="m",
+        model_spec={
+            "capabilities": {
+                "supportsReasoningEffort": True,
+                "reasoningEffortOptions": ["low", "high"],
+            }
+        },
+    )
+    options = supported.Options.model_validate({"reasoning": '{"effort": "low"}'})
+    assert options.reasoning.effort == "low"
+    with pytest.raises(ValidationError, match="reasoning.effort"):
+        supported.Options.model_validate({"reasoning": {"effort": "medium"}})
+    unsupported = cls(model_id="m", model_spec={"capabilities": {"supportsReasoningEffort": False}})
+    with pytest.raises(ValidationError, match="reasoning.effort"):
+        unsupported.Options(reasoning={"effort": "low"})
+    # Disabling reasoning or asking for a summary does not involve effort.
+    assert unsupported.Options(reasoning={"enabled": False}).reasoning.enabled is False
+    # Without catalog choices any effort passes, as for reasoning_effort.
+    assert cls(model_id="m").Options(reasoning={"effort": "future"}).reasoning.effort == "future"
+
+
 def test_tts_uses_model_specific_defaults_and_validation(
     tmp_path, monkeypatch, httpx2_mock, cli_runner, mock_venice_api_key
 ):

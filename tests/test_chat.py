@@ -497,6 +497,10 @@ def test_models_list_options_includes_chat_request_options(cli_runner, hermetic_
     assert "Key used to group related requests for prompt caching." in result.output
     assert "prompt_cache_retention: str" in result.output
     assert "Prompt cache retention: 'default', 'extended' or '24h'." in result.output
+    for line in ("reasoning: str", "verbosity: str", "fallbacks: array", "anon_user_id: str"):
+        assert line in result.output
+    assert "Detail level for image attachments" in result.output
+    assert "'original'" in result.output
     assert "enable_x_search: bool" in result.output
     assert "Enable xAI native web and X/Twitter search" in result.output
 
@@ -1781,3 +1785,119 @@ def test_concurrent_async_streams_keep_their_own_metadata(httpx2_mock, mock_veni
         ("A", 1),
         ("B", 2),
     ]
+
+
+COMPLETION = {
+    "id": "x",
+    "object": "chat.completion",
+    "created": 0,
+    "model": "venice-model",
+    "choices": [
+        {"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}
+    ],
+    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+}
+
+
+@pytest.mark.parametrize("cls", [VeniceChat, AsyncVeniceChat])
+def test_request_options_reach_the_request_body(
+    cls, httpx2_mock, request_json, mock_venice_api_key
+):
+    httpx2_mock.add_response(method="POST", url=CHAT_URL, json=COMPLETION)
+    model = cls("venice-model")
+    options = {
+        "reasoning": '{"effort": "high", "summary": "auto"}',
+        "verbosity": "auto",
+        "prompt_cache_retention": "extended",
+        "fallbacks": '["venice/claude-opus-4-8", {"model": "claude-sonnet-5"}]',
+        "anon_user_id": "end-user-123",
+    }
+
+    async def run_async():
+        return await model.prompt("hi", stream=False, **options).text()
+
+    text = asyncio.run(run_async()) if cls is AsyncVeniceChat else None
+    if text is None:
+        text = model.prompt("hi", stream=False, **options).text()
+
+    assert text == "ok"
+    payload = request_json()
+    assert payload["reasoning"] == {"effort": "high", "summary": "auto"}
+    assert payload["verbosity"] == "auto"
+    assert payload["prompt_cache_retention"] == "extended"
+    assert payload["fallbacks"] == [{"model": "claude-opus-4-8"}, {"model": "claude-sonnet-5"}]
+    assert payload["anon_user_id"] == "end-user-123"
+
+
+def test_reasoning_enabled_alone_is_sent():
+    chat = VeniceChat("venice-model")
+    options = VeniceChatOptions.model_validate({"reasoning": {"enabled": False}})
+    kwargs = chat.build_kwargs(Prompt(prompt="Test", model=chat, options=options), stream=False)
+    assert kwargs["extra_body"] == {"reasoning": {"enabled": False}}
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"prompt_cache_retention": "1h"},
+        {"verbosity": "loud"},
+        {"reasoning": {"summary": "long"}},
+        {"reasoning": {"effort": "high", "budget": 100}},
+        {"reasoning": "[1]"},
+        {"reasoning": "{not json"},
+        {"fallbacks": ["model"] * 11},
+        {"fallbacks": [""]},
+        {"fallbacks": '{"model": "x"}'},
+        {"fallbacks": "[not json"},
+        {"fallbacks": [{"model": "x", "provider": "y"}]},
+        {"image_detail": "max"},
+    ],
+)
+def test_request_options_are_validated(options):
+    with pytest.raises(ValidationError):
+        VeniceChatOptions.model_validate(options)
+
+
+def test_new_request_options_are_reserved_in_extra_body():
+    for field in ("reasoning", "verbosity", "fallbacks", "anon_user_id", "image_detail"):
+        with pytest.raises(ValidationError, match=f"reserved fields: {field}"):
+            VeniceChatOptions(extra_body={field: None})
+
+
+@pytest.mark.parametrize("cls", [VeniceChat, AsyncVeniceChat])
+def test_image_detail_original_reaches_image_attachments(
+    cls, httpx2_mock, request_json, mock_venice_api_key
+):
+    httpx2_mock.add_response(method="POST", url=CHAT_URL, json=COMPLETION)
+    model = cls("venice-model", vision=True)
+    image = llm.Attachment(content=b"\x89PNG\r\n\x1a\nimage", type="image/png")
+
+    response = model.prompt("Describe", attachments=[image], stream=False, image_detail="original")
+    if cls is AsyncVeniceChat:
+
+        async def run():
+            return await response.text()  # type: ignore[union-attr]
+
+        asyncio.run(run())
+    else:
+        response.text()
+
+    (part,) = [
+        part for part in request_json()["messages"][-1]["content"] if part["type"] == "image_url"
+    ]
+    assert part["image_url"]["detail"] == "original"
+
+
+@pytest.mark.parametrize("cls", [VeniceChat, AsyncVeniceChat])
+def test_llm_option_flags_do_not_replace_venice_options(cls):
+    """llm's _Shared.__init__ would assign a generic OpenAI Options class."""
+    model = cls(
+        "venice-model",
+        reasoning=True,
+        verbosity=True,
+        image_detail_original=True,
+        service_tier=True,
+    )
+    assert issubclass(model.Options, VeniceChat.Options)
+    assert {"min_p", "fallbacks", "reasoning"} <= set(model.Options.model_fields)
+    assert model.Options.model_validate({"image_detail": "original"}).image_detail == "original"

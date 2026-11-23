@@ -37,6 +37,15 @@ Venice-specific parameters are passed with `llm`'s standard `-o/--option KEY VAL
   - When `enable_x_search` is `false` or unset, the usual Venice web-search settings and validation apply.
   - Tool settings override `-o` options: selecting `VeniceXSearch` enables X search even with `-o enable_x_search false`, including when the tool is restored by `-c` conversation continuation.
 
+### Request options
+
+- **Reasoning**: `-o reasoning_effort LEVEL` sets the effort, and `-o reasoning '{"effort": "high", "summary": "auto", "enabled": true}'` sets the full `reasoning` object. `summary` is `auto`, `concise`, or `detailed`; `"enabled": false` turns reasoning off on supporting models. Both efforts are checked against the model's published choices, and when both are given Venice uses `reasoning_effort`.
+- **Verbosity**: `-o verbosity` accepts `low`, `medium`, `high`, or `auto`.
+- **Prompt caching**: `-o prompt_cache_key KEY` groups related requests, and `-o prompt_cache_retention` accepts `default`, `extended`, or `24h`.
+- **Refusal fallbacks**: `-o fallbacks '["claude-opus-4-8"]'` lists up to 10 models to try if an Anthropic model refuses the request; Venice forwards it on direct Anthropic routes only. IDs may carry the `venice/` prefix, and the API's `[{"model": "claude-opus-4-8"}]` form works too.
+- **End-user attribution**: `-o anon_user_id ID` identifies your end user to upstream providers, with 1 to 128 printable ASCII characters and no `||`.
+- **Image detail**: `-o image_detail` accepts `original` as well as `auto`, `low`, and `high`. Venice passes `original` to OpenAI models and treats it as `high` elsewhere.
+
 ### Response metadata
 
 Venice adds fields to chat responses that `llm`'s generic handling of streamed chunks leaves out. Streamed responses keep them too, in the response JSON logged by `llm` (`llm logs --json`), alongside `llm`'s usual `content`, `finish_reason` and `usage` keys:

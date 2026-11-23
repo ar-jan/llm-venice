@@ -4,6 +4,13 @@
 
 ### New features
 
+- Chat options `reasoning`, a JSON object with `effort`, `summary` and `enabled`;
+  `verbosity` (`low`, `medium`, `high` or `auto`); and `fallbacks`, up to 10 model IDs
+  to try when an Anthropic model refuses the request. `reasoning.effort` is checked
+  against the model's published choices, as `reasoning_effort` is. As declared options,
+  these fields are now rejected in `extra_body`.
+- Chat `image_detail` accepts `original`, which Venice passes to OpenAI models and
+  treats as `high` elsewhere.
 - `ContentViolationError`, a `VeniceAPIError` subclass for content-policy refusals
   (HTTP 422) from image generation and upscaling, with Venice's `suggested_prompt`,
   `recommended_model` and `retryable` fields. Other 422s, such as an oversized style
@@ -26,6 +33,10 @@
 
 ### Other changes and fixes
 
+- `prompt_cache_retention` is checked locally against `default`, `extended` and `24h`.
+- Constructing `VeniceChat` or `AsyncVeniceChat` with llm's `reasoning`, `verbosity`,
+  `image_detail_original` or `service_tier` flags no longer replaces the Venice chat
+  options with llm's generic OpenAI ones.
 - Streamed chat responses keep Venice's response fields in `response_json`, as
   non-streamed responses already did: `venice_parameters` (including web search
   citations), `cost`, `stop_reason`, `prompt_logprobs`, `reasoning_content`,

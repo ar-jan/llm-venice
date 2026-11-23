@@ -4,22 +4,22 @@ from contextvars import ContextVar
 import copy
 from itertools import islice
 import json
-from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Union
+from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Literal, Optional, Union
 
 import llm
 from llm.utils import remove_dict_none_values
 from llm_venice import _logging
 from llm_venice._options import CatalogOptionsMixin, normalize_policy, parse_json_object
 from ._common import model_error_boundary
-from ._common import initialize_model, warn_deprecated
-from llm.default_plugins.openai_models import AsyncChat, Chat
+from ._common import initialize_model, normalize_model_id, warn_deprecated
+from llm.default_plugins.openai_models import AsyncChat, Chat, ImageDetailWithOriginalEnum
 from llm_venice.constants import (
     NON_OPENAI_COMPATIBLE_PARAMS,
     VENICE_API_BASE,
     VENICE_PARAMETERS,
 )
 from llm_venice.params import ANON_USER_ID_DESCRIPTION, AnonUserId
-from pydantic import Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from typing_extensions import Self
 
 # Request keys set by llm or this plugin outside of Options; extra_body must not
@@ -33,6 +33,16 @@ _RESERVED_REQUEST_KEYS = {
     "tool_choice",
     "response_format",
 }
+
+
+class _Reasoning(BaseModel):
+    """The request's `reasoning` object; unset fields keep the model's defaults."""
+
+    model_config = ConfigDict(extra="forbid")
+    # An open string like reasoning_effort, narrowed by the same catalog choices.
+    effort: Optional[str] = None
+    summary: Optional[Literal["auto", "concise", "detailed"]] = None
+    enabled: Optional[bool] = None
 
 
 class _ChatOptions(Chat.Options):
@@ -86,16 +96,43 @@ class _ChatOptions(Chat.Options):
         ),
         default=None,
     )
+    reasoning: Optional[_Reasoning] = Field(
+        description=(
+            "Reasoning settings as a JSON object: effort, summary ('auto', 'concise' "
+            "or 'detailed') and enabled. reasoning_effort takes precedence over effort."
+        ),
+        default=None,
+    )
+    verbosity: Optional[Literal["low", "medium", "high", "auto"]] = Field(
+        description="Response verbosity: 'low', 'medium', 'high' or 'auto'.",
+        default=None,
+    )
     prompt_cache_key: Optional[str] = Field(
         description="Key used to group related requests for prompt caching.",
         default=None,
     )
-    prompt_cache_retention: Optional[str] = Field(
+    prompt_cache_retention: Optional[Literal["default", "extended", "24h"]] = Field(
         description="Prompt cache retention: 'default', 'extended' or '24h'.",
         default=None,
     )
     anon_user_id: Optional[AnonUserId] = Field(
         description=ANON_USER_ID_DESCRIPTION,
+        default=None,
+    )
+    fallbacks: Optional[List[Annotated[str, Field(min_length=1)]]] = Field(
+        description=(
+            "Up to 10 model IDs to try if an Anthropic model refuses the request; "
+            "forwarded on direct Anthropic routes only. On the CLI, pass a JSON "
+            """array: '["claude-opus-4-8"]'."""
+        ),
+        default=None,
+        max_length=10,
+    )
+    image_detail: Optional[ImageDetailWithOriginalEnum] = Field(
+        description=(
+            "Detail level for image attachments: 'auto', 'low', 'high' or 'original'. "
+            "Venice sends 'original' to OpenAI models and treats it as 'high' elsewhere."
+        ),
         default=None,
     )
 
@@ -158,6 +195,44 @@ class _ChatOptions(Chat.Options):
     @classmethod
     def _parse_extra_body(cls, value: Any) -> Any:
         return parse_json_object(value, "extra_body")
+
+    @field_validator("reasoning", mode="before")
+    @classmethod
+    def _parse_reasoning(cls, value: Any) -> Any:
+        return parse_json_object(value, "reasoning")
+
+    @field_validator("fallbacks", mode="before")
+    @classmethod
+    def _parse_fallbacks(cls, value: Any) -> Any:
+        """Accept a JSON array, of model IDs or of the API's {"model": ID} objects."""
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                raise ValueError("fallbacks must be a JSON array of model IDs") from None
+        if isinstance(value, list):
+            return [
+                item["model"] if isinstance(item, dict) and list(item) == ["model"] else item
+                for item in value
+            ]
+        return value
+
+    @field_validator("fallbacks")
+    @classmethod
+    def _bare_fallback_ids(cls, value: Optional[List[str]]) -> Optional[List[str]]:
+        # llm names Venice models venice/<id>; the API takes the bare ID.
+        return [normalize_model_id(model) for model in value] if value is not None else None
+
+    @model_validator(mode="after")
+    def _check_reasoning_effort(self) -> Self:
+        """Apply the model's reasoning_effort choices to reasoning.effort too."""
+        effort = self.reasoning.effort if self.reasoning else None
+        if effort is not None:
+            try:
+                type(self).model_validate({"reasoning_effort": effort})
+            except ValidationError as exc:
+                raise ValueError(f"reasoning.effort: {exc.errors()[0]['msg']}") from None
+        return self
 
     @model_validator(mode="after")
     def _check_extra_body(self) -> Self:
@@ -377,6 +452,15 @@ def _make_json_schema_strict(schema: Dict, path: str = "$") -> Dict:
     return schema
 
 
+def _wire_value(name: str, value: Any) -> Any:
+    """The request-body form of an option value."""
+    if name == "fallbacks":
+        return [{"model": model} for model in value]
+    if isinstance(value, BaseModel):
+        return value.model_dump(exclude_none=True)
+    return value
+
+
 def _build_venice_kwargs(
     model_id: str, supports_web_search: bool, supports_x_search: bool, kwargs: Dict
 ) -> Dict:
@@ -394,7 +478,7 @@ def _build_venice_kwargs(
 
     for param in NON_OPENAI_COMPATIBLE_PARAMS:
         if param in kwargs:
-            non_openai_compatible_params[param] = kwargs.pop(param)
+            non_openai_compatible_params[param] = _wire_value(param, kwargs.pop(param))
 
     venice_parameters = {}
     for key in VENICE_PARAMETERS:
@@ -586,6 +670,11 @@ class VeniceChat(CatalogOptionsMixin, Chat):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        # llm's reasoning, verbosity, image_detail_original and service_tier flags
+        # make _Shared.__init__ assign its OpenAI Options class to the instance,
+        # hiding the Venice options, which declare their own reasoning, verbosity
+        # and image_detail.
+        vars(self).pop("Options", None)
         # The llm model ID carries the plugin prefix; the API needs the bare ID.
         initialize_model(self, self.model_id, self.model_name, model_spec)
         # Without a base URL the OpenAI SDK would send the Venice key to OpenAI.
@@ -663,6 +752,11 @@ class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        # llm's reasoning, verbosity, image_detail_original and service_tier flags
+        # make _Shared.__init__ assign its OpenAI Options class to the instance,
+        # hiding the Venice options, which declare their own reasoning, verbosity
+        # and image_detail.
+        vars(self).pop("Options", None)
         # The llm model ID carries the plugin prefix; the API needs the bare ID.
         initialize_model(self, self.model_id, self.model_name, model_spec)
         # Without a base URL the OpenAI SDK would send the Venice key to OpenAI.
