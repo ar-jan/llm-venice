@@ -193,6 +193,38 @@ def test_cli_speech_api_error_is_clean(
     assert not (tmp_path / "hello.mp3.part").exists()
 
 
+def test_cli_image_content_policy_refusal_names_alternatives(
+    cli_runner, httpx2_mock, mock_venice_api_key, catalog, tmp_path
+):
+    """The error line is unchanged; hints follow, naming the model as llm knows it."""
+    httpx2_mock.add_response(
+        method="POST",
+        url=ENDPOINT_IMAGE_GENERATE,
+        status_code=422,
+        json={
+            "error": "Prompt rejected by the provider's content policy",
+            "suggested_prompt": "A watercolor painting of a lighthouse",
+            "recommended_model": "chroma",
+            "retryable": True,
+        },
+    )
+
+    result = cli_runner.invoke(
+        cli,
+        ["-m", "venice/img-model", "-o", "output_dir", str(tmp_path), "A cat", "--no-log"],
+    )
+
+    assert result.exit_code == 1
+    assert result.stderr.splitlines() == [
+        "Error: Generating image failed: Venice API returned 422 Unprocessable Content"
+        " - Prompt rejected by the provider's content policy",
+        "Suggested prompt: A watercolor painting of a lighthouse",
+        "Recommended model: venice/chroma",
+        "Retrying may succeed.",
+    ]
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_cli_image_extra_body_json_reaches_payload(
     cli_runner, httpx2_mock, mock_venice_api_key, catalog, tmp_path
 ):

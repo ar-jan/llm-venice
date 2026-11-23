@@ -165,6 +165,7 @@ The `-o stdout true` option on `llm -m venice/tts-...` was removed in 0.10:
 - `-o enhance_prompt true` has Venice rewrite the prompt with more visual detail before generating, at extra cost and up to about 30 seconds of delay. The rewritten prompt is saved as `enhanced_prompt` in the response JSON (see `llm logs --json`). `-o disable_prompt_optimization_thinking true` skips the prompt-optimization thinking step on models that have one.
 - `-o anon_user_id ID` identifies your end user to upstream providers, on image and chat models. It takes 1 to 128 printable ASCII characters, without `||`.
 - When Venice reports that an image model is deprecated or scheduled for deprecation, a warning is printed to stderr once per model, naming the replacement model when there is one.
+- When Venice refuses a prompt under a content policy, the error keeps its usual first line and exit code, followed by Venice's suggested prompt, its recommended model (as `venice/<id>`), and whether retrying may succeed, when Venice sends them. Other 422 errors, such as an oversized style reference image, are reported as before.
 
 ### Image upscaling (`llm venice upscale`)
 
@@ -177,6 +178,7 @@ llm venice upscale IMAGE_PATH [--scale FLOAT] [--creativity FLOAT]
 - Existing files are not overwritten unless `--overwrite` is given; a timestamped filename is used instead.
 - `--scale` accepts `2` to `4` (default `2`).
 - `--creativity` accepts `0` to `0.02` (API default `0.01`); higher values add more detail and texture.
+- Images refused by content moderation fail with the usual error line, followed by a suggested prompt if Venice sends one.
 - Passing a filename to `-o/--output-path` uses that exact name even if its extension differs from the returned image format. Passing a directory saves the default filename inside it.
 
 ## Characters and API keys

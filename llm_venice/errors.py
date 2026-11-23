@@ -69,7 +69,8 @@ class ContentViolationError(VeniceAPIError):
     carry policy fields. Other 422s, such as an oversized style reference image,
     remain plain VeniceAPIError. ``suggested_prompt`` and ``recommended_model`` are
     optional alternatives. ``retryable`` says whether the same request may succeed
-    on retry, and is None when Venice did not say.
+    on retry, and is None when Venice did not say. The message keeps VeniceAPIError's
+    first line and adds one line per hint.
     """
 
     def __init__(
@@ -96,6 +97,26 @@ class ContentViolationError(VeniceAPIError):
             detail=detail,
             headers=headers,
         )
+        self._summary = str(self)
+        self.args = (self.describe(),)
+
+    def describe(self, *, model_prefix: str = "") -> str:
+        """The message, naming the recommended model with ``model_prefix`` before its ID.
+
+        The llm adapters pass ``"venice/"``, since llm knows Venice models by that name.
+        """
+        lines = [self._summary]
+        if self.suggested_prompt:
+            lines.append(f"Suggested prompt: {self.suggested_prompt}")
+        if self.recommended_model:
+            lines.append(f"Recommended model: {model_prefix}{self.recommended_model}")
+        if self.retryable is not None:
+            lines.append(
+                "Retrying may succeed."
+                if self.retryable
+                else "Retrying the same request will not succeed."
+            )
+        return "\n".join(lines)
 
 
 class AuthenticationError(VeniceAPIError):

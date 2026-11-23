@@ -189,6 +189,11 @@ def test_content_policy_refusals_raise_content_violation_error(is_async, httpx2_
     assert caught.value.suggested_prompt == refusal["suggested_prompt"]
     assert caught.value.recommended_model == "chroma"
     assert caught.value.retryable is True
+    assert str(caught.value).splitlines()[1:] == [
+        "Suggested prompt: A watercolor painting of a lighthouse",
+        "Recommended model: chroma",
+        "Retrying may succeed.",
+    ]
 
     oversized = {"error": "Style reference image exceeds the pixel limit"}
     httpx2_mock.add_response(url=generate, status_code=422, json=oversized)

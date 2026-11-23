@@ -87,6 +87,38 @@ def test_upscale_network_error_cli(cli_runner, httpx2_mock, temp_image_file, moc
     assert "Traceback" not in output
 
 
+@pytest.mark.parametrize(
+    "body, hints",
+    [
+        ({"error": "Image refused by content moderation"}, []),
+        (
+            {"error": "Image refused by content moderation", "suggested_prompt": "A lighthouse"},
+            ["Suggested prompt: A lighthouse"],
+        ),
+    ],
+)
+def test_upscale_cli_reports_moderation_refusal(
+    body, hints, cli_runner, httpx2_mock, temp_image_file, mock_venice_api_key
+):
+    """A refusal keeps the error line and exit code, adding any hints after it."""
+    httpx2_mock.add_response(
+        method="POST",
+        url="https://api.venice.ai/api/v1/image/upscale",
+        status_code=422,
+        json=body,
+    )
+
+    result = cli_runner.invoke(cli, ["venice", "upscale", str(temp_image_file)])
+
+    assert result.exit_code == 1
+    assert result.stderr.splitlines() == [
+        "Error: Upscaling image failed: Venice API returned 422 Unprocessable Content"
+        " - Image refused by content moderation",
+        *hints,
+    ]
+    assert not list(temp_image_file.parent.glob("*_upscaled*"))
+
+
 def test_upscale_command_default_scale_sent(
     mocked_responses, temp_image_file, mock_venice_api_key, cli_runner
 ):

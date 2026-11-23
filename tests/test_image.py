@@ -9,7 +9,7 @@ import llm
 from pydantic import ValidationError
 from click.testing import CliRunner
 
-from llm_venice import AsyncVeniceImage, VeniceImage
+from llm_venice import AsyncVeniceImage, ContentViolationError, VeniceAPIError, VeniceImage
 from llm_venice.constants import ENDPOINT_IMAGE_GENERATE
 from llm_venice.models import _common
 from llm_venice._notices import VeniceNotice
@@ -868,6 +868,57 @@ def test_http_error_raises_model_error(mock_venice_api_key, httpx2_mock):
         # Should raise ModelError with API error message
         with pytest.raises(llm.ModelError, match="429.*Rate limit exceeded"):
             list(model.execute(prompt, False, response, None))
+
+
+@pytest.mark.parametrize("model_cls", [VeniceImage, AsyncVeniceImage])
+def test_content_policy_refusal_names_alternatives_in_model_error(
+    model_cls, mock_venice_api_key, httpx2_mock
+):
+    model = model_cls("test-model")
+    prompt = llm.Prompt("Test prompt", model)
+    prompt.options = model.Options()
+    add_image_response(
+        httpx2_mock,
+        status_code=422,
+        json_data={
+            "error": "Prompt rejected by the provider's content policy",
+            "suggested_prompt": "A watercolor painting of a lighthouse",
+            "recommended_model": "chroma",
+            "retryable": False,
+        },
+    )
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        with pytest.raises(llm.ModelError) as caught:
+            run_image_model(model, prompt, MagicMock())
+
+    assert str(caught.value) == (
+        "Generating image failed: Venice API returned 422 Unprocessable Content"
+        " - Prompt rejected by the provider's content policy\n"
+        "Suggested prompt: A watercolor painting of a lighthouse\n"
+        "Recommended model: venice/chroma\n"
+        "Retrying the same request will not succeed."
+    )
+    assert isinstance(caught.value.__cause__, ContentViolationError)
+
+
+def test_non_policy_422_model_error_keeps_plain_message(mock_venice_api_key, httpx2_mock):
+    model = VeniceImage("test-model")
+    prompt = llm.Prompt("Test prompt", model)
+    prompt.options = model.Options()
+    add_image_response(
+        httpx2_mock,
+        status_code=422,
+        json_data={"error": "Style reference image exceeds the pixel limit"},
+    )
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        with pytest.raises(llm.ModelError) as caught:
+            run_image_model(model, prompt, MagicMock())
+
+    assert str(caught.value) == (
+        "Generating image failed: Venice API returned 422 Unprocessable Content"
+        " - Style reference image exceeds the pixel limit"
+    )
+    assert type(caught.value.__cause__) is VeniceAPIError
 
 
 def test_invalid_base64_data_raises_model_error(mock_venice_api_key, httpx2_mock):

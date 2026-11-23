@@ -6,7 +6,7 @@ from collections.abc import Generator
 import llm
 from llm.parts import TextPart
 from pydantic import ValidationError
-from llm_venice.errors import VeniceError
+from llm_venice.errors import ContentViolationError, VeniceError
 from llm_venice.results import ModelDeprecation
 from llm_venice._notices import VeniceNotice, render_notice
 
@@ -90,5 +90,8 @@ def model_error_boundary() -> Generator[None, None, None]:
         yield
     except llm.NeedsKeyException:
         raise
+    except ContentViolationError as exc:
+        # Name the recommended model as llm users select it.
+        raise llm.ModelError(exc.describe(model_prefix="venice/")) from exc
     except (VeniceError, ValidationError, ValueError, OSError) as exc:
         raise llm.ModelError(str(exc)) from exc

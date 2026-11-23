@@ -242,6 +242,38 @@ def test_generation_policy_refusals_match_dated_fixture(body, expected):
     assert (error.suggested_prompt, error.recommended_model, error.retryable) == expected
 
 
+def test_content_violation_message_adds_hint_lines_after_the_api_error():
+    summary = "Generating image failed: Venice API returned 422 Unprocessable Content - Refused"
+    error = ContentViolationError(
+        "Generating image",
+        422,
+        "Unprocessable Content",
+        detail="Refused",
+        suggested_prompt="A watercolor painting of a lighthouse",
+        recommended_model="chroma",
+        retryable=True,
+    )
+    assert str(error) == (
+        f"{summary}\n"
+        "Suggested prompt: A watercolor painting of a lighthouse\n"
+        "Recommended model: chroma\n"
+        "Retrying may succeed."
+    )
+    assert error.describe(model_prefix="venice/").splitlines()[2] == (
+        "Recommended model: venice/chroma"
+    )
+    refused = ContentViolationError(
+        "Generating image", 422, "Unprocessable Content", detail="Refused", retryable=False
+    )
+    assert str(refused) == f"{summary}\nRetrying the same request will not succeed."
+    # Without hints the message is exactly VeniceAPIError's.
+    bare = ContentViolationError("Generating image", 422, "Unprocessable Content", detail="Refused")
+    assert str(bare) == bare.describe(model_prefix="venice/") == summary
+    assert str(bare) == str(
+        VeniceAPIError("Generating image", 422, "Unprocessable Content", detail="Refused")
+    )
+
+
 def test_other_422s_and_statuses_remain_plain_api_errors():
     # An oversized style reference is a 422 without retryable or suggestions.
     body = {"error": "Style reference image exceeds the pixel limit"}
