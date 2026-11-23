@@ -64,6 +64,7 @@ VeniceClient(
 `ImageParams` and `SpeechParams` omit unset fields so Venice applies its own API defaults:
 
 - `ImageParams` accepts `image_format=` (dictionary validation also accepts the wire alias `format`).
+- `ImageParams.width` and `height` accept 1 to 4096. Models with aspect ratios map them to the nearest aspect ratio and resolution tier; models without aspect ratios allow at most 1280 per side, which Venice checks.
 - `extra_body` carries arbitrary future JSON fields (including explicit `None`/nulls), but cannot override named parameters, positional inputs, output options, or streaming/binary controls.
 - **Plugin adapters vs. direct client**: `llm`'s registered model adapters (`llm.get_model("venice/...")`) validate against their cached catalog snapshot and keep plugin defaults (PNG, `safe_mode=False`, `hide_watermark=True`; MP3 speech when supported). Inspect a registered model's `.Options` for its published limits and choices; the base class `.Options` holds the endpoint schema. Unknown catalog metadata adds no limits.
 

@@ -209,6 +209,39 @@ def test_venice_image_omits_unset_dimensions_from_payload(
     assert "height" not in payload
 
 
+@pytest.mark.parametrize("model_cls", [VeniceImage, AsyncVeniceImage])
+def test_venice_image_sends_large_dimensions_for_tier_mapping(
+    model_cls, mock_venice_api_key, tmp_path, httpx2_mock, request_json
+):
+    """Sizes above 1280 reach Venice, which maps them to 2K or 4K tiers."""
+    model = model_cls(
+        "test-model",
+        image_constraints={
+            "widthHeightDivisor": 1,
+            "aspectRatios": ["1:1", "16:9"],
+            "resolutions": ["1K", "2K", "4K"],
+        },
+    )
+    prompt = llm.Prompt("Test prompt", model)
+    prompt.options = model.Options(width=4096, height=2304, output_dir=tmp_path)
+
+    add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        result = model.execute(prompt, False, MagicMock(), None)
+        if model_cls is AsyncVeniceImage:
+
+            async def drain():
+                return [item async for item in result]
+
+            asyncio.run(drain())
+        else:
+            list(result)
+
+    payload = request_json()
+    assert (payload["width"], payload["height"]) == (4096, 2304)
+    assert "aspect_ratio" not in payload and "resolution" not in payload
+
+
 def test_venice_image_content_violation_handling(mock_venice_api_key, httpx2_mock):
     """Test that content violation responses are detected and reported."""
     # Create a VeniceImage model instance
@@ -840,17 +873,21 @@ def test_venice_image_options_defaults_and_validation():
     assert dumped["width"] is None
     assert dumped["height"] is None
 
-    # Test validation - height bounds
+    # Test validation - height bounds (exact-canvas models' 1280 cap is Venice's)
+    assert VeniceImage.Options(height=1281).height == 1281
+    assert VeniceImage.Options(height=4096).height == 4096
     with pytest.raises(ValidationError):
         VeniceImage.Options(height=0)  # Below minimum
     with pytest.raises(ValidationError):
-        VeniceImage.Options(height=1281)  # Above maximum
+        VeniceImage.Options(height=4097)  # Above maximum
 
     # Test validation - width bounds
+    assert VeniceImage.Options(width=1281).width == 1281
+    assert VeniceImage.Options(width=4096).width == 4096
     with pytest.raises(ValidationError):
         VeniceImage.Options(width=0)  # Below minimum
     with pytest.raises(ValidationError):
-        VeniceImage.Options(width=1281)  # Above maximum
+        VeniceImage.Options(width=4097)  # Above maximum
 
     # Test validation - steps bounds
     assert VeniceImage.Options(steps=6).steps == 6

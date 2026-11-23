@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Other changes and fixes
+
+- Image `width` and `height` accept up to 4096 pixels, as the API now does (previously
+  1280). Models that list aspect ratios use them to pick the nearest aspect ratio and a
+  resolution tier: a long edge above 1536 selects 2K and above 3072 selects 4K, where
+  offered. Models without aspect ratios render an exact canvas of at most 1280 per side,
+  which Venice checks rather than the plugin.
+
 ## 0.10.0 (2026-11-21)
 
 ### Breaking changes

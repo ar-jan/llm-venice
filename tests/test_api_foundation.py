@@ -109,6 +109,14 @@ def test_mutated_params_revalidated_at_request_boundary():
 def test_endpoint_limits_match_dated_fixture():
     fixture = dated_fixture()
     image = fixture["schemas"]["GenerateImageRequest"]["properties"]
+    for side in ("width", "height"):
+        bounds = image[side]
+        assert (bounds["minimum"], bounds["exclusiveMinimum"], bounds["maximum"]) == (0, True, 4096)
+        for value in (1, bounds["maximum"]):
+            assert getattr(ImageParams.model_validate({side: value}), side) == value
+        for value in (bounds["minimum"], bounds["maximum"] + 1):
+            with pytest.raises(ValidationError):
+                ImageParams.model_validate({side: value})
     assert "minimum" not in image["steps"]
     assert ImageParams(width=1, steps=200).width == 1
     assert set(image["quality"]["enum"]) == {"low", "medium", "high"}

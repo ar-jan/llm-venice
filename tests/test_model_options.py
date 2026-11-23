@@ -55,6 +55,34 @@ def test_image_constraints_in_schema_and_validation(cls):
 
 
 @pytest.mark.parametrize("cls", [VeniceImage, AsyncVeniceImage])
+def test_exact_canvas_dimensions_are_left_to_venice(cls):
+    """Without aspect ratios a model renders an exact canvas, capped at 1280 by Venice."""
+    exact = cls("m", image_constraints={"widthHeightDivisor": 16})
+    assert exact.Options(width=2048, height=4096).height == 4096
+    with pytest.raises(ValidationError):
+        exact.Options(width=2056)  # Not a multiple of 16
+    for side in ("width", "height"):
+        with pytest.raises(ValidationError):
+            exact.Options.model_validate({side: 4096 + 16})
+    schema = exact.Options.model_json_schema()["properties"]["width"]
+    assert "up to 4096" in schema["description"]
+    assert "Multiple of: 16." in schema["description"]
+
+
+@pytest.mark.parametrize(
+    "divisor, valid, invalid",
+    [(2048, 4096, 3072), (4096, 4096, 2048), (4097, 3001, None)],
+)
+def test_dimension_divisor_applies_up_to_the_largest_side(divisor, valid, invalid):
+    """A divisor above 4096 would reject every size, so it is ignored."""
+    opts = VeniceImage("m", image_constraints={"widthHeightDivisor": divisor}).Options
+    assert opts(width=valid).width == valid
+    if invalid is not None:
+        with pytest.raises(ValidationError):
+            opts(width=invalid)
+
+
+@pytest.mark.parametrize("cls", [VeniceImage, AsyncVeniceImage])
 def test_constrained_boolean_option_still_coerces_cli_strings(cls):
     """Restricting a bool option to False must not break string coercion."""
     opts = cls("m", image_constraints={"supportsTransparentBackground": False}).Options

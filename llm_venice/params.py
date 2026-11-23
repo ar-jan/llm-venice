@@ -45,13 +45,23 @@ class _VeniceParams(BaseModel):
         return self
 
 
+# Models that list aspect ratios map width and height to the nearest aspect ratio
+# and resolution tier. Exact-canvas models allow at most 1280 per side; Venice
+# checks that, since the catalog implies an exact canvas only by omitting ratios.
+IMAGE_SIDE_MAX = 4096
+_SIDE = (
+    f"Pixels, up to {IMAGE_SIDE_MAX}. Models with aspect ratios use width and height to "
+    "pick the nearest aspect ratio and resolution tier; others allow at most 1280."
+)
+
+
 class ImageParams(_VeniceParams):
     """Image generation parameters, with API defaults rather than plugin defaults."""
 
     negative_prompt: str | None = Field(default=None, max_length=7500)
     style_preset: str | None = None
-    width: int | None = Field(default=None, gt=0, le=1280)
-    height: int | None = Field(default=None, gt=0, le=1280)
+    width: int | None = Field(default=None, gt=0, le=IMAGE_SIDE_MAX, description=_SIDE)
+    height: int | None = Field(default=None, gt=0, le=IMAGE_SIDE_MAX, description=_SIDE)
     aspect_ratio: str | None = None
     resolution: str | None = None
     steps: int | None = None

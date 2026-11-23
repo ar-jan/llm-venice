@@ -161,6 +161,7 @@ The `-o stdout true` option on `llm -m venice/tts-...` was removed in 0.10:
 - Generated images are stored in `<llm user dir>/images/` by default; override with `-o output_dir`, `-o output_filename`, and `-o overwrite_files true`.
 - Request up to 4 variants with `-o variants 4`. Multiple returned images are saved with numbered suffixes (`image_1.png`, `image_2.png`, …).
 - Supporting models accept `-o aspect_ratio`, `-o resolution`, and `-o enable_web_search`. Inspect every model's published limits and choices with `llm models list --query <model> --options`.
+- `-o width` and `-o height` accept up to 4096 pixels. On models that list aspect ratios they pick the nearest aspect ratio and a resolution tier (a long edge above 1536 selects 2K, above 3072 selects 4K, where offered); an explicit `aspect_ratio` or `resolution` overrides only its own value. Models without aspect ratios render an exact canvas of at most 1280 per side, which Venice enforces.
 
 ### Image upscaling (`llm venice upscale`)
 
