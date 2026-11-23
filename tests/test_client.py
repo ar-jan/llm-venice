@@ -15,7 +15,9 @@ from pydantic import ValidationError
 from llm_venice.client import AsyncVeniceClient, VeniceClient
 from llm_venice.errors import (
     AuthenticationError,
+    ContentViolationError,
     MissingKeyError,
+    VeniceAPIError,
     VeniceConnectionError,
     VeniceResponseError,
 )
@@ -168,6 +170,44 @@ def test_normalized_failures(is_async, httpx2_mock):
     httpx2_mock.add_response(content=b"invalid json")
     with pytest.raises(VeniceResponseError):
         invoke(is_async, "list_models")
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_content_policy_refusals_raise_content_violation_error(is_async, httpx2_mock):
+    generate = "https://api.venice.ai/api/v1/image/generate"
+    upscale = "https://api.venice.ai/api/v1/image/upscale"
+    refusal = {
+        "error": "Prompt rejected by the provider's content policy",
+        "suggested_prompt": "A watercolor painting of a lighthouse",
+        "recommended_model": "chroma",
+        "retryable": True,
+    }
+    httpx2_mock.add_response(url=generate, status_code=422, json=refusal)
+    with pytest.raises(ContentViolationError) as caught:
+        invoke(is_async, "generate_image", "m", "prompt")
+    assert caught.value.action == "Generating image"
+    assert caught.value.suggested_prompt == refusal["suggested_prompt"]
+    assert caught.value.recommended_model == "chroma"
+    assert caught.value.retryable is True
+    assert str(caught.value).splitlines()[1:] == [
+        "Suggested prompt: A watercolor painting of a lighthouse",
+        "Recommended model: chroma",
+        "Retrying may succeed.",
+    ]
+
+    oversized = {"error": "Style reference image exceeds the pixel limit"}
+    httpx2_mock.add_response(url=generate, status_code=422, json=oversized)
+    with pytest.raises(VeniceAPIError) as caught:
+        invoke(is_async, "generate_image", "m", "prompt")
+    assert type(caught.value) is VeniceAPIError
+
+    # The same bare 422 from upscaling is a moderation refusal.
+    httpx2_mock.add_response(url=upscale, status_code=422, json={"error": "Image refused"})
+    with pytest.raises(ContentViolationError) as caught:
+        invoke(is_async, "upscale_image", PNG)
+    assert caught.value.action == "Upscaling image"
+    assert caught.value.detail == "Image refused"
+    assert caught.value.suggested_prompt is None
 
 
 @pytest.mark.parametrize("is_async", [False, True])

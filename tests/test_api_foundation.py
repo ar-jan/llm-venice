@@ -26,6 +26,7 @@ from llm_venice._endpoints import (
 from llm_venice._http import check_status
 from llm_venice.errors import (
     AuthenticationError,
+    ContentViolationError,
     RateLimitError,
     VeniceAPIError,
     VeniceError,
@@ -47,6 +48,13 @@ def dated_fixture():
 
 def response(**kwargs):
     return httpx2.Response(200, request=httpx2.Request("GET", "https://example.com"), **kwargs)
+
+
+def error_response(status_code, body):
+    request = httpx2.Request("POST", "https://example.com")
+    if isinstance(body, str):
+        return httpx2.Response(status_code, text=body, request=request)
+    return httpx2.Response(status_code, json=body, request=request)
 
 
 def test_defaults_aliases_and_extra_body_survive_copy_without_mutation():
@@ -175,26 +183,117 @@ def test_api_key_types_match_dated_fixture(resource_name, kind):
     assert set(kind.__annotations__) == set(item["properties"])
 
 
-def test_upscale_moderation_refusal_matches_dated_fixture():
-    """A 422 refusal is a VeniceAPIError carrying ContentViolationError's error text."""
+def test_upscale_moderation_refusals_match_dated_fixture():
+    """Every upscale 422 is a refusal, though most carry only the error text."""
     fixture = dated_fixture()
     refusal = fixture["resources"]["POST /image/upscale"]["errors"]["422"]
     ref = refusal["content"]["application/json"]["schema"]["$ref"]
     assert ref == "#/components/schemas/ContentViolationError"
     schema = fixture["schemas"]["ContentViolationError"]
     assert schema["required"] == ["error"]
-    # suggested_prompt is not extracted yet; a new field here needs a decision too.
+    # A new field here needs a decision on how to expose it.
     assert set(schema["properties"]) == {"error", "suggested_prompt"}
-    body = {"error": "Image refused by content moderation", "suggested_prompt": "A lighthouse"}
-    refused = httpx2.Response(
-        422, json=body, request=httpx2.Request("POST", "https://example.com/image/upscale")
+    error = "Image refused by content moderation"
+    for body in ({"error": error}, {"error": error, "suggested_prompt": "A lighthouse"}, error):
+        with pytest.raises(ContentViolationError) as caught:
+            check_status(error_response(422, body), "Upscaling image", policy_422=True)
+        assert isinstance(caught.value, VeniceAPIError)
+        assert caught.value.status_code == 422
+        assert caught.value.detail == error
+        expected = body.get("suggested_prompt") if isinstance(body, dict) else None
+        assert caught.value.suggested_prompt == expected
+        assert caught.value.recommended_model is None and caught.value.retryable is None
+
+
+@pytest.mark.parametrize(
+    "body, expected",
+    [
+        (
+            {
+                "error": "Prompt rejected by the provider's content policy",
+                "suggested_prompt": "A watercolor painting of a lighthouse",
+                "recommended_model": "chroma",
+                "retryable": True,
+            },
+            ("A watercolor painting of a lighthouse", "chroma", True),
+        ),
+        ({"error": "Prompt rejected", "retryable": False}, (None, None, False)),
+        ({"error": "Prompt rejected", "recommended_model": "chroma"}, (None, "chroma", None)),
+    ],
+)
+def test_generation_policy_refusals_match_dated_fixture(body, expected):
+    fixture = dated_fixture()
+    refusal = fixture["resources"]["POST /image/generate"]["errors"]["422"]
+    ref = refusal["content"]["application/json"]["schema"]["$ref"]
+    assert ref == "#/components/schemas/ImageContentViolationError"
+    schema = fixture["schemas"]["ImageContentViolationError"]
+    assert schema["required"] == ["error"]
+    assert set(schema["properties"]) == {
+        "error",
+        "suggested_prompt",
+        "recommended_model",
+        "retryable",
+    }
+    assert schema["properties"]["retryable"]["type"] == "boolean"
+    with pytest.raises(ContentViolationError) as caught:
+        check_status(error_response(422, body), "Generating image")
+    error = caught.value
+    assert (error.status_code, error.detail) == (422, body["error"])
+    assert (error.suggested_prompt, error.recommended_model, error.retryable) == expected
+
+
+def test_content_violation_message_adds_hint_lines_after_the_api_error():
+    summary = "Generating image failed: Venice API returned 422 Unprocessable Content - Refused"
+    error = ContentViolationError(
+        "Generating image",
+        422,
+        "Unprocessable Content",
+        detail="Refused",
+        suggested_prompt="A watercolor painting of a lighthouse",
+        recommended_model="chroma",
+        retryable=True,
     )
+    assert str(error) == (
+        f"{summary}\n"
+        "Suggested prompt: A watercolor painting of a lighthouse\n"
+        "Recommended model: chroma\n"
+        "Retrying may succeed."
+    )
+    assert error.describe(model_prefix="venice/").splitlines()[2] == (
+        "Recommended model: venice/chroma"
+    )
+    refused = ContentViolationError(
+        "Generating image", 422, "Unprocessable Content", detail="Refused", retryable=False
+    )
+    assert str(refused) == f"{summary}\nRetrying the same request will not succeed."
+    # Without hints the message is exactly VeniceAPIError's.
+    bare = ContentViolationError("Generating image", 422, "Unprocessable Content", detail="Refused")
+    assert str(bare) == bare.describe(model_prefix="venice/") == summary
+    assert str(bare) == str(
+        VeniceAPIError("Generating image", 422, "Unprocessable Content", detail="Refused")
+    )
+
+
+def test_other_422s_and_statuses_remain_plain_api_errors():
+    # An oversized style reference is a 422 without retryable or suggestions.
+    body = {"error": "Style reference image exceeds the pixel limit"}
     with pytest.raises(VeniceAPIError) as caught:
-        check_status(refused, "Upscaling image")
+        check_status(error_response(422, body), "Generating image")
     assert type(caught.value) is VeniceAPIError
-    assert caught.value.status_code == 422
     assert caught.value.detail == body["error"]
-    assert str(caught.value).endswith(" - " + body["error"])
+    # Policy fields count only on a 422.
+    with pytest.raises(VeniceAPIError) as caught:
+        check_status(error_response(400, {"error": "Bad", "retryable": True}), "Generating image")
+    assert type(caught.value) is VeniceAPIError
+
+
+def test_drifted_policy_fields_do_not_break_error_mapping():
+    body = {"error": "Refused", "suggested_prompt": 3, "recommended_model": "", "retryable": "yes"}
+    with pytest.raises(ContentViolationError) as caught:
+        check_status(error_response(422, body), "Generating image")
+    error = caught.value
+    assert (error.suggested_prompt, error.recommended_model, error.retryable) == (None, None, None)
+    assert error.detail == "Refused"
 
 
 def test_key_inputs_and_utc_serialization():

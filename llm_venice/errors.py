@@ -62,6 +62,63 @@ class VeniceAPIError(VeniceError):
         super().__init__(message)
 
 
+class ContentViolationError(VeniceAPIError):
+    """Venice or the model provider refused the request under a content policy (422).
+
+    Raised for every 422 from image upscaling, and for image generation 422s that
+    carry policy fields. Other 422s, such as an oversized style reference image,
+    remain plain VeniceAPIError. ``suggested_prompt`` and ``recommended_model`` are
+    optional alternatives. ``retryable`` says whether the same request may succeed
+    on retry, and is None when Venice did not say. The message keeps VeniceAPIError's
+    first line and adds one line per hint.
+    """
+
+    def __init__(
+        self,
+        action: str,
+        status_code: int,
+        reason: str | None,
+        *,
+        error_code: str | None = None,
+        detail: str | None = None,
+        headers: Mapping[str, str] | None = None,
+        suggested_prompt: str | None = None,
+        recommended_model: str | None = None,
+        retryable: bool | None = None,
+    ) -> None:
+        self.suggested_prompt = suggested_prompt
+        self.recommended_model = recommended_model
+        self.retryable = retryable
+        super().__init__(
+            action,
+            status_code,
+            reason,
+            error_code=error_code,
+            detail=detail,
+            headers=headers,
+        )
+        self._summary = str(self)
+        self.args = (self.describe(),)
+
+    def describe(self, *, model_prefix: str = "") -> str:
+        """The message, naming the recommended model with ``model_prefix`` before its ID.
+
+        The llm adapters pass ``"venice/"``, since llm knows Venice models by that name.
+        """
+        lines = [self._summary]
+        if self.suggested_prompt:
+            lines.append(f"Suggested prompt: {self.suggested_prompt}")
+        if self.recommended_model:
+            lines.append(f"Recommended model: {model_prefix}{self.recommended_model}")
+        if self.retryable is not None:
+            lines.append(
+                "Retrying may succeed."
+                if self.retryable
+                else "Retrying the same request will not succeed."
+            )
+        return "\n".join(lines)
+
+
 class AuthenticationError(VeniceAPIError):
     """Venice rejected authentication or authorization (401 or 403)."""
 
