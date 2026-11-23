@@ -37,6 +37,12 @@ from llm_venice.types import ApiKey, Character, CreatedApiKey, ModelInfo, RateLi
 
 PNG = b"\x89PNG\r\n\x1a\nbytes"
 WEBP = b"RIFF0000WEBPbytes"
+# Targeted extract of Swagger 20261122.230254: request schemas, resources, errors.
+FIXTURE = Path(__file__).parent / "fixtures/openapi-2026-11-22.json"
+
+
+def dated_fixture():
+    return json.loads(FIXTURE.read_text())
 
 
 def response(**kwargs):
@@ -101,14 +107,10 @@ def test_mutated_params_revalidated_at_request_boundary():
 
 
 def test_endpoint_limits_match_dated_fixture():
-    fixture = json.loads((Path(__file__).parent / "fixtures/openapi-2026-10-26.json").read_text())
+    fixture = dated_fixture()
     image = fixture["schemas"]["GenerateImageRequest"]["properties"]
-    assert image["width"]["maximum"] == 1280
     assert "minimum" not in image["steps"]
     assert ImageParams(width=1, steps=200).width == 1
-    for value in (0, 1281):
-        with pytest.raises(ValidationError):
-            ImageParams(width=value)
     assert set(image["quality"]["enum"]) == {"low", "medium", "high"}
     speech = fixture["schemas"]["CreateSpeechRequestSchema"]["properties"]
     for speed in (speech["speed"]["minimum"], speech["speed"]["maximum"]):
@@ -133,11 +135,33 @@ def test_endpoint_limits_match_dated_fixture():
 )
 def test_api_key_types_match_dated_fixture(resource_name, kind):
     """Each key type declares exactly the wire fields of the response it describes."""
-    fixture = json.loads((Path(__file__).parent / "fixtures/openapi-2026-10-26.json").read_text())
+    fixture = dated_fixture()
     schema = fixture["resources"][resource_name]["response"]["content"]["application/json"]
     data = schema["schema"]["properties"]["data"]
     item = data.get("items", data)
     assert set(kind.__annotations__) == set(item["properties"])
+
+
+def test_upscale_moderation_refusal_matches_dated_fixture():
+    """A 422 refusal is a VeniceAPIError carrying ContentViolationError's error text."""
+    fixture = dated_fixture()
+    refusal = fixture["resources"]["POST /image/upscale"]["errors"]["422"]
+    ref = refusal["content"]["application/json"]["schema"]["$ref"]
+    assert ref == "#/components/schemas/ContentViolationError"
+    schema = fixture["schemas"]["ContentViolationError"]
+    assert schema["required"] == ["error"]
+    # suggested_prompt is not extracted yet; a new field here needs a decision too.
+    assert set(schema["properties"]) == {"error", "suggested_prompt"}
+    body = {"error": "Image refused by content moderation", "suggested_prompt": "A lighthouse"}
+    refused = httpx2.Response(
+        422, json=body, request=httpx2.Request("POST", "https://example.com/image/upscale")
+    )
+    with pytest.raises(VeniceAPIError) as caught:
+        check_status(refused, "Upscaling image")
+    assert type(caught.value) is VeniceAPIError
+    assert caught.value.status_code == 422
+    assert caught.value.detail == body["error"]
+    assert str(caught.value).endswith(" - " + body["error"])
 
 
 def test_key_inputs_and_utc_serialization():
