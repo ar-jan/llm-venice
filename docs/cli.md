@@ -216,6 +216,15 @@ llm venice characters --tag philosophy --search "#zen" --sort-by highlyRated
 - Sorting: `--sort-by` accepts `featured`, `highestRating`, `highlyRated`, `highlyRatedAndRecent`, `imports`, `mostRecent`, or `ratingCount`, and `--sort-order` accepts `asc` or `desc` (Venice's default).
 - The saved file holds the characters matching the filters, replacing any earlier list.
 
+Show one character, or a page of its public reviews, as JSON on stdout:
+
+```bash
+llm venice characters get alan-watts
+llm venice characters reviews alan-watts --page 2 --page-size 50
+```
+
+`reviews` returns the reviews with paging totals (`pagination.total`, `pagination.totalPages`) and the rating summary; pages start at 1, with 20 reviews per page by default and at most 100. The list filters apply only to `llm venice characters` itself, so combining them with `get` or `reviews` is an error.
+
 Use a character's `slug` in chat prompts with `-o character_slug <slug>`.
 
 ### API keys and rate limits (`llm venice api-keys`)

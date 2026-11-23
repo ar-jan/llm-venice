@@ -150,6 +150,45 @@ class Character(TypedDict, total=False):
     tags: list[str]
 
 
+class CharacterReview(TypedDict, total=False):
+    """A public character review; the message, locale and avatar may be null."""
+
+    id: Required[str]
+    characterId: str
+    rating: int
+    message: str | None
+    locale: str | None
+    username: str
+    userAvatarUrl: str | None
+    isOwner: bool
+    createdAt: str
+
+
+class CharacterReviewPagination(TypedDict, total=False):
+    """The requested page and the totals across all of a character's reviews."""
+
+    page: int
+    pageSize: int
+    total: int
+    totalPages: int
+
+
+class CharacterReviewSummary(TypedDict, total=False):
+    """A character's average rating and review count."""
+
+    averageRating: float
+    totalReviews: int
+
+
+class CharacterReviewPage(TypedDict, total=False):
+    """One page of reviews in ``data``, with paging totals and the rating summary."""
+
+    data: Required[list[CharacterReview]]
+    object: str
+    pagination: CharacterReviewPagination
+    summary: CharacterReviewSummary
+
+
 class ApiTier(TypedDict, total=False):
     """Optional account tier information."""
 

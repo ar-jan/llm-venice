@@ -228,6 +228,29 @@ class CharacterFilters(BaseModel):
         return query
 
 
+class CharacterSlugInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    slug: str = Field(min_length=1)
+
+    def path(self) -> str:
+        # Quote the slug so it stays one path segment and cannot reach another endpoint.
+        return f"characters/{quote(self.slug, safe='')}"
+
+
+class CharacterReviewsInput(CharacterSlugInput):
+    # Venice numbers pages from 1, with 20 reviews per page by default.
+    page: int | None = Field(default=None, ge=1, strict=True)
+    page_size: int | None = Field(default=None, ge=1, le=100, strict=True)
+
+    def query(self) -> dict[str, str]:
+        query: dict[str, str] = {}
+        if self.page is not None:
+            query["page"] = str(self.page)
+        if self.page_size is not None:
+            query["pageSize"] = str(self.page_size)
+        return query
+
+
 def image_body(model: str, prompt: str, params: ImageParams | None) -> dict[str, Any]:
     inputs = _ImageInput(model=model, prompt=prompt)
     return {
@@ -525,6 +548,17 @@ def json_operation(name: str, inputs: dict[str, Any]) -> tuple[str, str, str, di
             "Listing characters",
             {"params": CharacterFilters.model_validate(inputs).query()},
         )
+    if name == "character":
+        path = CharacterSlugInput.model_validate(inputs).path()
+        return "GET", path, "Retrieving character", {}
+    if name == "character_reviews":
+        reviews = CharacterReviewsInput.model_validate(inputs)
+        return (
+            "GET",
+            f"{reviews.path()}/reviews",
+            "Listing character reviews",
+            {"params": reviews.query()},
+        )
     if name == "keys":
         return "GET", "api_keys", "Listing API keys", {}
     if name == "rate_limits":
@@ -571,6 +605,7 @@ def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[st
         ApiKey,
         AugmentSearchResult,
         Character,
+        CharacterReview,
         CreatedApiKey,
         RateLimitLogEntry,
         RateLimits,
@@ -594,6 +629,11 @@ def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[st
     elif name == "characters":
         for item in list_data(obj, action):
             resource(item, Character, action)
+    elif name == "character":
+        resource(obj.get("data"), Character, action)
+    elif name == "character_reviews":
+        for item in list_data(obj, action):
+            resource(item, CharacterReview, action)
     elif name == "keys":
         for item in list_data(obj, action):
             resource(item, ApiKey, action)

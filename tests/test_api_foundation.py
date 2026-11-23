@@ -18,6 +18,7 @@ from typing_extensions import assert_type
 from llm_venice import _files
 from llm_venice._endpoints import (
     CharacterFilters,
+    CharacterReviewsInput,
     KeyInput,
     KeyUpdateInput,
     UpscaleInput,
@@ -48,6 +49,10 @@ from llm_venice.types import (
     ApiKeyLimitPeriod,
     ApiKeyModelPrivacy,
     Character,
+    CharacterReview,
+    CharacterReviewPage,
+    CharacterReviewPagination,
+    CharacterReviewSummary,
     CharacterSortBy,
     CharacterSortOrder,
     CreatedApiKey,
@@ -349,11 +354,40 @@ def test_character_filters_match_dated_fixture():
     assert search["maxLength"] == parameters["search"]["maxLength"]
 
 
+def response_schema(resource_name):
+    resource = dated_fixture()["resources"][resource_name]
+    return resource["response"]["content"]["application/json"]["schema"]
+
+
 def test_character_type_matches_dated_fixture():
-    schema = dated_fixture()["resources"]["GET /characters"]["response"]["content"]
-    item = schema["application/json"]["schema"]["properties"]["data"]["items"]
-    assert set(Character.__annotations__) == set(item["properties"])
-    assert Character.__required_keys__ <= set(item["required"])
+    """The list and the detail share one character schema, so both use Character."""
+    listed = response_schema("GET /characters")["properties"]["data"]["items"]
+    detail = response_schema("GET /characters/{slug}")["properties"]["data"]
+    assert detail == listed
+    assert set(Character.__annotations__) == set(listed["properties"])
+    assert Character.__required_keys__ <= set(listed["required"])
+
+
+def test_character_review_types_match_dated_fixture():
+    page = response_schema("GET /characters/{slug}/reviews")
+    review = page["properties"]["data"]["items"]
+    assert set(CharacterReviewPage.__annotations__) == set(page["properties"])
+    assert CharacterReviewPage.__required_keys__ <= set(page["required"])
+    assert set(CharacterReview.__annotations__) == set(review["properties"])
+    assert CharacterReview.__required_keys__ <= set(review["required"])
+    for name, kind in (
+        ("pagination", CharacterReviewPagination),
+        ("summary", CharacterReviewSummary),
+    ):
+        assert set(kind.__annotations__) == set(page["properties"][name]["properties"])
+    resource = dated_fixture()["resources"]["GET /characters/{slug}/reviews"]
+    parameters = {parameter["name"]: parameter["schema"] for parameter in resource["parameters"]}
+    query = CharacterReviewsInput(
+        slug="s", page=1, page_size=parameters["pageSize"]["maximum"]
+    ).query()
+    assert set(query) | {"slug"} == set(parameters)
+    with pytest.raises(ValidationError):
+        CharacterReviewsInput(slug="s", page_size=parameters["pageSize"]["maximum"] + 1)
 
 
 def test_updated_key_is_an_api_key_without_usage():

@@ -1,8 +1,10 @@
-"""Characters command for Venice CLI."""
+"""Characters commands for Venice CLI."""
 
+import json
 from typing import Any, get_args
 
 import click
+from click.core import ParameterSource
 import llm
 
 from llm_venice._endpoints import CHARACTER_PAGE_LIMIT
@@ -59,10 +61,12 @@ def create_characters_command():
     Create the characters command.
 
     Returns:
-        Click command for listing characters
+        Click group that lists characters without a subcommand, as before
     """
 
-    @click.command(name="characters")
+    # A group whose list options stay on the group keeps every earlier
+    # `llm venice characters [OPTIONS]` invocation working unchanged.
+    @click.group(name="characters", invoke_without_command=True)
     @click.option(
         "--web-enabled",
         type=click.Choice(["true", "false"]),
@@ -82,10 +86,26 @@ def create_characters_command():
         type=click.Choice(get_args(CharacterSortOrder)),
         help="Sort direction (Venice's default: desc)",
     )
+    @click.pass_context
     def characters(
-        web_enabled, adult, pro, categories, tags, model_ids, search, sort_by, sort_order
+        ctx, web_enabled, adult, pro, categories, tags, model_ids, search, sort_by, sort_order
     ):
-        """List public characters, fetching every page."""
+        """List public characters, fetching every page, or show one character or its reviews.
+
+        Without a subcommand, every page of characters matching the options is saved to
+        venice_characters.json in the llm user directory.
+        """
+        if ctx.invoked_subcommand:
+            for param in ctx.command.params:
+                if (
+                    param.name
+                    and ctx.get_parameter_source(param.name) is not ParameterSource.DEFAULT
+                ):
+                    raise click.UsageError(
+                        f"{param.opts[0]} applies only to listing characters, "
+                        f"not to '{ctx.invoked_subcommand}'"
+                    )
+            return
 
         def flag(value):
             return None if value is None else value == "true"
@@ -114,5 +134,35 @@ def create_characters_command():
             message = f"{incomplete}; the saved list may be incomplete"
             emit_cli_notices([VeniceNotice("warning", message)])
         click.echo(f"{characters_count} characters saved to {path}", err=True)
+
+    @characters.command(name="get")
+    @click.argument("slug")
+    def get_character(slug):
+        """Show one character's details by its slug."""
+        try:
+            with VeniceClient() as client:
+                response = client._json_operation("character", slug=slug)
+        except (VeniceError, ValueError, OSError) as e:
+            handle_cli_error(e)
+        click.echo(json.dumps(response, indent=2))
+
+    @characters.command(name="reviews")
+    @click.argument("slug")
+    @click.option("--page", type=click.IntRange(min=1), help="Page number, from 1")
+    @click.option(
+        "--page-size",
+        type=click.IntRange(1, 100),
+        help="Reviews per page (Venice's default: 20)",
+    )
+    def character_reviews(slug, page, page_size):
+        """Show a page of a character's public reviews, with totals and rating summary."""
+        try:
+            with VeniceClient() as client:
+                response = client._json_operation(
+                    "character_reviews", slug=slug, page=page, page_size=page_size
+                )
+        except (VeniceError, ValueError, OSError) as e:
+            handle_cli_error(e)
+        click.echo(json.dumps(response, indent=2))
 
     return characters

@@ -4,6 +4,11 @@
 
 ### New features
 
+- `get_character()` and `list_character_reviews()` client methods, with
+  `llm venice characters get SLUG` and `llm venice characters reviews SLUG` commands,
+  for one character's details and a page of its public reviews with paging totals and
+  the rating summary. `llm venice characters` with its options still lists and saves
+  every character as before.
 - `list_characters()` and `llm venice characters` filter by Pro model use (`pro`,
   `--pro`), categories, tags and model IDs (repeatable `--category`, `--tag` and
   `--model-id`) and a search term (`search`, `--search`), and sort with `sort_by` /

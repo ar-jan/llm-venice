@@ -2131,6 +2131,406 @@
         }
       ]
     },
+    "GET /characters/{slug}": {
+      "requestBody": null,
+      "response": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "adult": {
+                      "type": "boolean",
+                      "description": "Whether the character is considered adult content",
+                      "example": false
+                    },
+                    "author": {
+                      "type": "string",
+                      "description": "Short anonymized identifier derived from the character author",
+                      "example": "k3x9q"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "description": "Date when the character was created",
+                      "example": "2024-12-20 21:28:08.934000+00:00"
+                    },
+                    "description": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Description of the character",
+                      "example": "Alan Watts (6 January 1915 \u2013 16 November 1973) was a British and American writer, speaker, and self-styled \"philosophical entertainer\", known for interpreting and popularizing Buddhist, Taoist, and Hindu philosophy for a Western audience."
+                    },
+                    "featured": {
+                      "type": "boolean",
+                      "description": "Whether the character is featured in public discovery surfaces",
+                      "example": false
+                    },
+                    "id": {
+                      "type": "string",
+                      "description": "Unique ID of the character",
+                      "example": "2f460055-7595-4640-9cb6-c442c4c869b0"
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "Name of the character",
+                      "example": "Alan Watts"
+                    },
+                    "shareUrl": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Share URL of the character",
+                      "example": "https://venice.ai/c/alan-watts"
+                    },
+                    "photoUrl": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "URL of the character photo",
+                      "example": "https://outerface.venice.ai/api/characters/2f460055-7595-4640-9cb6-c442c4c869b0/photo"
+                    },
+                    "slug": {
+                      "type": "string",
+                      "description": "Slug of the character to be used in the completions API",
+                      "example": "alan-watts"
+                    },
+                    "stats": {
+                      "type": "object",
+                      "properties": {
+                        "averageRating": {
+                          "type": "number",
+                          "description": "Average rating for the character",
+                          "example": 4.7
+                        },
+                        "imports": {
+                          "type": "number",
+                          "description": "Number of imports for the character",
+                          "example": 112
+                        },
+                        "ratingCount": {
+                          "type": "number",
+                          "description": "Number of ratings for the character",
+                          "example": 24
+                        },
+                        "ratingSum": {
+                          "type": "number",
+                          "description": "Sum of all rating values for the character",
+                          "example": 113
+                        },
+                        "userRating": {
+                          "type": "number",
+                          "nullable": true,
+                          "description": "The authenticated user rating for the character when available"
+                        }
+                      },
+                      "required": [
+                        "averageRating",
+                        "imports",
+                        "ratingCount",
+                        "ratingSum",
+                        "userRating"
+                      ]
+                    },
+                    "tags": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Tags associated with the character",
+                      "example": [
+                        "AlanWatts",
+                        "Philosophy",
+                        "Buddhism",
+                        "Taoist",
+                        "Hindu"
+                      ]
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "description": "Date when the character was last updated",
+                      "example": "2025-02-09 03:23:53.708000+00:00"
+                    },
+                    "webEnabled": {
+                      "type": "boolean",
+                      "description": "Whether the character is enabled for web use",
+                      "example": true
+                    },
+                    "modelId": {
+                      "type": "string",
+                      "description": "API model ID for the character",
+                      "example": "venice-uncensored-1-2"
+                    }
+                  },
+                  "required": [
+                    "adult",
+                    "author",
+                    "createdAt",
+                    "description",
+                    "featured",
+                    "id",
+                    "name",
+                    "shareUrl",
+                    "photoUrl",
+                    "slug",
+                    "stats",
+                    "tags",
+                    "updatedAt",
+                    "webEnabled",
+                    "modelId"
+                  ]
+                },
+                "object": {
+                  "type": "string",
+                  "enum": [
+                    "character"
+                  ]
+                }
+              },
+              "required": [
+                "data",
+                "object"
+              ]
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "description": "The slug of the character to retrieve",
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "example": "alan-watts",
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "GET /characters/{slug}/reviews": {
+      "requestBody": null,
+      "response": {
+        "description": "OK",
+        "headers": {
+          "x-pagination-limit": {
+            "schema": {
+              "description": "Number of reviews returned per page",
+              "example": 20,
+              "type": "number"
+            }
+          },
+          "x-pagination-page": {
+            "schema": {
+              "description": "Current page number",
+              "example": 1,
+              "type": "number"
+            }
+          },
+          "x-pagination-total": {
+            "schema": {
+              "description": "Total number of visible reviews",
+              "example": 87,
+              "type": "number"
+            }
+          },
+          "x-pagination-total-pages": {
+            "schema": {
+              "description": "Total number of result pages",
+              "example": 5,
+              "type": "number"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "characterId": {
+                        "type": "string",
+                        "description": "Unique ID of the reviewed character",
+                        "example": "2f460055-7595-4640-9cb6-c442c4c869b0"
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "description": "Date when the review was created",
+                        "example": "2025-02-09 03:23:53.708000+00:00"
+                      },
+                      "id": {
+                        "type": "string",
+                        "description": "Unique ID of the review",
+                        "example": "1e38fb78-043f-4ce2-b3bc-966089c25467"
+                      },
+                      "isOwner": {
+                        "type": "boolean",
+                        "description": "Whether the authenticated user authored this review",
+                        "example": false
+                      },
+                      "locale": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Locale reported by the reviewer when available",
+                        "example": "en"
+                      },
+                      "message": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Optional written review message",
+                        "example": "Thoughtful, grounded, and surprisingly practical."
+                      },
+                      "rating": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5,
+                        "description": "Star rating for the character",
+                        "example": 5
+                      },
+                      "userAvatarUrl": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Avatar URL for the reviewer when available",
+                        "example": "https://cdn.venice.ai/avatar.png"
+                      },
+                      "username": {
+                        "type": "string",
+                        "description": "Display name chosen by the reviewer",
+                        "example": "product_user_42"
+                      }
+                    },
+                    "required": [
+                      "characterId",
+                      "createdAt",
+                      "id",
+                      "isOwner",
+                      "locale",
+                      "message",
+                      "rating",
+                      "userAvatarUrl",
+                      "username"
+                    ]
+                  }
+                },
+                "object": {
+                  "type": "string",
+                  "enum": [
+                    "list"
+                  ]
+                },
+                "pagination": {
+                  "type": "object",
+                  "properties": {
+                    "page": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "exclusiveMinimum": true,
+                      "description": "Current page number",
+                      "example": 1
+                    },
+                    "pageSize": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "exclusiveMinimum": true,
+                      "description": "Number of reviews requested per page",
+                      "example": 20
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Total number of visible reviews for the character",
+                      "example": 87
+                    },
+                    "totalPages": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Total number of pages available",
+                      "example": 5
+                    }
+                  },
+                  "required": [
+                    "page",
+                    "pageSize",
+                    "total",
+                    "totalPages"
+                  ]
+                },
+                "summary": {
+                  "type": "object",
+                  "properties": {
+                    "averageRating": {
+                      "type": "number",
+                      "description": "Average rating for the character",
+                      "example": 4.7
+                    },
+                    "totalReviews": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Total number of reviews included in the character stats summary",
+                      "example": 87
+                    }
+                  },
+                  "required": [
+                    "averageRating",
+                    "totalReviews"
+                  ]
+                }
+              },
+              "required": [
+                "data",
+                "object",
+                "pagination",
+                "summary"
+              ]
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "description": "Slug of the character whose reviews should be retrieved",
+            "example": "alan-watts"
+          },
+          "required": true,
+          "name": "slug",
+          "in": "path"
+        },
+        {
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "default": 1,
+            "description": "Page number for pagination",
+            "example": 1
+          },
+          "required": false,
+          "name": "page",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 100,
+            "default": 20,
+            "description": "Number of reviews to return per page (max: 100)",
+            "example": 20
+          },
+          "required": false,
+          "name": "pageSize",
+          "in": "query"
+        }
+      ]
+    },
     "GET /models": {
       "requestBody": null,
       "response": {

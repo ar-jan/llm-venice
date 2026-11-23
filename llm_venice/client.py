@@ -34,6 +34,7 @@ from .types import (
     CharacterSortOrder,
     AugmentSearchResponse,
     Character,
+    CharacterReviewPage,
     CreatedApiKey,
     ModelInfo,
     RateLimitLogEntry,
@@ -191,6 +192,23 @@ class VeniceClient(_Configuration):
                 limit=limit,
                 offset=offset,
             )["data"],
+        )
+
+    def get_character(self, slug: str) -> Character:
+        """Return one public character by its slug."""
+        return cast(Character, self._json_operation("character", slug=slug)["data"])
+
+    def list_character_reviews(
+        self, slug: str, *, page: int | None = None, page_size: int | None = None
+    ) -> CharacterReviewPage:
+        """Return one page of a character's public reviews (Venice default 20, max 100).
+
+        Pages start at 1. The result holds the reviews in ``data``, the page totals in
+        ``pagination`` and the rating summary in ``summary``.
+        """
+        return cast(
+            CharacterReviewPage,
+            self._json_operation("character_reviews", slug=slug, page=page, page_size=page_size),
         )
 
     def get_rate_limits(self) -> RateLimits:
@@ -454,6 +472,25 @@ class AsyncVeniceClient(_Configuration):
                     offset=offset,
                 )
             )["data"],
+        )
+
+    async def get_character(self, slug: str) -> Character:
+        """Return one public character by its slug."""
+        return cast(Character, (await self._json_operation("character", slug=slug))["data"])
+
+    async def list_character_reviews(
+        self, slug: str, *, page: int | None = None, page_size: int | None = None
+    ) -> CharacterReviewPage:
+        """Return one page of a character's public reviews (Venice default 20, max 100).
+
+        Pages start at 1. The result holds the reviews in ``data``, the page totals in
+        ``pagination`` and the rating summary in ``summary``.
+        """
+        return cast(
+            CharacterReviewPage,
+            await self._json_operation(
+                "character_reviews", slug=slug, page=page, page_size=page_size
+            ),
         )
 
     async def get_rate_limits(self) -> RateLimits:
