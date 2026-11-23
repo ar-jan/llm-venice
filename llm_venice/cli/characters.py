@@ -1,11 +1,13 @@
 """Characters command for Venice CLI."""
 
-from typing import Any
+from typing import Any, get_args
 
 import click
 import llm
 
 from llm_venice._endpoints import CHARACTER_PAGE_LIMIT
+from llm_venice.models._common import normalize_model_id
+from llm_venice.types import CharacterSortBy, CharacterSortOrder
 from llm_venice.client import VeniceClient
 from llm_venice.utils import write_json_atomic
 from llm_venice.errors import VeniceError
@@ -67,14 +69,41 @@ def create_characters_command():
         help="Filter by web-enabled status",
     )
     @click.option("--adult", type=click.Choice(["true", "false"]), help="Filter by adult category")
-    def characters(web_enabled, adult):
+    @click.option(
+        "--pro", type=click.Choice(["true", "false"]), help="Filter by use of a Pro model"
+    )
+    @click.option("--category", "categories", multiple=True, help="Filter by category (repeatable)")
+    @click.option("--tag", "tags", multiple=True, help="Filter by tag (repeatable)")
+    @click.option("--model-id", "model_ids", multiple=True, help="Filter by model ID (repeatable)")
+    @click.option("--search", help="Search names, descriptions and tags (#tag supported)")
+    @click.option("--sort-by", type=click.Choice(get_args(CharacterSortBy)), help="Sort order")
+    @click.option(
+        "--sort-order",
+        type=click.Choice(get_args(CharacterSortOrder)),
+        help="Sort direction (Venice's default: desc)",
+    )
+    def characters(
+        web_enabled, adult, pro, categories, tags, model_ids, search, sort_by, sort_order
+    ):
         """List public characters, fetching every page."""
+
+        def flag(value):
+            return None if value is None else value == "true"
+
         try:
             with VeniceClient() as client:
                 characters_data, incomplete = fetch_all_characters(
                     client,
-                    web_enabled=None if web_enabled is None else web_enabled == "true",
-                    adult=None if adult is None else adult == "true",
+                    web_enabled=flag(web_enabled),
+                    adult=flag(adult),
+                    pro=flag(pro),
+                    categories=list(categories) or None,
+                    tags=list(tags) or None,
+                    # llm names models venice/<id>; the filter takes the bare ID.
+                    model_ids=[normalize_model_id(model) for model in model_ids] or None,
+                    search=search,
+                    sort_by=sort_by,
+                    sort_order=sort_order,
                 )
             path = llm.user_dir() / "venice_characters.json"
             write_json_atomic(path, characters_data)

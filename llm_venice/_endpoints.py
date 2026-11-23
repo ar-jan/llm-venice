@@ -25,7 +25,14 @@ from typing_extensions import Self, get_type_hints
 from .errors import VeniceResponseError
 from .params import ImageParams, SpeechParams, copy_params, parameter_body
 from .results import NO_AUDIO, GeneratedImage, ImageResult, ModelDeprecation, SpeechResult
-from .types import AugmentSearchProvider, ApiKeyLimitPeriod, ApiKeyModelPrivacy, ModelInfo
+from .types import (
+    AugmentSearchProvider,
+    ApiKeyLimitPeriod,
+    ApiKeyModelPrivacy,
+    CharacterSortBy,
+    CharacterSortOrder,
+    ModelInfo,
+)
 
 
 class _Input(BaseModel):
@@ -175,16 +182,45 @@ class AugmentSearchInput(BaseModel):
 CHARACTER_PAGE_LIMIT = 100
 
 
+_Category = Annotated[str, Field(min_length=1, max_length=100)]
+_CharacterModelId = Annotated[str, Field(min_length=1, max_length=200)]
+
+
 class CharacterFilters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     web_enabled: bool | None = None
     adult: bool | None = None
+    pro: bool | None = None
+    # Each list is sent as a repeated query parameter, matching any listed value.
+    categories: list[_Category] | None = Field(default=None, max_length=20)
+    tags: list[_Category] | None = Field(default=None, max_length=20)
+    model_ids: list[_CharacterModelId] | None = Field(default=None, max_length=20)
+    search: str | None = Field(default=None, min_length=1, max_length=200)
+    sort_by: CharacterSortBy | None = None
+    sort_order: CharacterSortOrder | None = None
     # Venice pages with limit (default 50) and offset, and reports no total.
     limit: int | None = Field(default=None, ge=1, le=CHARACTER_PAGE_LIMIT, strict=True)
     offset: int | None = Field(default=None, ge=0, strict=True)
 
-    def query(self) -> dict[str, str]:
-        flags = {"isWebEnabled": self.web_enabled, "isAdult": self.adult}
-        query = {key: str(value).lower() for key, value in flags.items() if value is not None}
+    def query(self) -> dict[str, str | list[str]]:
+        flags = {"isWebEnabled": self.web_enabled, "isAdult": self.adult, "isPro": self.pro}
+        query: dict[str, str | list[str]] = {
+            key: str(value).lower() for key, value in flags.items() if value is not None
+        }
+        for key, values in (
+            ("categories", self.categories),
+            ("tags", self.tags),
+            ("modelId", self.model_ids),
+        ):
+            if values:
+                query[key] = list(values)
+        for key, value in (
+            ("search", self.search),
+            ("sortBy", self.sort_by),
+            ("sortOrder", self.sort_order),
+        ):
+            if value is not None:
+                query[key] = value
         if self.limit is not None:
             query["limit"] = str(self.limit)
         if self.offset is not None:

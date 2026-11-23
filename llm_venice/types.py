@@ -8,6 +8,20 @@ from typing_extensions import Required, TypedDict
 AugmentSearchProvider = Literal["brave", "google", "exa"]
 """Search providers accepted by ``/augment/search``; Venice uses Brave when omitted."""
 
+CharacterSortBy = Literal[
+    "featured",
+    "highestRating",
+    "highlyRated",
+    "highlyRatedAndRecent",
+    "imports",
+    "mostRecent",
+    "ratingCount",
+]
+"""Character discovery orders accepted by ``/characters``."""
+
+CharacterSortOrder = Literal["asc", "desc"]
+"""Direction of the character sort; Venice sorts descending when omitted."""
+
 ApiKeyLimitPeriod = Literal["EPOCH", "MONTH", "LIFETIME"]
 """When key consumption limits reset: each UTC day (Venice's default), month, or never."""
 

@@ -17,6 +17,7 @@ from typing_extensions import assert_type
 
 from llm_venice import _files
 from llm_venice._endpoints import (
+    CharacterFilters,
     KeyInput,
     KeyUpdateInput,
     UpscaleInput,
@@ -47,6 +48,8 @@ from llm_venice.types import (
     ApiKeyLimitPeriod,
     ApiKeyModelPrivacy,
     Character,
+    CharacterSortBy,
+    CharacterSortOrder,
     CreatedApiKey,
     ModelInfo,
     RateLimits,
@@ -314,6 +317,43 @@ def test_drifted_policy_fields_do_not_break_error_mapping():
     error = caught.value
     assert (error.suggested_prompt, error.recommended_model, error.retryable) == (None, None, None)
     assert error.detail == "Refused"
+
+
+def test_character_filters_match_dated_fixture():
+    resource = dated_fixture()["resources"]["GET /characters"]
+    parameters = {parameter["name"]: parameter["schema"] for parameter in resource["parameters"]}
+    every_filter = CharacterFilters(
+        web_enabled=True,
+        adult=False,
+        pro=True,
+        categories=["roleplay"],
+        tags=["helpful"],
+        model_ids=["kimi-k2-6"],
+        search="assistant",
+        sort_by="featured",
+        sort_order="asc",
+        limit=parameters["limit"]["maximum"],
+        offset=0,
+    ).query()
+    assert set(every_filter) == set(parameters)
+    for flag in ("isWebEnabled", "isAdult", "isPro"):
+        assert every_filter[flag] in parameters[flag]["enum"]
+    assert set(get_args(CharacterSortBy)) == set(parameters["sortBy"]["enum"])
+    assert set(get_args(CharacterSortOrder)) == set(parameters["sortOrder"]["enum"])
+    for name, wire in (("categories", "categories"), ("tags", "tags"), ("model_ids", "modelId")):
+        assert parameters[wire]["type"] == "array"
+        limits = CharacterFilters.model_json_schema()["properties"][name]["anyOf"][0]
+        assert limits["maxItems"] == parameters[wire]["maxItems"]
+        assert limits["items"]["maxLength"] == parameters[wire]["items"]["maxLength"]
+    search = CharacterFilters.model_json_schema()["properties"]["search"]["anyOf"][0]
+    assert search["maxLength"] == parameters["search"]["maxLength"]
+
+
+def test_character_type_matches_dated_fixture():
+    schema = dated_fixture()["resources"]["GET /characters"]["response"]["content"]
+    item = schema["application/json"]["schema"]["properties"]["data"]["items"]
+    assert set(Character.__annotations__) == set(item["properties"])
+    assert Character.__required_keys__ <= set(item["required"])
 
 
 def test_updated_key_is_an_api_key_without_usage():

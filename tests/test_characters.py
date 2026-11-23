@@ -199,6 +199,127 @@ def test_characters_cli_sends_filters_with_each_page(cli_runner, httpx2_mock, mo
     }
 
 
+def test_characters_cli_sends_search_filters_and_sort_with_each_page(
+    cli_runner, httpx2_mock, mock_venice_api_key
+):
+    httpx2_mock.add_response(json=page(0, 100))
+    httpx2_mock.add_response(json=page(100, 1))
+
+    result = cli_runner.invoke(
+        cli,
+        [
+            "venice",
+            "characters",
+            "--pro",
+            "false",
+            "--category",
+            "roleplay",
+            "--category",
+            "philosophy",
+            "--tag",
+            "helpful",
+            "--model-id",
+            "venice/zai-org-glm-5-1",
+            "--model-id",
+            "kimi-k2-6",
+            "--search",
+            "#assistant",
+            "--sort-by",
+            "highlyRated",
+            "--sort-order",
+            "asc",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(saved_characters()["data"]) == 101
+    for request, offset in zip(httpx2_mock.get_requests(), ("0", "100")):
+        assert request.url.params.multi_items() == [
+            ("isPro", "false"),
+            ("categories", "roleplay"),
+            ("categories", "philosophy"),
+            ("tags", "helpful"),
+            ("modelId", "zai-org-glm-5-1"),
+            ("modelId", "kimi-k2-6"),
+            ("search", "#assistant"),
+            ("sortBy", "highlyRated"),
+            ("sortOrder", "asc"),
+            ("limit", "100"),
+            ("offset", offset),
+        ]
+
+
+def test_characters_cli_rejects_unknown_sort_before_request(
+    cli_runner, httpx2_mock, mock_venice_api_key
+):
+    result = cli_runner.invoke(cli, ["venice", "characters", "--sort-by", "popular"])
+
+    assert result.exit_code == 2
+    assert not httpx2_mock.get_requests()
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_list_characters_sends_filters(is_async, httpx2_mock):
+    httpx2_mock.add_response(json=page(0, 2))
+
+    async def run_async():
+        async with AsyncVeniceClient(key="k") as client:
+            return await client.list_characters(tags=("helpful",), search="philosopher", pro=True)
+
+    def run_sync():
+        with VeniceClient(key="k") as client:
+            return client.list_characters(tags=("helpful",), search="philosopher", pro=True)
+
+    characters = asyncio.run(run_async()) if is_async else run_sync()
+
+    assert [character["slug"] for character in characters] == ["s0", "s1"]
+    assert httpx2_mock.get_request().url.params.multi_items() == [
+        ("isPro", "true"),
+        ("tags", "helpful"),
+        ("search", "philosopher"),
+    ]
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"categories": ["c"] * 21},
+        {"tags": ["x" * 101]},
+        {"tags": [""]},
+        {"tags": "helpful"},
+        {"model_ids": ["m" * 201]},
+        {"search": "s" * 201},
+        {"search": ""},
+        {"sort_by": "popular"},
+        {"sort_order": "up"},
+    ],
+    ids=[
+        "too-many-categories",
+        "long-tag",
+        "empty-tag",
+        "tags-not-a-list",
+        "long-model-id",
+        "long-search",
+        "empty-search",
+        "unknown-sort",
+        "unknown-order",
+    ],
+)
+def test_list_characters_rejects_invalid_filters_before_request(is_async, kwargs, httpx2_mock):
+    async def run_async():
+        async with AsyncVeniceClient(key="k") as client:
+            await client.list_characters(**kwargs)
+
+    def run_sync():
+        with VeniceClient(key="k") as client:
+            client.list_characters(**kwargs)
+
+    with pytest.raises(ValidationError):
+        asyncio.run(run_async()) if is_async else run_sync()
+    assert httpx2_mock.get_requests() == []
+
+
 @pytest.mark.parametrize("is_async", [False, True])
 def test_list_characters_pages_with_limit_and_offset(is_async, httpx2_mock):
     httpx2_mock.add_response(url=f"{CHARACTERS_URL}?limit=10&offset=20", json=page(20, 10))

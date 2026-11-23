@@ -4,6 +4,10 @@
 
 ### New features
 
+- `list_characters()` and `llm venice characters` filter by Pro model use (`pro`,
+  `--pro`), categories, tags and model IDs (repeatable `--category`, `--tag` and
+  `--model-id`) and a search term (`search`, `--search`), and sort with `sort_by` /
+  `--sort-by` and `sort_order` / `--sort-order`.
 - `get_api_key()` and `update_api_key()` client methods, with `llm venice api-keys get`
   and `llm venice api-keys update` commands, for `GET /api_keys/{id}` and
   `PATCH /api_keys`. An update changes only the settings given: description, expiry,

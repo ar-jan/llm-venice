@@ -30,6 +30,8 @@ from .types import (
     ApiKeyLimitPeriod,
     ApiKeyModelPrivacy,
     AugmentSearchProvider,
+    CharacterSortBy,
+    CharacterSortOrder,
     AugmentSearchResponse,
     Character,
     CreatedApiKey,
@@ -157,12 +159,21 @@ class VeniceClient(_Configuration):
         *,
         web_enabled: bool | None = None,
         adult: bool | None = None,
+        pro: bool | None = None,
+        categories: Sequence[str] | None = None,
+        tags: Sequence[str] | None = None,
+        model_ids: Sequence[str] | None = None,
+        search: str | None = None,
+        sort_by: CharacterSortBy | None = None,
+        sort_order: CharacterSortOrder | None = None,
         limit: int | None = None,
         offset: int | None = None,
     ) -> list[Character]:
         """List one page of characters (Venice default 50, max 100 per page).
 
-        Page with ``offset``; a page shorter than ``limit`` is the last one.
+        Unset filters are not sent. ``categories``, ``tags`` and ``model_ids`` take
+        up to 20 values each. Page with ``offset``; a page shorter than ``limit`` is
+        the last one.
         """
         return cast(
             list[Character],
@@ -170,6 +181,13 @@ class VeniceClient(_Configuration):
                 "characters",
                 web_enabled=web_enabled,
                 adult=adult,
+                pro=pro,
+                categories=categories,
+                tags=tags,
+                model_ids=model_ids,
+                search=search,
+                sort_by=sort_by,
+                sort_order=sort_order,
                 limit=limit,
                 offset=offset,
             )["data"],
@@ -402,12 +420,21 @@ class AsyncVeniceClient(_Configuration):
         *,
         web_enabled: bool | None = None,
         adult: bool | None = None,
+        pro: bool | None = None,
+        categories: Sequence[str] | None = None,
+        tags: Sequence[str] | None = None,
+        model_ids: Sequence[str] | None = None,
+        search: str | None = None,
+        sort_by: CharacterSortBy | None = None,
+        sort_order: CharacterSortOrder | None = None,
         limit: int | None = None,
         offset: int | None = None,
     ) -> list[Character]:
         """List one page of characters (Venice default 50, max 100 per page).
 
-        Page with ``offset``; a page shorter than ``limit`` is the last one.
+        Unset filters are not sent. ``categories``, ``tags`` and ``model_ids`` take
+        up to 20 values each. Page with ``offset``; a page shorter than ``limit`` is
+        the last one.
         """
         return cast(
             list[Character],
@@ -416,6 +443,13 @@ class AsyncVeniceClient(_Configuration):
                     "characters",
                     web_enabled=web_enabled,
                     adult=adult,
+                    pro=pro,
+                    categories=categories,
+                    tags=tags,
+                    model_ids=model_ids,
+                    search=search,
+                    sort_by=sort_by,
+                    sort_order=sort_order,
                     limit=limit,
                     offset=offset,
                 )

@@ -1582,7 +1582,18 @@
             }
           }
         }
-      }
+      },
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The ID of the API key to retrieve"
+        }
+      ]
     },
     "GET /api_keys/rate_limits": {
       "requestBody": null,
@@ -1949,7 +1960,176 @@
             }
           }
         }
-      }
+      },
+      "parameters": [
+        {
+          "schema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "maxItems": 20,
+            "description": "Filter by category names. Repeat the parameter for multiple values. Comma-separated values are also accepted.",
+            "example": [
+              "roleplay",
+              "philosophy"
+            ]
+          },
+          "required": false,
+          "name": "categories",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ],
+            "description": "Filter by adult content flag",
+            "example": "false"
+          },
+          "required": false,
+          "name": "isAdult",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ],
+            "description": "Filter to only show characters using pro models",
+            "example": "false"
+          },
+          "required": false,
+          "name": "isPro",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ],
+            "description": "Filter to only show web-enabled characters",
+            "example": "true"
+          },
+          "required": false,
+          "name": "isWebEnabled",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 100,
+            "default": 50,
+            "description": "Number of characters to return (max: 100)",
+            "example": 50
+          },
+          "required": false,
+          "name": "limit",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "maxItems": 20,
+            "description": "Filter by model ID(s). Repeat the parameter for multiple values. Comma-separated values are also accepted.",
+            "example": [
+              "zai-org-glm-5-1",
+              "kimi-k2-6"
+            ]
+          },
+          "required": false,
+          "name": "modelId",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0,
+            "default": 0,
+            "description": "Number of characters to skip for pagination",
+            "example": 0
+          },
+          "required": false,
+          "name": "offset",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Search characters by name, description, or tags. Hashtag search is supported.",
+            "example": "assistant"
+          },
+          "required": false,
+          "name": "search",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "featured",
+              "highestRating",
+              "highlyRated",
+              "highlyRatedAndRecent",
+              "imports",
+              "mostRecent",
+              "ratingCount"
+            ],
+            "description": "Sort results using a supported character discovery mode",
+            "example": "imports"
+          },
+          "required": false,
+          "name": "sortBy",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort order applied to the selected sort mode. Defaults to descending when omitted.",
+            "example": "desc"
+          },
+          "required": false,
+          "name": "sortOrder",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "maxItems": 20,
+            "description": "Filter by tag names. Repeat the parameter for multiple values. Comma-separated values are also accepted.",
+            "example": [
+              "helpful",
+              "productivity"
+            ]
+          },
+          "required": false,
+          "name": "tags",
+          "in": "query"
+        }
+      ]
     },
     "GET /models": {
       "requestBody": null,
@@ -2010,7 +2190,42 @@
             }
           }
         }
-      }
+      },
+      "parameters": [
+        {
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "asr",
+                  "decision",
+                  "embedding",
+                  "image",
+                  "music",
+                  "text",
+                  "tts",
+                  "upscale",
+                  "inpaint",
+                  "video"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "code"
+                ]
+              }
+            ],
+            "description": "Filter models by type. Use \"all\" to get all model types.",
+            "example": "text"
+          },
+          "required": false,
+          "name": "type",
+          "in": "query"
+        }
+      ]
     },
     "POST /image/generate": {
       "requestBody": {
@@ -2183,6 +2398,18 @@
           }
         }
       },
+      "parameters": [
+        {
+          "description": "Supported compression encodings (gzip, br). Only applied when return_binary is false.",
+          "in": "header",
+          "name": "Accept-Encoding",
+          "required": false,
+          "schema": {
+            "example": "gzip, br",
+            "type": "string"
+          }
+        }
+      ],
       "errors": {
         "422": {
           "description": "The prompt violates the content policy of Venice.ai or the model provider, or a style reference image exceeds the pixel limit.",
