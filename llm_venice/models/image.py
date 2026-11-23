@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import suppress
+import dataclasses
 import pathlib
 import sys
 from typing import Literal, cast
@@ -13,7 +14,13 @@ from llm_venice._options import (
     parse_json_object,
     validate_request,
 )
-from ._common import initialize_model, model_error_boundary, single_turn_text, warn_deprecated
+from ._common import (
+    initialize_model,
+    model_error_boundary,
+    single_turn_text,
+    warn_deprecated,
+    warn_response_deprecation,
+)
 from llm_venice.client import VeniceClient, AsyncVeniceClient
 from llm_venice.params import ImageParams, copy_params
 from llm_venice.results import ImageResult
@@ -133,6 +140,8 @@ def _image_response(response, result: ImageResult, paths):
         "is_blurred": result.blurred,
         "content_violation": result.content_violation,
         "content_policy_violation_count": result.content_policy_violation_count,
+        "enhanced_prompt": result.enhanced_prompt,
+        "deprecation": dataclasses.asdict(result.deprecation) if result.deprecation else None,
         "output_paths": [str(path) for path in paths],
     }
 
@@ -188,6 +197,7 @@ class VeniceImage(CatalogOptionsMixin, llm.KeyModel):
             opts, params, text = _image_options(self, prompt)
             with VeniceClient(key=api_key) as client:
                 result = client.generate_image(self.model_name, text, params)
+            warn_response_deprecation(self, result.deprecation)
             paths = [] if result.content_violation else _save_adapter_images(self, opts, result)
             _image_response(response, result, paths)
             rendered = _image_notices(result)
@@ -236,6 +246,7 @@ class AsyncVeniceImage(CatalogOptionsMixin, llm.AsyncKeyModel):
             opts, params, text = _image_options(self, prompt)
             async with AsyncVeniceClient(key=api_key) as client:
                 result = await client.generate_image(self.model_name, text, params)
+            warn_response_deprecation(self, result.deprecation)
             paths = (
                 []
                 if result.content_violation

@@ -11,6 +11,7 @@ from click.testing import CliRunner
 
 from llm_venice import AsyncVeniceImage, VeniceImage
 from llm_venice.constants import ENDPOINT_IMAGE_GENERATE
+from llm_venice.models import _common
 from llm_venice._notices import VeniceNotice
 from llm_venice.cli.notices import emit_cli_notices
 
@@ -36,6 +37,18 @@ def add_image_response(
         is_reusable=is_reusable,
         **kwargs,
     )
+
+
+def run_image_model(model, prompt, response):
+    """Execute a sync or async image adapter and return what it yielded."""
+    result = model.execute(prompt, False, response, None)
+    if isinstance(model, AsyncVeniceImage):
+
+        async def drain():
+            return [item async for item in result]
+
+        return asyncio.run(drain())
+    return list(result)
 
 
 @pytest.mark.parametrize("model_cls", [VeniceImage, AsyncVeniceImage])
@@ -227,19 +240,121 @@ def test_venice_image_sends_large_dimensions_for_tier_mapping(
 
     add_image_response(httpx2_mock, content=b"\x89PNG\r\n\x1a\n")
     with patch.object(model, "get_key", return_value=mock_venice_api_key):
-        result = model.execute(prompt, False, MagicMock(), None)
-        if model_cls is AsyncVeniceImage:
-
-            async def drain():
-                return [item async for item in result]
-
-            asyncio.run(drain())
-        else:
-            list(result)
+        run_image_model(model, prompt, MagicMock())
 
     payload = request_json()
     assert (payload["width"], payload["height"]) == (4096, 2304)
     assert "aspect_ratio" not in payload and "resolution" not in payload
+
+
+@pytest.mark.parametrize("model_cls", [VeniceImage, AsyncVeniceImage])
+def test_venice_image_sends_prompt_controls_and_records_enhanced_prompt(
+    model_cls, mock_venice_api_key, tmp_path, httpx2_mock, request_json
+):
+    model = model_cls("test-model")
+    prompt = llm.Prompt("A lighthouse", model)
+    prompt.options = model.Options(
+        enhance_prompt=True,
+        disable_prompt_optimization_thinking=True,
+        anon_user_id="end-user-123",
+        output_dir=tmp_path,
+    )
+    add_image_response(
+        httpx2_mock,
+        content=b"\x89PNG\r\n\x1a\n",
+        headers={"x-venice-enhanced-prompt": "A%20lighthouse%20at%20dusk%2C%20oil%20paint"},
+    )
+    response = MagicMock()
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        results = run_image_model(model, prompt, response)
+
+    payload = request_json()
+    assert payload["enhance_prompt"] is True
+    assert payload["disable_prompt_optimization_thinking"] is True
+    assert payload["anon_user_id"] == "end-user-123"
+    assert response.response_json["enhanced_prompt"] == "A lighthouse at dusk, oil paint"
+    assert response.response_json["deprecation"] is None
+    assert results == [f"Image saved to {response.response_json['output_paths'][0]}"]
+
+
+@pytest.mark.parametrize("model_cls", [VeniceImage, AsyncVeniceImage])
+def test_venice_image_warns_once_about_header_deprecation(
+    model_cls, mock_venice_api_key, tmp_path, httpx2_mock, monkeypatch, capsys
+):
+    """A stale catalog does not hide a deprecation that Venice reports."""
+    monkeypatch.setattr(_common, "_deprecated_warnings", set())
+    model = model_cls("old-model")
+    add_image_response(
+        httpx2_mock,
+        content=b"\x89PNG\r\n\x1a\n",
+        headers={"x-venice-deprecated": "true", "x-venice-deprecated-replacement": "new-model"},
+        is_reusable=True,
+    )
+    response = MagicMock()
+    outputs = []
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        for _ in range(2):
+            prompt = llm.Prompt("A lighthouse", model)
+            prompt.options = model.Options(output_dir=tmp_path)
+            outputs.append(run_image_model(model, prompt, response))
+
+    assert capsys.readouterr().err == (
+        "Warning: venice/old-model is deprecated; use venice/new-model instead\n"
+    )
+    assert all(output[-1].startswith("Image saved to ") for output in outputs)
+    assert response.response_json["deprecation"] == {
+        "deprecated": True,
+        "warning": None,
+        "date": None,
+        "replacement": "new-model",
+    }
+
+
+def test_venice_image_header_deprecation_does_not_repeat_catalog_warning(
+    mock_venice_api_key, tmp_path, httpx2_mock, monkeypatch, capsys
+):
+    monkeypatch.setattr(_common, "_deprecated_warnings", set())
+    model = VeniceImage(
+        "old-model", model_spec={"deprecation": {"replacementModelId": "new-model"}}
+    )
+    prompt = llm.Prompt("A lighthouse", model)
+    prompt.options = model.Options(output_dir=tmp_path)
+    add_image_response(
+        httpx2_mock,
+        content=b"\x89PNG\r\n\x1a\n",
+        headers={"x-venice-deprecated": "true", "x-venice-deprecated-replacement": "new-model"},
+    )
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        run_image_model(model, prompt, MagicMock())
+
+    assert capsys.readouterr().err == (
+        "Warning: venice/old-model is deprecated; use venice/new-model instead\n"
+    )
+
+
+def test_venice_image_warns_about_scheduled_deprecation(
+    mock_venice_api_key, tmp_path, httpx2_mock, monkeypatch, capsys
+):
+    monkeypatch.setattr(_common, "_deprecated_warnings", set())
+    model = VeniceImage("old-model")
+    prompt = llm.Prompt("A lighthouse", model)
+    prompt.options = model.Options(output_dir=tmp_path)
+    add_image_response(
+        httpx2_mock,
+        content=b"\x89PNG\r\n\x1a\n",
+        headers={
+            "x-venice-model-deprecation-warning": "Migrate before December",
+            "x-venice-model-deprecation-date": "2026-12-01T00:00:00.000Z",
+            "x-venice-deprecated-replacement": "new-model",
+        },
+    )
+    with patch.object(model, "get_key", return_value=mock_venice_api_key):
+        run_image_model(model, prompt, MagicMock())
+
+    assert capsys.readouterr().err == (
+        "Warning: venice/old-model is scheduled for deprecation on 2026-12-01T00:00:00.000Z: "
+        "Migrate before December; use venice/new-model instead\n"
+    )
 
 
 def test_venice_image_content_violation_handling(mock_venice_api_key, httpx2_mock):

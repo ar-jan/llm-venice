@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### New features
+
+- Image options `enhance_prompt`, `disable_prompt_optimization_thinking` and
+  `anon_user_id`, also available on `ImageParams`, and an `anon_user_id` chat option.
+  `anon_user_id` is checked locally against the API's rules: 1 to 128 printable ASCII
+  characters, without `||`. These fields are now rejected in `extra_body`; use the
+  options instead.
+- When `enhance_prompt` rewrites the prompt, the rewritten prompt is decoded from the
+  `x-venice-enhanced-prompt` header into `ImageResult.enhanced_prompt` and the image
+  model's `response_json` (shown by `llm logs --json`).
+- Image generation reads Venice's model deprecation headers into
+  `ImageResult.deprecation`. Image models warn on stderr, once per model, when Venice
+  reports that the model is deprecated or scheduled for deprecation, with the
+  replacement model when one is published. A model the catalog already marks as
+  deprecated still gets a single warning.
+
 ### Other changes and fixes
 
 - Image `width` and `height` accept up to 4096 pixels, as the API now does (previously

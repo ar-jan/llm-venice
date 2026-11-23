@@ -7,6 +7,8 @@ import llm
 from llm.parts import TextPart
 from pydantic import ValidationError
 from llm_venice.errors import VeniceError
+from llm_venice.results import ModelDeprecation
+from llm_venice._notices import VeniceNotice, render_notice
 
 import sys
 from typing import Any, cast
@@ -46,21 +48,39 @@ def single_turn_text(model: Any, prompt: Any) -> str:
     return "\n".join(part.text for part in parts)
 
 
-def warn_deprecated(model: Any) -> None:
-    spec = getattr(model, "model_spec", {})
-    deprecation = spec.get("deprecation")
-    if (
-        not isinstance(deprecation, dict)
-        or not deprecation
-        or model.model_id in _deprecated_warnings
-    ):
+def _warn_deprecation_once(model: Any, message: str, replacement: Any) -> None:
+    # One warning per model, whether the catalog or a response reported it first.
+    if model.model_id in _deprecated_warnings:
         return
-    message = f"{model.model_id} is deprecated"
-    replacement: Any = cast(dict[str, Any], deprecation).get("replacementModelId")
     if isinstance(replacement, str) and replacement:
         message += f"; use venice/{normalize_model_id(replacement)} instead"
     _deprecated_warnings.add(model.model_id)
-    print(f"Warning: {message}", file=sys.stderr)
+    print(render_notice(VeniceNotice("warning", message)), file=sys.stderr)
+
+
+def warn_deprecated(model: Any) -> None:
+    """Warn before a request when the cached catalog marks the model deprecated."""
+    spec = getattr(model, "model_spec", {})
+    deprecation = spec.get("deprecation")
+    if not isinstance(deprecation, dict) or not deprecation:
+        return
+    replacement: Any = cast(dict[str, Any], deprecation).get("replacementModelId")
+    _warn_deprecation_once(model, f"{model.model_id} is deprecated", replacement)
+
+
+def warn_response_deprecation(model: Any, deprecation: ModelDeprecation | None) -> None:
+    """Warn when response headers report a deprecation the catalog may not know yet."""
+    if deprecation is None:
+        return
+    if deprecation.deprecated:
+        message = f"{model.model_id} is deprecated"
+    else:
+        message = f"{model.model_id} is scheduled for deprecation"
+        if deprecation.date:
+            message += f" on {deprecation.date}"
+    if deprecation.warning:
+        message += f": {deprecation.warning}"
+    _warn_deprecation_once(model, message, deprecation.replacement)
 
 
 @contextmanager

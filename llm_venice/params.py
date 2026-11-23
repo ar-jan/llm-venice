@@ -1,7 +1,7 @@
 """Endpoint parameters. None omits a field and lets Venice choose its default."""
 
-from typing import Any, Literal, TypeVar
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
+from typing import Annotated, Any, Literal, TypeVar
+from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, model_validator
 from typing_extensions import Self
 
 
@@ -18,6 +18,25 @@ _RESERVED = {
     "progress",
     "stdout",
 }
+
+
+def _without_double_pipe(value: str) -> str:
+    if "||" in value:
+        raise ValueError("anon_user_id must not contain '||'")
+    return value
+
+
+# Chat and image requests share Venice's end-user attribution rules. The
+# description goes on each field, since llm does not read it from inside Optional.
+AnonUserId = Annotated[
+    str,
+    Field(min_length=1, max_length=128, pattern=r"^[\x20-\x7E]+$"),
+    AfterValidator(_without_double_pipe),
+]
+ANON_USER_ID_DESCRIPTION = (
+    "ID of your end user, for attribution to upstream providers: "
+    "1 to 128 printable ASCII characters, without '||'."
+)
 
 
 class _VeniceParams(BaseModel):
@@ -80,6 +99,15 @@ class ImageParams(_VeniceParams):
     )
     embed_exif_metadata: bool | None = None
     enable_web_search: bool | None = None
+    enhance_prompt: bool | None = Field(
+        default=None,
+        description="Rewrite the prompt with more visual detail before generating, at extra cost.",
+    )
+    disable_prompt_optimization_thinking: bool | None = Field(
+        default=None,
+        description="Skip the prompt-optimization thinking step on models that have one.",
+    )
+    anon_user_id: AnonUserId | None = Field(default=None, description=ANON_USER_ID_DESCRIPTION)
 
     @model_validator(mode="after")
     def _transparent_format(self) -> Self:

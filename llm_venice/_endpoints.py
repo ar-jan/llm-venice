@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Literal, TypeVar, cast
+from urllib.parse import unquote
 
 import httpx2
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
@@ -13,7 +14,7 @@ from typing_extensions import get_type_hints
 
 from .errors import VeniceResponseError
 from .params import ImageParams, SpeechParams, copy_params, parameter_body
-from .results import NO_AUDIO, GeneratedImage, ImageResult, SpeechResult
+from .results import NO_AUDIO, GeneratedImage, ImageResult, ModelDeprecation, SpeechResult
 from .types import AugmentSearchProvider, ModelInfo
 
 
@@ -251,6 +252,21 @@ def _header_bool(response: httpx2.Response, name: str) -> bool:
     return value == "true"
 
 
+# Advisory headers never fail a generation that has already been charged.
+def _header_text(response: httpx2.Response, name: str) -> str | None:
+    return response.headers.get(name, "").strip() or None
+
+
+def _deprecation(response: httpx2.Response) -> ModelDeprecation | None:
+    deprecation = ModelDeprecation(
+        (_header_text(response, "x-venice-deprecated") or "").lower() == "true",
+        _header_text(response, "x-venice-model-deprecation-warning"),
+        _header_text(response, "x-venice-model-deprecation-date"),
+        _header_text(response, "x-venice-deprecated-replacement"),
+    )
+    return None if deprecation == ModelDeprecation() else deprecation
+
+
 def parse_image(response: httpx2.Response, model: str, requested: str | None) -> ImageResult:
     action = "Generating image"
     violation = _header_bool(response, "x-venice-is-content-violation")
@@ -293,6 +309,8 @@ def parse_image(response: httpx2.Response, model: str, requested: str | None) ->
     timing: Any = obj.get("timing")
     if timing is not None and not isinstance(timing, dict):
         raise VeniceResponseError(action, "timing must be an object")
+    # Venice URL-encodes the rewritten prompt to fit it in a header.
+    enhanced = _header_text(response, "x-venice-enhanced-prompt")
     return ImageResult(
         model,
         tuple(images),
@@ -301,6 +319,8 @@ def parse_image(response: httpx2.Response, model: str, requested: str | None) ->
         blurred,
         cast(dict[str, Any] | None, timing),
         {key: value for key, value in obj.items() if key != "images"},
+        enhanced_prompt=unquote(enhanced) if enhanced else None,
+        deprecation=_deprecation(response),
     )
 
 
