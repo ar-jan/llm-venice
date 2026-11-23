@@ -18,8 +18,10 @@ from typing_extensions import assert_type
 from llm_venice import _files
 from llm_venice._endpoints import (
     KeyInput,
+    KeyUpdateInput,
     UpscaleInput,
     image_body,
+    json_operation,
     model_resource,
     parse_image,
     parse_speech,
@@ -186,7 +188,11 @@ def test_image_prompt_controls_and_attribution_match_dated_fixture():
 
 @pytest.mark.parametrize(
     "resource_name, kind",
-    [("GET /api_keys", ApiKey), ("POST /api_keys", CreatedApiKey)],
+    [
+        ("GET /api_keys", ApiKey),
+        ("GET /api_keys/{id}", ApiKey),
+        ("POST /api_keys", CreatedApiKey),
+    ],
 )
 def test_api_key_types_match_dated_fixture(resource_name, kind):
     """Each key type declares exactly the wire fields of the response it describes."""
@@ -308,6 +314,79 @@ def test_drifted_policy_fields_do_not_break_error_mapping():
     error = caught.value
     assert (error.suggested_prompt, error.recommended_model, error.retryable) == (None, None, None)
     assert error.detail == "Refused"
+
+
+def test_updated_key_is_an_api_key_without_usage():
+    """PATCH returns a listed key's fields except usage, which ApiKey has as optional."""
+    resources = dated_fixture()["resources"]
+    for name in ("GET /api_keys/{id}", "PATCH /api_keys"):
+        schema = resources[name]["response"]["content"]["application/json"]["schema"]
+        item = schema["properties"]["data"]
+        assert set(item["properties"]) <= set(ApiKey.__annotations__)
+        assert ApiKey.__required_keys__ <= set(item["required"])
+    patched = resources["PATCH /api_keys"]["response"]["content"]["application/json"]
+    missing = set(ApiKey.__annotations__) - set(
+        patched["schema"]["properties"]["data"]["properties"]
+    )
+    assert missing == {"usage", "currentPeriodUsage"}
+
+
+def test_key_update_matches_dated_fixture():
+    request = dated_fixture()["resources"]["PATCH /api_keys"]["requestBody"]["content"]
+    schema = request["application/json"]["schema"]
+    properties = schema["properties"]
+    assert schema["required"] == ["id"]
+    every_setting = KeyUpdateInput.model_validate(
+        {
+            "id": "k",
+            "description": "",
+            "expires_at": None,
+            "limit_usd": None,
+            "limit_diem": 10,
+            "limit_vcu": None,
+            "limit_period": "LIFETIME",
+            "model_privacy": "PRIVATE_TEXT",
+            "ip_allowlist": [],
+        }
+    ).body()
+    assert set(every_setting) == set(properties)
+    assert set(every_setting["consumptionLimit"]) == set(
+        properties["consumptionLimit"]["properties"]
+    )
+    # None clears the expiry and limits, which the schema allows as null.
+    assert every_setting["expiresAt"] is None
+    assert any(option.get("nullable") for option in properties["expiresAt"]["anyOf"])
+    for limit in ("usd", "vcu"):
+        assert every_setting["consumptionLimit"][limit] is None
+        assert any(
+            option.get("nullable")
+            for option in properties["consumptionLimit"]["properties"][limit]["anyOf"]
+        )
+
+
+def test_key_updates_send_only_the_given_settings():
+    update = KeyUpdateInput.model_validate(
+        {"id": "k", "expires_at": datetime(2027, 1, 1, tzinfo=timezone.utc), "limit_usd": 5}
+    )
+    assert update.body() == {
+        "id": "k",
+        "expiresAt": "2027-01-01T00:00:00.000Z",
+        "consumptionLimit": {"usd": 5},
+    }
+    with pytest.raises(ValidationError, match="no API key settings to update"):
+        KeyUpdateInput.model_validate({"id": "k"})
+    for name in ("description", "limit_period", "model_privacy", "ip_allowlist"):
+        with pytest.raises(ValidationError, match=f"{name} cannot be None"):
+            KeyUpdateInput.model_validate({"id": "k", name: None})
+    with pytest.raises(ValidationError):
+        KeyUpdateInput.model_validate({"id": "", "description": "x"})
+    with pytest.raises(ValidationError, match="timezone-aware"):
+        KeyUpdateInput.model_validate({"id": "k", "expires_at": datetime(2027, 1, 1)})
+
+
+def test_key_id_stays_one_path_segment():
+    method, path, _, _ = json_operation("get_key", {"id": "../rate_limits"})
+    assert (method, path) == ("GET", "api_keys/..%2Frate_limits")
 
 
 def test_key_inputs_and_utc_serialization():

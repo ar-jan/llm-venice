@@ -7,7 +7,7 @@ import json
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Annotated, Any, Literal, TypeVar, cast
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 import httpx2
 from pydantic import (
@@ -18,8 +18,9 @@ from pydantic import (
     TypeAdapter,
     ValidationError,
     field_validator,
+    model_validator,
 )
-from typing_extensions import get_type_hints
+from typing_extensions import Self, get_type_hints
 
 from .errors import VeniceResponseError
 from .params import ImageParams, SpeechParams, copy_params, parameter_body
@@ -121,6 +122,34 @@ class KeyInput(_KeySettings):
             "description": self.description,
             **self._settings(given),
         }
+
+
+# Venice has no null for these, so None cannot clear them in an update.
+_NOT_CLEARABLE = ("description", "limit_period", "model_privacy", "ip_allowlist")
+
+
+class KeyUpdateInput(_KeySettings):
+    """Only the settings given are sent; None clears the expiry or a limit."""
+
+    id: str = Field(min_length=1)
+    description: str | None = Field(default=None, max_length=64)
+
+    @model_validator(mode="after")
+    def _check_changes(self) -> Self:
+        if not self.model_fields_set - {"id"}:
+            raise ValueError("no API key settings to update")
+        for name in _NOT_CLEARABLE:
+            if name in self.model_fields_set and getattr(self, name) is None:
+                hint = " (an empty list allows any IP)" if name == "ip_allowlist" else ""
+                raise ValueError(f"{name} cannot be None; leave it out to keep it{hint}")
+        return self
+
+    def body(self) -> dict[str, Any]:
+        changed = self.model_fields_set - {"id"}
+        body: dict[str, Any] = {"id": self.id}
+        if "description" in changed:
+            body["description"] = self.description
+        return {**body, **self._settings(changed)}
 
 
 class KeyIdInput(BaseModel):
@@ -480,6 +509,17 @@ def json_operation(name: str, inputs: dict[str, Any]) -> tuple[str, str, str, di
             "Deleting API key",
             {"params": KeyIdInput.model_validate(inputs).model_dump()},
         )
+    if name == "get_key":
+        # Quote the ID so it stays one path segment and cannot reach another endpoint.
+        key_id = quote(KeyIdInput.model_validate(inputs).id, safe="")
+        return "GET", f"api_keys/{key_id}", "Retrieving API key", {}
+    if name == "update_key":
+        return (
+            "PATCH",
+            "api_keys",
+            "Updating API key",
+            {"json": KeyUpdateInput.model_validate(inputs).body()},
+        )
     if name == "augment_search":
         return (
             "POST",
@@ -528,6 +568,9 @@ def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[st
         resource(obj.get("data"), RateLimits, action)
     elif name == "create_key":
         resource(obj.get("data"), CreatedApiKey, action)
+    elif name in ("get_key", "update_key"):
+        # An update returns the key without its usage fields, which are optional.
+        resource(obj.get("data"), ApiKey, action)
     elif name == "delete_key":
         # A 200 must confirm the revocation; anything else may have left the key live.
         if obj.get("success") is not True:

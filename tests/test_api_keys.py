@@ -32,6 +32,8 @@ from llm_venice.client import AsyncVeniceClient, VeniceClient
         ),
         (["create", "--type", "ADMIN"], "POST", "api_keys", {"id": "key", "apiKey": "created"}),
         (["delete", "key"], "DELETE", "api_keys?id=key", None),
+        (["get", "key"], "GET", "api_keys/key", {"id": "key", "future": 1}),
+        (["update", "key", "--description", "x"], "PATCH", "api_keys", {"id": "key"}),
     ],
 )
 def test_api_key_cli_preserves_json_envelope_bytes(
@@ -113,6 +115,91 @@ def test_create_cli_rejects_invalid_settings_before_request(
     assert not httpx2_mock.get_requests()
 
 
+@pytest.mark.parametrize(
+    "args, body",
+    [
+        (
+            [
+                "--description",
+                "",
+                "--expiration-date",
+                "2027-01-31T12:00",
+                "--limits-usd",
+                "none",
+                "--limits-diem",
+                "4",
+                "--limit-period",
+                "LIFETIME",
+                "--model-privacy",
+                "PRIVATE_TEXT",
+                "--ip-allowlist",
+                "11.22.33.44",
+                "--ip-allowlist",
+                "11.22.33.0/24",
+            ],
+            {
+                "description": "",
+                "expiresAt": "2027-01-31T12:00:00.000Z",
+                "consumptionLimit": {"usd": None, "diem": 4.0},
+                "limitPeriod": "LIFETIME",
+                "modelPrivacy": "PRIVATE_TEXT",
+                "ipAllowlist": ["11.22.33.44", "11.22.33.0/24"],
+            },
+        ),
+        (
+            ["--no-expiration", "--limits-vcu", "None", "--clear-ip-allowlist"],
+            {"expiresAt": None, "consumptionLimit": {"vcu": None}, "ipAllowlist": []},
+        ),
+    ],
+)
+def test_update_cli_sends_only_given_changes(
+    cli_runner, httpx2_mock, mock_venice_api_key, args, body
+):
+    httpx2_mock.add_response(
+        method="PATCH",
+        url="https://api.venice.ai/api/v1/api_keys",
+        json={"success": True, "data": {"id": "key"}},
+    )
+
+    result = cli_runner.invoke(cli, ["venice", "api-keys", "update", "key", *args])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(httpx2_mock.get_request().read()) == {"id": "key", **body}
+
+
+@pytest.mark.parametrize(
+    "args, message",
+    [
+        ([], "at least one setting"),
+        (["--expiration-date", "2027-01-01", "--no-expiration"], "not both"),
+        (["--ip-allowlist", "1.2.3.4", "--clear-ip-allowlist"], "not both"),
+        (["--limits-usd", "-1"], "x>=0"),
+        (["--limit-period", "WEEK"], "WEEK"),
+    ],
+)
+def test_update_cli_rejects_bad_changes_before_request(
+    cli_runner, httpx2_mock, mock_venice_api_key, args, message
+):
+    result = cli_runner.invoke(cli, ["venice", "api-keys", "update", "key", *args])
+
+    assert result.exit_code == 2
+    assert message in result.output
+    assert not httpx2_mock.get_requests()
+
+
+def test_update_cli_reports_invalid_addresses_without_request(
+    cli_runner, httpx2_mock, mock_venice_api_key
+):
+    result = cli_runner.invoke(
+        cli, ["venice", "api-keys", "update", "key", "--ip-allowlist", "example.com"]
+    )
+
+    assert result.exit_code == 1
+    assert "not an IP address or CIDR subnet" in result.output
+    assert "Traceback" not in result.output
+    assert not httpx2_mock.get_requests()
+
+
 def test_list_api_keys_http_error(cli_runner, httpx2_mock, mock_venice_api_key):
     """Handle unexpected HTTP errors without a traceback."""
     httpx2_mock.add_response(
@@ -153,6 +240,16 @@ def test_list_api_keys_http_error(cli_runner, httpx2_mock, mock_venice_api_key):
             ["venice", "api-keys", "delete", "example-key"],
             "DELETE",
             "https://api.venice.ai/api/v1/api_keys?id=example-key",
+        ),
+        (
+            ["venice", "api-keys", "get", "example-key"],
+            "GET",
+            "https://api.venice.ai/api/v1/api_keys/example-key",
+        ),
+        (
+            ["venice", "api-keys", "update", "example-key", "--model-privacy", "ALL"],
+            "PATCH",
+            "https://api.venice.ai/api/v1/api_keys",
         ),
     ],
 )

@@ -4,6 +4,12 @@
 
 ### New features
 
+- `get_api_key()` and `update_api_key()` client methods, with `llm venice api-keys get`
+  and `llm venice api-keys update` commands, for `GET /api_keys/{id}` and
+  `PATCH /api_keys`. An update changes only the settings given: description, expiry,
+  limits, limit period, model privacy and IP allowlist. `None` (`--no-expiration`,
+  `--limits-usd none`) removes the expiry or a limit, and an empty allowlist
+  (`--clear-ip-allowlist`) allows any IP address.
 - `create_api_key()` and `llm venice api-keys create` set Diem limits
   (`limit_diem`, `--limits-diem`), the limit period (`limit_period`, `--limit-period`:
   `EPOCH`, `MONTH` or `LIFETIME`), model privacy (`model_privacy`, `--model-privacy`:

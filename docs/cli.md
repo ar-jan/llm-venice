@@ -219,11 +219,13 @@ Use a character's `slug` in chat prompts with `-o character_slug <slug>`.
 llm venice api-keys list            # default when no subcommand is given
 llm venice api-keys rate-limits
 llm venice api-keys rate-limits-log
+llm venice api-keys get <API_KEY_ID>
 llm venice api-keys create --type INFERENCE --description "ci" --expiration-date 2026-12-31 --limits-usd 5.0
+llm venice api-keys update <API_KEY_ID> --limits-diem 5 --limit-period MONTH
 llm venice api-keys delete <API_KEY_ID>
 ```
 
-Listing, creating, and deleting API keys require a Venice `ADMIN` key. Run `llm venice api-keys --help` for full flag details.
+Listing, getting, creating, updating, and deleting API keys require a Venice `ADMIN` key. Run `llm venice api-keys --help` for full flag details.
 
 `create` sends only the settings you give; Venice applies its defaults for the rest:
 
@@ -235,6 +237,12 @@ Listing, creating, and deleting API keys require a Venice `ADMIN` key. Run `llm 
 ```bash
 llm venice api-keys create --type INFERENCE --limits-diem 2 --limit-period MONTH \
   --model-privacy PRIVATE_ONLY --ip-allowlist 11.22.33.0/24 --ip-allowlist 2a00:1::/48
+```
+
+`update` takes the same settings plus `--description`, and changes only the ones you give; the others keep their current values. To remove a setting, use `--no-expiration`, `none` as a limit (`--limits-usd none`), or `--clear-ip-allowlist` to let any IP address use the key. `--ip-allowlist` replaces the whole list.
+
+```bash
+llm venice api-keys update <API_KEY_ID> --no-expiration --limits-usd none --ip-allowlist 11.22.33.44
 ```
 
 ## Debugging HTTP requests

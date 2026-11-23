@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, Literal, cast
 
 import httpx2
-from typing_extensions import Self
+from typing_extensions import Self, Unpack
 
 from . import _endpoints as ep
 from . import _logging
@@ -26,6 +26,7 @@ from .results import (
 )
 from .types import (
     ApiKey,
+    ApiKeyChanges,
     ApiKeyLimitPeriod,
     ApiKeyModelPrivacy,
     AugmentSearchProvider,
@@ -219,6 +220,19 @@ class VeniceClient(_Configuration):
                 ip_allowlist=ip_allowlist,
             )["data"],
         )
+
+    def get_api_key(self, key_id: str) -> ApiKey:
+        """Return one key's details by its resource ID (requires an ADMIN key)."""
+        return cast(ApiKey, self._json_operation("get_key", id=key_id)["data"])
+
+    def update_api_key(self, key_id: str, **changes: Unpack[ApiKeyChanges]) -> ApiKey:
+        """Change a key's settings and return the key; settings left out are kept.
+
+        None removes the expiry or a limit, and an empty ``ip_allowlist`` allows any
+        IP address. Requires an ADMIN key.
+        """
+        inputs: dict[str, Any] = {**changes, "id": key_id}
+        return cast(ApiKey, self._json_operation("update_key", **inputs)["data"])
 
     def delete_api_key(self, key_id: str) -> None:
         """Delete a key by its resource ID."""
@@ -457,6 +471,19 @@ class AsyncVeniceClient(_Configuration):
                 )
             )["data"],
         )
+
+    async def get_api_key(self, key_id: str) -> ApiKey:
+        """Return one key's details by its resource ID (requires an ADMIN key)."""
+        return cast(ApiKey, (await self._json_operation("get_key", id=key_id))["data"])
+
+    async def update_api_key(self, key_id: str, **changes: Unpack[ApiKeyChanges]) -> ApiKey:
+        """Change a key's settings and return the key; settings left out are kept.
+
+        None removes the expiry or a limit, and an empty ``ip_allowlist`` allows any
+        IP address. Requires an ADMIN key.
+        """
+        inputs: dict[str, Any] = {**changes, "id": key_id}
+        return cast(ApiKey, (await self._json_operation("update_key", **inputs))["data"])
 
     async def delete_api_key(self, key_id: str) -> None:
         """Delete a key by its resource ID."""

@@ -92,6 +92,15 @@ def invoke(is_async, method, *args, key="test", **kwargs):
             {"id": "k", "apiKey": "new"},
         ),
         ("delete_api_key", ("k",), {}, "/api_keys?id=k", {"success": True}, None),
+        ("get_api_key", ("k",), {}, "/api_keys/k", {"data": {"id": "k"}}, {"id": "k"}),
+        (
+            "update_api_key",
+            ("k",),
+            {"description": "new"},
+            "/api_keys",
+            {"data": {"id": "k", "description": "new"}, "success": True},
+            {"id": "k", "description": "new"},
+        ),
     ],
 )
 def test_json_parity(is_async, method, args, kwargs, path, payload, expected, httpx2_mock):
@@ -200,6 +209,53 @@ def test_create_api_key_sends_only_given_settings(is_async, httpx2_mock):
         "modelPrivacy": "PRIVATE_TEXT",
         "ipAllowlist": ["11.22.33.0/24", "2a00:1::/48"],
     }
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_update_api_key_sends_given_changes_and_clears_with_none(is_async, httpx2_mock):
+    httpx2_mock.add_response(
+        method="PATCH",
+        url="https://api.venice.ai/api/v1/api_keys",
+        json={"data": {"id": "k", "limitPeriod": "MONTH"}, "success": True},
+    )
+
+    key = invoke(
+        is_async,
+        "update_api_key",
+        "k",
+        expires_at=None,
+        limit_usd=None,
+        limit_diem=3,
+        limit_period="MONTH",
+        ip_allowlist=[],
+    )
+
+    assert key == {"id": "k", "limitPeriod": "MONTH"}
+    assert json.loads(httpx2_mock.get_request().read()) == {
+        "id": "k",
+        "expiresAt": None,
+        "consumptionLimit": {"usd": None, "diem": 3},
+        "limitPeriod": "MONTH",
+        "ipAllowlist": [],
+    }
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_api_key_lookup_and_update_validate_before_http(is_async, httpx2_mock):
+    with pytest.raises(ValidationError, match="no API key settings"):
+        invoke(is_async, "update_api_key", "k")
+    with pytest.raises(ValidationError, match="description cannot be None"):
+        invoke(is_async, "update_api_key", "k", description=None)
+    with pytest.raises(ValidationError):
+        invoke(is_async, "get_api_key", "")
+    assert not httpx2_mock.get_requests()
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_get_api_key_quotes_the_id(is_async, httpx2_mock):
+    httpx2_mock.add_response(json={"data": {"id": "a/b"}})
+    assert invoke(is_async, "get_api_key", "a/b") == {"id": "a/b"}
+    assert httpx2_mock.get_request().url.raw_path == b"/api/v1/api_keys/a%2Fb"
 
 
 @pytest.mark.parametrize("is_async", [False, True])

@@ -1,5 +1,7 @@
 """JSON resources; wire timestamps and unknown JSON fields are preserved."""
 
+from collections.abc import Sequence
+from datetime import datetime
 from typing import Any, Literal
 from typing_extensions import Required, TypedDict
 
@@ -187,6 +189,23 @@ class CreatedApiKey(TypedDict, total=False):
     limitPeriod: str
     modelPrivacy: str
     ipAllowlist: list[str]
+
+
+class ApiKeyChanges(TypedDict, total=False):
+    """Settings for ``update_api_key()``; a setting left out keeps its current value.
+
+    None removes the expiry or a limit. An empty ``ip_allowlist`` allows any IP
+    address. ``expires_at`` must be timezone-aware.
+    """
+
+    description: str
+    expires_at: datetime | None
+    limit_usd: float | None
+    limit_diem: float | None
+    limit_vcu: float | None
+    limit_period: ApiKeyLimitPeriod
+    model_privacy: ApiKeyModelPrivacy
+    ip_allowlist: Sequence[str]
 
 
 class AugmentSearchResult(TypedDict, total=False):

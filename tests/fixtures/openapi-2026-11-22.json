@@ -978,6 +978,612 @@
         }
       }
     },
+    "PATCH /api_keys": {
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "consumptionLimit": {
+                  "type": "object",
+                  "properties": {
+                    "usd": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 9999999999
+                        },
+                        {
+                          "nullable": true,
+                          "title": "null"
+                        },
+                        {
+                          "nullable": true,
+                          "title": "null"
+                        }
+                      ],
+                      "description": "USD limit",
+                      "example": 50
+                    },
+                    "diem": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 9999999999
+                        },
+                        {
+                          "nullable": true,
+                          "title": "null"
+                        },
+                        {
+                          "nullable": true,
+                          "title": "null"
+                        }
+                      ],
+                      "description": "Diem limit",
+                      "example": 10
+                    },
+                    "vcu": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 9999999999
+                        },
+                        {
+                          "nullable": true,
+                          "title": "null"
+                        },
+                        {
+                          "nullable": true,
+                          "title": "null"
+                        }
+                      ],
+                      "description": "VCU limit (deprecated - use Diem instead)",
+                      "deprecated": true,
+                      "example": 100
+                    }
+                  },
+                  "description": "The API Key consumption limits, evaluated against the window selected by `limitPeriod`.",
+                  "example": {
+                    "usd": 50,
+                    "diem": 10,
+                    "vcu": 30
+                  }
+                },
+                "limitPeriod": {
+                  "type": "string",
+                  "enum": [
+                    "EPOCH",
+                    "MONTH",
+                    "LIFETIME"
+                  ],
+                  "description": "Reset window the consumption limits apply to. `EPOCH` resets every UTC day (legacy default). `MONTH` resets on the 1st of each UTC calendar month. `LIFETIME` never resets, so the limit acts as a permanent cap on the key.",
+                  "example": "MONTH"
+                },
+                "modelPrivacy": {
+                  "type": "string",
+                  "enum": [
+                    "ALL",
+                    "PRIVATE_TEXT",
+                    "PRIVATE_ONLY"
+                  ],
+                  "description": "Which models this key may call, by privacy tier. `ALL` allows every model. `PRIVATE_TEXT` requires text and embedding models to be Private, TEE, or E2EE while other modalities may be Anonymous or Private. `PRIVATE_ONLY` requires every model to be Private, TEE, or E2EE; Anonymous models are rejected.",
+                  "example": "ALL"
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "description": "The API Key description (max 64 characters)",
+                  "example": "Updated API Key Name"
+                },
+                "expiresAt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        ""
+                      ]
+                    },
+                    {
+                      "nullable": true,
+                      "title": "null"
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{3})?Z$"
+                    },
+                    {
+                      "nullable": true,
+                      "title": "null"
+                    }
+                  ],
+                  "description": "The API Key expiration date. Set to empty string or null to remove expiration.",
+                  "example": "2023-10-01 12:00:00+00:00"
+                },
+                "id": {
+                  "type": "string",
+                  "description": "The API Key ID to update",
+                  "example": "e28e82dc-9df2-4b47-b726-d0a222ef2ab5"
+                },
+                "ipAllowlist": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "maxItems": 100,
+                  "description": "Globally reachable IPv4 or IPv6 addresses and CIDR subnets allowed to use this key. An empty list allows requests from any IP address.",
+                  "example": [
+                    "11.22.33.44",
+                    "11.22.33.0/24",
+                    "2a00:1::/48"
+                  ]
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false,
+              "description": "The request body for updating an existing API key. The description, expiration date, consumption limits, limit period (epoch / month / lifetime), model privacy, and IP allowlist can be updated."
+            }
+          }
+        }
+      },
+      "response": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "apiKeyType": {
+                      "type": "string",
+                      "enum": [
+                        "INFERENCE",
+                        "ADMIN"
+                      ],
+                      "description": "The API Key type",
+                      "example": "ADMIN"
+                    },
+                    "consumptionLimits": {
+                      "type": "object",
+                      "properties": {
+                        "usd": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 9999999999
+                            },
+                            {
+                              "nullable": true,
+                              "title": "null"
+                            },
+                            {
+                              "nullable": true,
+                              "title": "null"
+                            }
+                          ],
+                          "description": "USD limit",
+                          "example": 50
+                        },
+                        "diem": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 9999999999
+                            },
+                            {
+                              "nullable": true,
+                              "title": "null"
+                            },
+                            {
+                              "nullable": true,
+                              "title": "null"
+                            }
+                          ],
+                          "description": "Diem limit",
+                          "example": 10
+                        },
+                        "vcu": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 9999999999
+                            },
+                            {
+                              "nullable": true,
+                              "title": "null"
+                            },
+                            {
+                              "nullable": true,
+                              "title": "null"
+                            }
+                          ],
+                          "description": "VCU limit (deprecated - use Diem instead)",
+                          "deprecated": true,
+                          "example": 100
+                        }
+                      },
+                      "description": "The API Key consumption limits, evaluated against the window selected by `limitPeriod`.",
+                      "example": {
+                        "usd": 50,
+                        "diem": 10,
+                        "vcu": 30
+                      }
+                    },
+                    "limitPeriod": {
+                      "type": "string",
+                      "enum": [
+                        "EPOCH",
+                        "MONTH",
+                        "LIFETIME"
+                      ],
+                      "description": "Reset window the consumption limits apply to. `EPOCH` resets every UTC day (legacy default). `MONTH` resets on the 1st of each UTC calendar month. `LIFETIME` never resets, so the limit acts as a permanent cap on the key.",
+                      "example": "MONTH"
+                    },
+                    "modelPrivacy": {
+                      "type": "string",
+                      "enum": [
+                        "ALL",
+                        "PRIVATE_TEXT",
+                        "PRIVATE_ONLY"
+                      ],
+                      "description": "Which models this key may call, by privacy tier. `ALL` allows every model. `PRIVATE_TEXT` requires text and embedding models to be Private, TEE, or E2EE while other modalities may be Anonymous or Private. `PRIVATE_ONLY` requires every model to be Private, TEE, or E2EE; Anonymous models are rejected.",
+                      "example": "ALL"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "API Key creation date",
+                      "example": "2023-10-01 12:00:00+00:00"
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "The API Key description",
+                      "example": "Updated API Key"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "The API Key expiration date",
+                      "example": "2023-10-01 12:00:00+00:00"
+                    },
+                    "id": {
+                      "type": "string",
+                      "description": "The API Key ID",
+                      "example": "e28e82dc-9df2-4b47-b726-d0a222ef2ab5"
+                    },
+                    "ipAllowlist": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 100,
+                      "description": "Globally reachable IPv4 or IPv6 addresses and CIDR subnets allowed to use this key. An empty list allows requests from any IP address. Entries are returned in canonical CIDR notation.",
+                      "example": [
+                        "11.22.33.44/32",
+                        "11.22.33.0/24",
+                        "2a00:1::/48"
+                      ]
+                    },
+                    "last6Chars": {
+                      "type": "string",
+                      "description": "Last 6 characters of the API Key",
+                      "example": "2V2jNW"
+                    },
+                    "lastUsedAt": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "API Key last used date",
+                      "example": "2023-10-01 12:00:00+00:00"
+                    }
+                  },
+                  "required": [
+                    "apiKeyType",
+                    "consumptionLimits",
+                    "limitPeriod",
+                    "modelPrivacy",
+                    "createdAt",
+                    "expiresAt",
+                    "id",
+                    "ipAllowlist",
+                    "last6Chars",
+                    "lastUsedAt"
+                  ],
+                  "additionalProperties": false
+                },
+                "success": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "data",
+                "success"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      }
+    },
+    "GET /api_keys/{id}": {
+      "requestBody": null,
+      "response": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "apiKeyType": {
+                      "type": "string",
+                      "enum": [
+                        "INFERENCE",
+                        "ADMIN"
+                      ],
+                      "description": "API Key type",
+                      "example": "ADMIN"
+                    },
+                    "consumptionLimits": {
+                      "type": "object",
+                      "properties": {
+                        "usd": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 9999999999
+                            },
+                            {
+                              "nullable": true,
+                              "title": "null"
+                            },
+                            {
+                              "nullable": true,
+                              "title": "null"
+                            }
+                          ],
+                          "description": "USD limit",
+                          "example": 50
+                        },
+                        "diem": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 9999999999
+                            },
+                            {
+                              "nullable": true,
+                              "title": "null"
+                            },
+                            {
+                              "nullable": true,
+                              "title": "null"
+                            }
+                          ],
+                          "description": "Diem limit",
+                          "example": 10
+                        },
+                        "vcu": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 9999999999
+                            },
+                            {
+                              "nullable": true,
+                              "title": "null"
+                            },
+                            {
+                              "nullable": true,
+                              "title": "null"
+                            }
+                          ],
+                          "description": "VCU limit (deprecated - use Diem instead)",
+                          "deprecated": true,
+                          "example": 100
+                        }
+                      },
+                      "description": "The API Key consumption limits, evaluated against the window selected by `limitPeriod`.",
+                      "example": {
+                        "usd": 50,
+                        "diem": 10,
+                        "vcu": 30
+                      }
+                    },
+                    "limitPeriod": {
+                      "type": "string",
+                      "enum": [
+                        "EPOCH",
+                        "MONTH",
+                        "LIFETIME"
+                      ],
+                      "description": "Reset window the consumption limits apply to. `EPOCH` resets every UTC day (legacy default). `MONTH` resets on the 1st of each UTC calendar month. `LIFETIME` never resets, so the limit acts as a permanent cap on the key.",
+                      "example": "MONTH"
+                    },
+                    "modelPrivacy": {
+                      "type": "string",
+                      "enum": [
+                        "ALL",
+                        "PRIVATE_TEXT",
+                        "PRIVATE_ONLY"
+                      ],
+                      "description": "Which models this key may call, by privacy tier. `ALL` allows every model. `PRIVATE_TEXT` requires text and embedding models to be Private, TEE, or E2EE while other modalities may be Anonymous or Private. `PRIVATE_ONLY` requires every model to be Private, TEE, or E2EE; Anonymous models are rejected.",
+                      "example": "ALL"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "API Key creation date",
+                      "example": "2023-10-01 12:00:00+00:00"
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "API Key description",
+                      "example": "Example API Key"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "API Key expiration date",
+                      "example": "2023-10-01 12:00:00+00:00"
+                    },
+                    "id": {
+                      "type": "string",
+                      "description": "API Key ID",
+                      "example": "e28e82dc-9df2-4b47-b726-d0a222ef2ab5"
+                    },
+                    "ipAllowlist": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 100,
+                      "description": "Globally reachable IPv4 or IPv6 addresses and CIDR subnets allowed to use this key. An empty list allows requests from any IP address. Entries are returned in canonical CIDR notation.",
+                      "example": [
+                        "11.22.33.44/32",
+                        "11.22.33.0/24",
+                        "2a00:1::/48"
+                      ]
+                    },
+                    "last6Chars": {
+                      "type": "string",
+                      "description": "Last 6 characters of the API Key",
+                      "example": "2V2jNW"
+                    },
+                    "lastUsedAt": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "API Key last used date",
+                      "example": "2023-10-01 12:00:00+00:00"
+                    },
+                    "usage": {
+                      "type": "object",
+                      "properties": {
+                        "trailingSevenDays": {
+                          "type": "object",
+                          "properties": {
+                            "usd": {
+                              "type": "string",
+                              "description": "USD budget usage in the trailing 7 days, including bundled credits",
+                              "example": "10.2424"
+                            },
+                            "vcu": {
+                              "type": "string",
+                              "description": "VCU usage in the trailing 7 days (deprecated - use Diem instead)",
+                              "deprecated": true,
+                              "example": "42.2315"
+                            },
+                            "diem": {
+                              "type": "string",
+                              "description": "Diem usage in the trailing 7 days",
+                              "example": "4.2231"
+                            }
+                          },
+                          "required": [
+                            "usd",
+                            "vcu",
+                            "diem"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "trailingSevenDays"
+                      ]
+                    },
+                    "currentPeriodUsage": {
+                      "type": "object",
+                      "properties": {
+                        "usd": {
+                          "type": "string",
+                          "description": "USD budget usage in the current limit period, including bundled credits",
+                          "example": "5.1234"
+                        },
+                        "diem": {
+                          "type": "string",
+                          "description": "Diem usage in the current limit period",
+                          "example": "2.5000"
+                        }
+                      },
+                      "required": [
+                        "usd",
+                        "diem"
+                      ],
+                      "description": "Usage within the current limit period window. Only present for keys that have consumption limits set."
+                    }
+                  },
+                  "required": [
+                    "apiKeyType",
+                    "consumptionLimits",
+                    "limitPeriod",
+                    "modelPrivacy",
+                    "createdAt",
+                    "expiresAt",
+                    "id",
+                    "ipAllowlist",
+                    "last6Chars",
+                    "lastUsedAt"
+                  ],
+                  "additionalProperties": false,
+                  "description": "API key details"
+                }
+              },
+              "required": [
+                "data"
+              ],
+              "additionalProperties": false,
+              "example": {
+                "data": {
+                  "apiKeyType": "ADMIN",
+                  "consumptionLimits": {
+                    "usd": 50,
+                    "diem": 10
+                  },
+                  "limitPeriod": "MONTH",
+                  "modelPrivacy": "ALL",
+                  "createdAt": {},
+                  "description": "Example API Key",
+                  "expiresAt": {},
+                  "id": "e28e82dc-9df2-4b47-b726-d0a222ef2ab5",
+                  "ipAllowlist": [
+                    "11.22.33.44/32",
+                    "12.22.33.0/24"
+                  ],
+                  "last6Chars": "2V2jNW",
+                  "lastUsedAt": {},
+                  "usage": {
+                    "trailingSevenDays": {
+                      "usd": "10.2424",
+                      "vcu": "42.2315",
+                      "diem": "4.2231"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "GET /api_keys/rate_limits": {
       "requestBody": null,
       "response": {
