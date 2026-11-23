@@ -1,6 +1,6 @@
 """Reusable sync and async clients for Venice's non-chat endpoints."""
 
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Generator, Sequence
 from contextlib import AsyncExitStack, ExitStack, asynccontextmanager, contextmanager
 from datetime import datetime
 import os
@@ -26,6 +26,8 @@ from .results import (
 )
 from .types import (
     ApiKey,
+    ApiKeyLimitPeriod,
+    ApiKeyModelPrivacy,
     AugmentSearchProvider,
     AugmentSearchResponse,
     Character,
@@ -191,9 +193,17 @@ class VeniceClient(_Configuration):
         description: str = "",
         expires_at: datetime | None = None,
         limit_usd: float | None = None,
+        limit_diem: float | None = None,
         limit_vcu: float | None = None,
+        limit_period: ApiKeyLimitPeriod | None = None,
+        model_privacy: ApiKeyModelPrivacy | None = None,
+        ip_allowlist: Sequence[str] | None = None,
     ) -> CreatedApiKey:
-        """Create a key once. Expiry must be timezone-aware and is sent in UTC."""
+        """Create a key and return its one-time secret; unset options are not sent.
+
+        Expiry must be timezone-aware and is sent in UTC. ``limit_vcu`` is deprecated
+        by Venice in favour of ``limit_diem``. An empty ``ip_allowlist`` allows any IP.
+        """
         return cast(
             CreatedApiKey,
             self._json_operation(
@@ -202,7 +212,11 @@ class VeniceClient(_Configuration):
                 description=description,
                 expires_at=expires_at,
                 limit_usd=limit_usd,
+                limit_diem=limit_diem,
                 limit_vcu=limit_vcu,
+                limit_period=limit_period,
+                model_privacy=model_privacy,
+                ip_allowlist=ip_allowlist,
             )["data"],
         )
 
@@ -415,9 +429,17 @@ class AsyncVeniceClient(_Configuration):
         description: str = "",
         expires_at: datetime | None = None,
         limit_usd: float | None = None,
+        limit_diem: float | None = None,
         limit_vcu: float | None = None,
+        limit_period: ApiKeyLimitPeriod | None = None,
+        model_privacy: ApiKeyModelPrivacy | None = None,
+        ip_allowlist: Sequence[str] | None = None,
     ) -> CreatedApiKey:
-        """Create a key once. Expiry must be timezone-aware and is sent in UTC."""
+        """Create a key and return its one-time secret; unset options are not sent.
+
+        Expiry must be timezone-aware and is sent in UTC. ``limit_vcu`` is deprecated
+        by Venice in favour of ``limit_diem``. An empty ``ip_allowlist`` allows any IP.
+        """
         return cast(
             CreatedApiKey,
             (
@@ -427,7 +449,11 @@ class AsyncVeniceClient(_Configuration):
                     description=description,
                     expires_at=expires_at,
                     limit_usd=limit_usd,
+                    limit_diem=limit_diem,
                     limit_vcu=limit_vcu,
+                    limit_period=limit_period,
+                    model_privacy=model_privacy,
+                    ip_allowlist=ip_allowlist,
                 )
             )["data"],
         )

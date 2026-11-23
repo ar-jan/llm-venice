@@ -2,20 +2,29 @@
 
 import base64
 import binascii
+import ipaddress
 import json
 from datetime import datetime, timezone
 from functools import lru_cache
-from typing import Any, Literal, TypeVar, cast
+from typing import Annotated, Any, Literal, TypeVar, cast
 from urllib.parse import unquote
 
 import httpx2
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+)
 from typing_extensions import get_type_hints
 
 from .errors import VeniceResponseError
 from .params import ImageParams, SpeechParams, copy_params, parameter_body
 from .results import NO_AUDIO, GeneratedImage, ImageResult, ModelDeprecation, SpeechResult
-from .types import AugmentSearchProvider, ModelInfo
+from .types import AugmentSearchProvider, ApiKeyLimitPeriod, ApiKeyModelPrivacy, ModelInfo
 
 
 class _Input(BaseModel):
@@ -38,13 +47,35 @@ class UpscaleInput(BaseModel):
     creativity: float | None = Field(default=None, ge=0, le=0.02)
 
 
-class KeyInput(BaseModel):
+def _ip_or_subnet(value: str) -> str:
+    """Check the syntax only; Venice decides which addresses are globally reachable."""
+    try:
+        ipaddress.ip_network(value, strict=False)
+    except ValueError:
+        raise ValueError(f"{value!r} is not an IP address or CIDR subnet") from None
+    return value
+
+
+IpAllowlistEntry = Annotated[str, Field(max_length=64), AfterValidator(_ip_or_subnet)]
+KeyLimit = Annotated[float, Field(ge=0, le=9_999_999_999)]
+
+
+def _utc(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+class _KeySettings(BaseModel):
+    """Settings shared by key creation and update; None leaves a field out."""
+
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
-    key_type: Literal["ADMIN", "INFERENCE"]
-    description: str = Field(default="", max_length=64)
     expires_at: datetime | None = None
-    limit_usd: float | None = Field(default=None, ge=0, le=9_999_999_999)
-    limit_vcu: float | None = Field(default=None, ge=0, le=9_999_999_999)
+    limit_usd: KeyLimit | None = None
+    limit_diem: KeyLimit | None = None
+    # Deprecated by Venice in favour of Diem; still accepted.
+    limit_vcu: KeyLimit | None = None
+    limit_period: ApiKeyLimitPeriod | None = None
+    model_privacy: ApiKeyModelPrivacy | None = None
+    ip_allowlist: list[IpAllowlistEntry] | None = Field(default=None, max_length=100)
 
     @field_validator("expires_at")
     @classmethod
@@ -53,16 +84,42 @@ class KeyInput(BaseModel):
             raise ValueError("expires_at must be timezone-aware")
         return value
 
+    def _limits(self, names: set[str]) -> dict[str, float | None]:
+        return {
+            wire: getattr(self, name)
+            for name, wire in (("limit_usd", "usd"), ("limit_diem", "diem"), ("limit_vcu", "vcu"))
+            if name in names
+        }
+
+    def _settings(self, names: set[str]) -> dict[str, Any]:
+        """The wire fields for the settings in ``names``, with None sent as null."""
+        body: dict[str, Any] = {}
+        if "expires_at" in names:
+            body["expiresAt"] = _utc(self.expires_at) if self.expires_at else None
+        limits = self._limits(names)
+        if limits:
+            body["consumptionLimit"] = limits
+        for name, wire in (
+            ("limit_period", "limitPeriod"),
+            ("model_privacy", "modelPrivacy"),
+            ("ip_allowlist", "ipAllowlist"),
+        ):
+            if name in names:
+                body[wire] = getattr(self, name)
+        return body
+
+
+class KeyInput(_KeySettings):
+    key_type: Literal["ADMIN", "INFERENCE"]
+    description: str = Field(default="", max_length=64)
+
     def body(self) -> dict[str, Any]:
+        """Venice requires the type and description; unset optional fields are omitted."""
+        given = {name for name in _KeySettings.model_fields if getattr(self, name) is not None}
         return {
             "apiKeyType": self.key_type,
             "description": self.description,
-            "expiresAt": self.expires_at.astimezone(timezone.utc)
-            .isoformat(timespec="milliseconds")
-            .replace("+00:00", "Z")
-            if self.expires_at
-            else "",
-            "consumptionLimit": {"usd": self.limit_usd, "vcu": self.limit_vcu},
+            **self._settings(given),
         }
 
 

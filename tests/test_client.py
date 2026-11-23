@@ -173,6 +173,36 @@ def test_normalized_failures(is_async, httpx2_mock):
 
 
 @pytest.mark.parametrize("is_async", [False, True])
+def test_create_api_key_sends_only_given_settings(is_async, httpx2_mock):
+    created = {"data": {"id": "k", "apiKey": "new"}, "success": True}
+    httpx2_mock.add_response(url="https://api.venice.ai/api/v1/api_keys", json=created)
+    httpx2_mock.add_response(url="https://api.venice.ai/api/v1/api_keys", json=created)
+
+    invoke(is_async, "create_api_key", key_type="INFERENCE")
+    assert invoke(
+        is_async,
+        "create_api_key",
+        key_type="INFERENCE",
+        description="ci",
+        limit_diem=2.5,
+        limit_period="LIFETIME",
+        model_privacy="PRIVATE_TEXT",
+        ip_allowlist=("11.22.33.0/24", "2a00:1::/48"),
+    ) == {"id": "k", "apiKey": "new"}
+
+    first, second = (json.loads(request.read()) for request in httpx2_mock.get_requests())
+    assert first == {"apiKeyType": "INFERENCE", "description": ""}
+    assert second == {
+        "apiKeyType": "INFERENCE",
+        "description": "ci",
+        "consumptionLimit": {"diem": 2.5},
+        "limitPeriod": "LIFETIME",
+        "modelPrivacy": "PRIVATE_TEXT",
+        "ipAllowlist": ["11.22.33.0/24", "2a00:1::/48"],
+    }
+
+
+@pytest.mark.parametrize("is_async", [False, True])
 def test_content_policy_refusals_raise_content_violation_error(is_async, httpx2_mock):
     generate = "https://api.venice.ai/api/v1/image/generate"
     upscale = "https://api.venice.ai/api/v1/image/upscale"

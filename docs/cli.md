@@ -225,6 +225,18 @@ llm venice api-keys delete <API_KEY_ID>
 
 Listing, creating, and deleting API keys require a Venice `ADMIN` key. Run `llm venice api-keys --help` for full flag details.
 
+`create` sends only the settings you give; Venice applies its defaults for the rest:
+
+- `--limits-usd` and `--limits-diem` cap consumption per limit period. `--limits-vcu` is still accepted but deprecated by Venice in favour of Diem.
+- `--limit-period` sets when the limits reset: `EPOCH` (each UTC day, Venice's default), `MONTH` (the 1st of each UTC month), or `LIFETIME` (never).
+- `--model-privacy` restricts which models the key may call: `ALL`, `PRIVATE_TEXT` (text and embedding models must be Private, TEE, or E2EE), or `PRIVATE_ONLY`.
+- `--ip-allowlist ADDRESS` limits use to an IP address or CIDR subnet; repeat it for up to 100 entries. Without it, the key works from any IP address.
+
+```bash
+llm venice api-keys create --type INFERENCE --limits-diem 2 --limit-period MONTH \
+  --model-privacy PRIVATE_ONLY --ip-allowlist 11.22.33.0/24 --ip-allowlist 2a00:1::/48
+```
+
 ## Debugging HTTP requests
 
 Set `LLM_VENICE_SHOW_RESPONSES=1` to print each Venice API request and response (headers and bodies) to stderr. This covers chat, image, speech, upscale, search tools, and all `llm venice` commands, from both the CLI and the Python API:

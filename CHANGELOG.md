@@ -4,6 +4,12 @@
 
 ### New features
 
+- `create_api_key()` and `llm venice api-keys create` set Diem limits
+  (`limit_diem`, `--limits-diem`), the limit period (`limit_period`, `--limit-period`:
+  `EPOCH`, `MONTH` or `LIFETIME`), model privacy (`model_privacy`, `--model-privacy`:
+  `ALL`, `PRIVATE_TEXT` or `PRIVATE_ONLY`) and an IP allowlist (`ip_allowlist`,
+  repeatable `--ip-allowlist`, up to 100 addresses or CIDR subnets). VCU limits are
+  still accepted, though Venice deprecates them in favour of Diem.
 - Chat options `reasoning`, a JSON object with `effort`, `summary` and `enabled`;
   `verbosity` (`low`, `medium`, `high` or `auto`); and `fallbacks`, up to 10 model IDs
   to try when an Anthropic model refuses the request. `reasoning.effort` is checked
@@ -33,6 +39,8 @@
 
 ### Other changes and fixes
 
+- Creating an API key no longer sends an empty `expiresAt` and null limits when they
+  are not set; only the given settings are sent.
 - `prompt_cache_retention` is checked locally against `default`, `extended` and `24h`.
 - Constructing `VeniceChat` or `AsyncVeniceChat` with llm's `reasoning`, `verbosity`,
   `image_detail_original` or `service_tier` flags no longer replaces the Venice chat

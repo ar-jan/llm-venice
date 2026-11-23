@@ -78,7 +78,7 @@ JSON methods unwrap Venice's `data` envelope and return ordinary typed dictionar
 | `list_models(type="all")` | `list[ModelInfo]` | Filters by model type (e.g. `"text"`, `"image"`, `"tts"`). Skips malformed entries. |
 | `list_characters(web_enabled=None, adult=None, limit=None, offset=None)` | `list[Character]` | Returns one page (Venice default 50, max 100). Stop when a page is shorter than `limit`. (`llm venice characters` fetches all pages.) |
 | `list_api_keys()` | `list[ApiKey]` | Requires an `ADMIN` key. |
-| `create_api_key(key_type=..., description="", expires_at=None, limit_usd=None, limit_vcu=None)` | `CreatedApiKey` | Requires an `ADMIN` key. `expires_at`, if given, must be timezone-aware (sent in UTC). |
+| `create_api_key(key_type=..., description="", expires_at=None, limit_usd=None, limit_diem=None, limit_vcu=None, limit_period=None, model_privacy=None, ip_allowlist=None)` | `CreatedApiKey` | Requires an `ADMIN` key. Unset options are not sent. `expires_at`, if given, must be timezone-aware (sent in UTC). `limit_period` is `"EPOCH"`, `"MONTH"` or `"LIFETIME"`; `model_privacy` is `"ALL"`, `"PRIVATE_TEXT"` or `"PRIVATE_ONLY"`; `ip_allowlist` takes up to 100 IP addresses or CIDR subnets. `limit_vcu` is deprecated by Venice in favour of `limit_diem`. |
 | `delete_api_key(key_id)` | `None` | Requires an `ADMIN` key. |
 | `get_rate_limits()` | `RateLimits` | Current access status, balances, and rate limits. |
 | `get_rate_limits_log()` | `list[RateLimitLogEntry]` | Recent rate-limit events. |

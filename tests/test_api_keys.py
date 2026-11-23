@@ -48,6 +48,71 @@ def test_api_key_cli_preserves_json_envelope_bytes(
     assert result.stdout_bytes == (json.dumps(payload, indent=2) + "\n").encode()
 
 
+def test_create_cli_sends_new_key_settings(cli_runner, httpx2_mock, mock_venice_api_key):
+    httpx2_mock.add_response(
+        method="POST",
+        url="https://api.venice.ai/api/v1/api_keys",
+        json={"success": True, "data": {"id": "key", "apiKey": "created"}},
+    )
+
+    result = cli_runner.invoke(
+        cli,
+        [
+            "venice",
+            "api-keys",
+            "create",
+            "--type",
+            "INFERENCE",
+            "--description",
+            "ci",
+            "--expiration-date",
+            "2026-12-31",
+            "--limits-usd",
+            "5",
+            "--limits-diem",
+            "1.5",
+            "--limit-period",
+            "MONTH",
+            "--model-privacy",
+            "PRIVATE_ONLY",
+            "--ip-allowlist",
+            "11.22.33.44",
+            "--ip-allowlist",
+            "2a00:1::/48",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(httpx2_mock.get_request().read()) == {
+        "apiKeyType": "INFERENCE",
+        "description": "ci",
+        "expiresAt": "2026-12-31T00:00:00.000Z",
+        "consumptionLimit": {"usd": 5.0, "diem": 1.5},
+        "limitPeriod": "MONTH",
+        "modelPrivacy": "PRIVATE_ONLY",
+        "ipAllowlist": ["11.22.33.44", "2a00:1::/48"],
+    }
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--limit-period", "WEEK"],
+        ["--model-privacy", "TEE"],
+        ["--limits-diem", "-1"],
+        ["--ip-allowlist", "example.com"],
+    ],
+)
+def test_create_cli_rejects_invalid_settings_before_request(
+    cli_runner, httpx2_mock, mock_venice_api_key, args
+):
+    result = cli_runner.invoke(cli, ["venice", "api-keys", "create", "--type", "ADMIN", *args])
+
+    assert result.exit_code != 0
+    assert "Traceback" not in result.output
+    assert not httpx2_mock.get_requests()
+
+
 def test_list_api_keys_http_error(cli_runner, httpx2_mock, mock_venice_api_key):
     """Handle unexpected HTTP errors without a traceback."""
     httpx2_mock.add_response(

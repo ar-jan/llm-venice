@@ -2,12 +2,17 @@
 
 from datetime import timezone
 import json
+from typing import get_args
 
 import click
 
 from llm_venice.client import VeniceClient
 from llm_venice.errors import VeniceError
 from llm_venice.cli.errors import handle_cli_error
+from llm_venice.types import ApiKeyLimitPeriod, ApiKeyModelPrivacy
+
+LIMIT_PERIODS = get_args(ApiKeyLimitPeriod)
+MODEL_PRIVACY = get_args(ApiKeyModelPrivacy)
 
 
 def create_api_keys_group():
@@ -84,19 +89,54 @@ def create_api_keys_group():
         help="The API Key expiration date",
     )
     @click.option(
-        "--limits-vcu",
-        type=click.FloatRange(min=0.0),
-        default=None,
-        help="VCU consumption limit per epoch",
-    )
-    @click.option(
         "--limits-usd",
         type=click.FloatRange(min=0.0),
         default=None,
-        help="USD consumption limit per epoch",
+        help="USD consumption limit per limit period",
+    )
+    @click.option(
+        "--limits-diem",
+        type=click.FloatRange(min=0.0),
+        default=None,
+        help="Diem consumption limit per limit period",
+    )
+    @click.option(
+        "--limits-vcu",
+        type=click.FloatRange(min=0.0),
+        default=None,
+        help="VCU consumption limit per limit period (deprecated; use --limits-diem)",
+    )
+    @click.option(
+        "--limit-period",
+        type=click.Choice(LIMIT_PERIODS),
+        default=None,
+        help="When the limits reset: EPOCH (each UTC day, Venice's default), MONTH or LIFETIME",
+    )
+    @click.option(
+        "--model-privacy",
+        type=click.Choice(MODEL_PRIVACY),
+        default=None,
+        help="Models the key may call: ALL, PRIVATE_TEXT or PRIVATE_ONLY",
+    )
+    @click.option(
+        "--ip-allowlist",
+        multiple=True,
+        metavar="ADDRESS",
+        help="IP address or CIDR subnet allowed to use the key (repeatable; default any)",
     )
     @click.pass_context
-    def create_key(ctx, description, key_type, expiration_date, limits_vcu, limits_usd):
+    def create_key(
+        ctx,
+        description,
+        key_type,
+        expiration_date,
+        limits_usd,
+        limits_diem,
+        limits_vcu,
+        limit_period,
+        model_privacy,
+        ip_allowlist,
+    ):
         """Create a new API key."""
         expiration = expiration_date.replace(tzinfo=timezone.utc) if expiration_date else None
         try:
@@ -105,8 +145,12 @@ def create_api_keys_group():
                 description=description,
                 key_type=key_type,
                 expires_at=expiration,
-                limit_vcu=limits_vcu,
                 limit_usd=limits_usd,
+                limit_diem=limits_diem,
+                limit_vcu=limits_vcu,
+                limit_period=limit_period,
+                model_privacy=model_privacy,
+                ip_allowlist=list(ip_allowlist) or None,
             )
         except (VeniceError, ValueError, OSError) as e:
             handle_cli_error(e)

@@ -6,6 +6,12 @@ from typing_extensions import Required, TypedDict
 AugmentSearchProvider = Literal["brave", "google", "exa"]
 """Search providers accepted by ``/augment/search``; Venice uses Brave when omitted."""
 
+ApiKeyLimitPeriod = Literal["EPOCH", "MONTH", "LIFETIME"]
+"""When key consumption limits reset: each UTC day (Venice's default), month, or never."""
+
+ApiKeyModelPrivacy = Literal["ALL", "PRIVATE_TEXT", "PRIVATE_ONLY"]
+"""Which models a key may call by privacy tier: all, private text models, or private only."""
+
 
 class ModelCapabilities(TypedDict, total=False):
     """Optional capability metadata supplied by the catalog."""

@@ -2,11 +2,13 @@
 
 import base64
 import copy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
 import pickle
+import re
+from typing import get_args
 
 import httpx2
 import pytest
@@ -38,7 +40,15 @@ from llm_venice.errors import (
 )
 from llm_venice.params import ImageParams, SpeechParams, copy_params
 from llm_venice.results import GeneratedImage, ImageResult, ModelDeprecation, SpeechResult
-from llm_venice.types import ApiKey, Character, CreatedApiKey, ModelInfo, RateLimits
+from llm_venice.types import (
+    ApiKey,
+    ApiKeyLimitPeriod,
+    ApiKeyModelPrivacy,
+    Character,
+    CreatedApiKey,
+    ModelInfo,
+    RateLimits,
+)
 
 PNG = b"\x89PNG\r\n\x1a\nbytes"
 WEBP = b"RIFF0000WEBPbytes"
@@ -303,10 +313,58 @@ def test_drifted_policy_fields_do_not_break_error_mapping():
 def test_key_inputs_and_utc_serialization():
     with pytest.raises(ValidationError, match="timezone-aware"):
         KeyInput(key_type="ADMIN", expires_at=datetime(2026, 1, 1))
-    with pytest.raises(ValidationError):
-        KeyInput(key_type="ADMIN", limit_usd=-1)
+    for limit in ("limit_usd", "limit_diem", "limit_vcu"):
+        with pytest.raises(ValidationError):
+            KeyInput.model_validate({"key_type": "ADMIN", limit: -1})
     value = KeyInput(key_type="ADMIN", expires_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
     assert value.body()["expiresAt"] == "2026-01-01T00:00:00.000Z"
+
+
+def test_key_creation_omits_unset_fields():
+    # Venice requires the type and description; nothing else is sent unless set.
+    assert KeyInput(key_type="ADMIN").body() == {"apiKeyType": "ADMIN", "description": ""}
+    assert KeyInput(key_type="ADMIN", limit_vcu=3).body()["consumptionLimit"] == {"vcu": 3}
+    # An explicit empty allowlist is sent; it allows any IP address.
+    assert KeyInput(key_type="ADMIN", ip_allowlist=[]).body()["ipAllowlist"] == []
+
+
+def test_key_creation_matches_dated_fixture():
+    fixture = dated_fixture()
+    schema = fixture["resources"]["POST /api_keys"]["requestBody"]["content"]["application/json"]
+    request = schema["schema"]
+    properties = request["properties"]
+    value = KeyInput(
+        key_type="INFERENCE",
+        description="d" * properties["description"]["maxLength"],
+        expires_at=datetime(2026, 12, 31, 12, 30, tzinfo=timezone(timedelta(hours=2))),
+        limit_usd=50,
+        limit_diem=10,
+        limit_vcu=30,
+        limit_period="MONTH",
+        model_privacy="PRIVATE_ONLY",
+        ip_allowlist=properties["ipAllowlist"]["example"],
+    )
+    body = value.body()
+    assert set(body) == set(properties)
+    assert set(request["required"]) <= set(body)
+    assert set(body["consumptionLimit"]) == set(properties["consumptionLimit"]["properties"])
+    assert body["expiresAt"] == "2026-12-31T10:30:00.000Z"
+    assert any(
+        re.fullmatch(option["pattern"], body["expiresAt"])
+        for option in properties["expiresAt"]["anyOf"]
+        if "pattern" in option
+    )
+    assert set(get_args(ApiKeyLimitPeriod)) == set(properties["limitPeriod"]["enum"])
+    assert set(get_args(ApiKeyModelPrivacy)) == set(properties["modelPrivacy"]["enum"])
+    allowlist = properties["ipAllowlist"]
+    KeyInput(key_type="ADMIN", ip_allowlist=["1.2.3.4"] * allowlist["maxItems"])
+    with pytest.raises(ValidationError):
+        KeyInput(key_type="ADMIN", ip_allowlist=["1.2.3.4"] * (allowlist["maxItems"] + 1))
+    with pytest.raises(ValidationError):
+        KeyInput(key_type="ADMIN", ip_allowlist=["1" * (allowlist["items"]["maxLength"] + 1)])
+    for entry in ("example.com", "1.2.3.4.5", "10.0.0.0/33", ""):
+        with pytest.raises(ValidationError, match="IP address or CIDR subnet"):
+            KeyInput(key_type="ADMIN", ip_allowlist=[entry])
 
 
 def test_resource_shapes_and_types_preserve_unknown_fields():
