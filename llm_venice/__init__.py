@@ -8,6 +8,7 @@ from .results import GeneratedImage, ImageResult, SpeechResult, SpeechStream, As
 from .errors import (
     VeniceError,
     VeniceAPIError,
+    ContentViolationError,
     AuthenticationError,
     RateLimitError,
     VeniceConnectionError,
@@ -60,6 +61,7 @@ __all__ = [
     "AsyncSpeechStream",
     "VeniceError",
     "VeniceAPIError",
+    "ContentViolationError",
     "AuthenticationError",
     "RateLimitError",
     "VeniceConnectionError",

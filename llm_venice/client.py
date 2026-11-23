@@ -128,13 +128,15 @@ class VeniceClient(_Configuration):
     def __exit__(self, *exc: object) -> None:
         self.close()
 
-    def _send(self, method: str, path: str, action: str, **kwargs: Any) -> httpx2.Response:
+    def _send(
+        self, method: str, path: str, action: str, *, policy_422: bool = False, **kwargs: Any
+    ) -> httpx2.Response:
         url, options = self._prepare(path, kwargs)
         try:
             response = self._http.request(method, url, **options)
             if self._owned:
                 _logging.log_buffered(response)
-            check_status(response, action)
+            check_status(response, action, policy_422=policy_422)
             return response
         except httpx2.RequestError as exc:
             raise VeniceConnectionError(f"{action} failed: {exc}") from exc
@@ -250,6 +252,8 @@ class VeniceClient(_Configuration):
                 "POST",
                 "image/upscale",
                 "Upscaling image",
+                # Every upscale 422 is a moderation refusal; most carry only `error`.
+                policy_422=True,
                 data=data,
                 files={"image": file},
             )
@@ -344,13 +348,15 @@ class AsyncVeniceClient(_Configuration):
     async def __aexit__(self, *exc: object) -> None:
         await self.aclose()
 
-    async def _send(self, method: str, path: str, action: str, **kwargs: Any) -> httpx2.Response:
+    async def _send(
+        self, method: str, path: str, action: str, *, policy_422: bool = False, **kwargs: Any
+    ) -> httpx2.Response:
         url, options = self._prepare(path, kwargs)
         try:
             response = await self._http.request(method, url, **options)
             if self._owned:
                 _logging.log_buffered(response)
-            check_status(response, action)
+            check_status(response, action, policy_422=policy_422)
             return response
         except httpx2.RequestError as exc:
             raise VeniceConnectionError(f"{action} failed: {exc}") from exc
@@ -474,6 +480,8 @@ class AsyncVeniceClient(_Configuration):
                 "POST",
                 "image/upscale",
                 "Upscaling image",
+                # Every upscale 422 is a moderation refusal; most carry only `error`.
+                policy_422=True,
                 data=data,
                 files={"image": file},
             )

@@ -378,6 +378,33 @@
       "required": [
         "error"
       ]
+    },
+    "ImageContentViolationError": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "string",
+          "description": "A description of the error"
+        },
+        "suggested_prompt": {
+          "type": "string",
+          "description": "An optional provider-suggested replacement prompt that complies with content policy.",
+          "example": "A watercolor painting of a lighthouse on a rocky coast at sunset."
+        },
+        "recommended_model": {
+          "type": "string",
+          "description": "A model ID that can be used as an alternative when a recommendation is available.",
+          "example": "chroma"
+        },
+        "retryable": {
+          "type": "boolean",
+          "description": "Present on every content-policy rejection: whether retrying the same request may succeed. True when the selected model's provider moderation is nondeterministic; false when the same request would be rejected again. Absent on other 422 errors, such as an input image that exceeds the pixel limit.",
+          "example": true
+        }
+      },
+      "required": [
+        "error"
+      ]
     }
   },
   "resources": {
@@ -1374,6 +1401,190 @@
                 "object",
                 "type"
               ]
+            }
+          }
+        }
+      }
+    },
+    "POST /image/generate": {
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/GenerateImageRequest"
+            }
+          }
+        }
+      },
+      "response": {
+        "description": "Successfully generated image",
+        "headers": {
+          "X-Balance-Remaining": {
+            "description": "Remaining x402 credit balance in USD after this request (only present for x402 auth).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "4.230000"
+            }
+          },
+          "Content-Encoding": {
+            "description": "The encoding used to compress the response",
+            "schema": {
+              "enum": [
+                "gzip",
+                "br"
+              ],
+              "type": "string"
+            }
+          },
+          "x-venice-is-blurred": {
+            "description": "Indicates if the generated image is blurred. When Safe Venice is enabled, adult material will be returned blurred.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          "x-venice-is-content-violation": {
+            "description": "Indicates if the generated image does not meet Venice terms of service.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          "x-venice-content-violation-count": {
+            "description": "Number of requested variants omitted because the model provider explicitly rejected them under its content policy. Other moderation outcomes can still return blacked-out images flagged by `x-venice-is-content-violation`.",
+            "required": false,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "x-venice-model-deprecation-warning": {
+            "description": "A warning that the model is scheduled for deprecation",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          "x-venice-model-deprecation-date": {
+            "description": "The date the model is scheduled for deprecation",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "x-venice-deprecated": {
+            "description": "Present and set to \"true\" when the model is deprecated. Absent otherwise.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
+            }
+          },
+          "x-venice-deprecated-replacement": {
+            "description": "Public API model ID clients should migrate to. Only present when a replacement is published.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "content_policy_violation_count": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Number of requested variants omitted because the model provider explicitly rejected them under its content policy. Other moderation outcomes can still return blacked-out images flagged by `x-venice-is-content-violation`.",
+                  "example": 1
+                },
+                "id": {
+                  "type": "string",
+                  "description": "The ID of the request.",
+                  "example": "generate-image-1234567890"
+                },
+                "images": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Base64 encoded image data. A partial response can contain fewer entries than requested."
+                },
+                "request": {
+                  "nullable": true,
+                  "description": "The original request data sent to the API."
+                },
+                "timing": {
+                  "type": "object",
+                  "properties": {
+                    "inferenceDuration": {
+                      "type": "number",
+                      "description": "Duration of inference in milliseconds"
+                    },
+                    "inferencePreprocessingTime": {
+                      "type": "number",
+                      "description": "Duration of preprocessing in milliseconds"
+                    },
+                    "inferenceQueueTime": {
+                      "type": "number",
+                      "description": "Duration of queueing in milliseconds"
+                    },
+                    "total": {
+                      "type": "number",
+                      "description": "Total duration of the request in milliseconds"
+                    }
+                  },
+                  "required": [
+                    "inferenceDuration",
+                    "inferencePreprocessingTime",
+                    "inferenceQueueTime",
+                    "total"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "images",
+                "timing"
+              ]
+            }
+          },
+          "image/jpeg": {
+            "schema": {
+              "description": "Raw image data when return_binary is true and format is jpeg",
+              "format": "binary",
+              "type": "string"
+            }
+          },
+          "image/png": {
+            "schema": {
+              "description": "Raw image data when return_binary is true and format is png",
+              "format": "binary",
+              "type": "string"
+            }
+          },
+          "image/webp": {
+            "schema": {
+              "description": "Raw image data when return_binary is true and format is webp",
+              "format": "binary",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "errors": {
+        "422": {
+          "description": "The prompt violates the content policy of Venice.ai or the model provider, or a style reference image exceeds the pixel limit.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageContentViolationError"
+              }
             }
           }
         }

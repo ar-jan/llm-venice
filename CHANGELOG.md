@@ -4,6 +4,10 @@
 
 ### New features
 
+- `ContentViolationError`, a `VeniceAPIError` subclass for content-policy refusals
+  (HTTP 422) from image generation and upscaling, with Venice's `suggested_prompt`,
+  `recommended_model` and `retryable` fields. Other 422s, such as an oversized style
+  reference image, remain `VeniceAPIError`.
 - Image options `enhance_prompt`, `disable_prompt_optimization_thinking` and
   `anon_user_id`, also available on `ImageParams`, and an `anon_user_id` chat option.
   `anon_user_id` is checked locally against the API's rules: 1 to 128 printable ASCII

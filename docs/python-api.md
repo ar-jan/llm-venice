@@ -185,6 +185,7 @@ Catch `VeniceError` for all Venice service failures, or handle specific subclass
 
 - `MissingKeyError` — no API key supplied or configured (also inherits `llm.NeedsKeyException`).
 - `VeniceAPIError` — unsuccessful HTTP status; exposes `status_code`, `reason`, `error_code`, `detail`, and `headers`. (No longer inherits `RuntimeError`.)
+  - `ContentViolationError` — HTTP 422 content-policy refusal from image generation or upscaling; exposes `suggested_prompt` and `recommended_model` (`str | None`) and `retryable` (`bool | None`, whether the same request may succeed on retry). Every upscale 422 raises it; a generation 422 raises it when Venice sends these policy fields. Other 422s, such as an oversized style reference image, remain `VeniceAPIError`. (Unrelated to `ImageResult.content_violation`, which flags an image Venice did return.)
   - `AuthenticationError` — HTTP 401 or 403.
   - `RateLimitError` — HTTP 429; exposes `retry_after` (`float | None`, parsed from numeric or HTTP-date `Retry-After` headers).
 - `VeniceConnectionError` — transport failure (with the underlying HTTP exception as `__cause__`).
