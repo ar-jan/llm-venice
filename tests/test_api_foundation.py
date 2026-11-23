@@ -1,10 +1,12 @@
 """Contracts shared by sync/async clients, independent of transport and adapters."""
 
 import base64
+import copy
 from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import pickle
 
 import httpx2
 import pytest
@@ -27,8 +29,10 @@ from llm_venice._http import check_status
 from llm_venice.errors import (
     AuthenticationError,
     ContentViolationError,
+    MissingKeyError,
     RateLimitError,
     VeniceAPIError,
+    VeniceConnectionError,
     VeniceError,
     VeniceResponseError,
 )
@@ -508,6 +512,57 @@ def test_service_errors_and_retry_after():
         assert "(CODE) - detail" in str(caught.value)
         if isinstance(caught.value, RateLimitError):
             assert caught.value.retry_after == 12
+
+
+ERROR_FACTORIES = [
+    lambda: VeniceError("Venice failed"),
+    lambda: MissingKeyError("No key found for Venice"),
+    lambda: VeniceConnectionError("Generating image failed: timeout"),
+    lambda: VeniceResponseError("Generating image", "invalid JSON"),
+    lambda: VeniceAPIError(
+        "Listing models",
+        500,
+        "Internal Server Error",
+        error_code="E500",
+        detail="Inference failed",
+        headers={"x-request-id": "req-1"},
+    ),
+    lambda: AuthenticationError("Listing API keys", 401, "Unauthorized", detail="wrong key"),
+    lambda: RateLimitError(
+        "Generating image", 429, "Too Many Requests", headers={"Retry-After": "12"}
+    ),
+    lambda: ContentViolationError(
+        "Generating image",
+        422,
+        "Unprocessable Content",
+        detail="Refused",
+        suggested_prompt="A lighthouse",
+        recommended_model="chroma",
+        retryable=True,
+    ),
+]
+
+
+@pytest.mark.parametrize("make_error", ERROR_FACTORIES, ids=lambda make: type(make()).__name__)
+def test_errors_survive_pickle_and_copy(make_error):
+    """Process pools pickle a worker's exception, which needs no constructor arguments."""
+    error = make_error()
+    error.add_note("while testing")
+    restored = [
+        pickle.loads(pickle.dumps(error, protocol))
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+    ]
+    restored += [copy.copy(error), copy.deepcopy(error)]
+    for value in restored:
+        assert type(value) is type(error)
+        assert value.args == error.args and str(value) == str(error)
+        assert vars(value) == vars(error)
+        assert value.__notes__ == ["while testing"]
+        if isinstance(value, RateLimitError):
+            assert value.retry_after == 12
+        if isinstance(value, ContentViolationError):
+            assert isinstance(error, ContentViolationError)
+            assert value.describe(model_prefix="venice/") == error.describe(model_prefix="venice/")
 
 
 def test_exact_paths_batch_names_and_no_implicit_output(tmp_path):

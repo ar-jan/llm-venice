@@ -26,6 +26,10 @@
 
 ### Other changes and fixes
 
+- Venice exceptions can be pickled and copied. `VeniceResponseError`, `VeniceAPIError`
+  and its subclasses failed to unpickle, so an error raised in a
+  `concurrent.futures.ProcessPoolExecutor` or `multiprocessing` worker broke the pool
+  with `BrokenProcessPool` instead of reaching the caller.
 - Image `width` and `height` accept up to 4096 pixels, as the API now does (previously
   1280). Models that list aspect ratios use them to pick the nearest aspect ratio and a
   resolution tier: a long edge above 1536 selects 2K and above 3072 selects 4K, where

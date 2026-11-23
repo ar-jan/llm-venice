@@ -193,6 +193,8 @@ Catch `VeniceError` for all Venice service failures, or handle specific subclass
 
 Invalid inputs raise Pydantic's `ValidationError`; local filesystem errors remain `OSError`. Original causes and task cancellation are preserved.
 
+Venice exceptions can be pickled and copied with their message and attributes, so they reach the caller from `concurrent.futures.ProcessPoolExecutor` and `multiprocessing` workers. As with any exception, `__cause__` and the traceback are not pickled.
+
 ### HTTP request logging
 
 Clients created without a custom `http_client=` respect `LLM_VENICE_SHOW_RESPONSES` (and fall back to `LLM_OPENAI_SHOW_RESPONSES`), checking the environment on every request. Logging never consumes streams. See [CLI reference — Debugging HTTP requests](cli.md#debugging-http-requests) for redaction and formatting details.

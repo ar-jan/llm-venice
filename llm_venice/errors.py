@@ -11,12 +11,25 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import math
+from typing import Any
 
 import llm
 
 
+def _restore(cls: type["VeniceError"], args: tuple[Any, ...]) -> "VeniceError":
+    """Recreate a pickled or copied error; its attributes are restored afterwards."""
+    error = cls.__new__(cls)
+    error.args = args
+    return error
+
+
 class VeniceError(Exception):
-    """Base class for Venice library failures."""
+    """Base class for Venice library failures. Errors can be pickled and copied."""
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        # The default calls cls(*args), but subclass constructors take arguments
+        # that args, the message, does not hold. Rebuild without __init__ instead.
+        return (_restore, (type(self), self.args), self.__dict__)
 
 
 class MissingKeyError(VeniceError, llm.NeedsKeyException):
