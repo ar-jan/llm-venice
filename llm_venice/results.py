@@ -29,11 +29,27 @@ class GeneratedImage:
 
 
 @dataclass(frozen=True)
+class ModelDeprecation:
+    """Deprecation facts from Venice's response headers, passed on as sent."""
+
+    deprecated: bool = False
+    """``x-venice-deprecated``: the model is deprecated now."""
+    warning: str | None = None
+    """``x-venice-model-deprecation-warning``: the model is scheduled for deprecation."""
+    date: str | None = None
+    """``x-venice-model-deprecation-date``: the scheduled date-time."""
+    replacement: str | None = None
+    """``x-venice-deprecated-replacement``: the model ID to migrate to."""
+
+
+@dataclass(frozen=True)
 class ImageResult:
     """Returned images and independent moderation/omitted-variant facts.
 
     Images remain available even when content_violation is true. A failed batch
     save leaves earlier files published; errors may identify a retained partial_path.
+    ``enhanced_prompt`` is the rewritten prompt when ``enhance_prompt`` applied a
+    rewrite, and ``deprecation`` is set when Venice reported one for the model.
     """
 
     model: str
@@ -43,6 +59,8 @@ class ImageResult:
     blurred: bool = False
     timing: Mapping[str, Any] | None = None
     raw: Mapping[str, Any] = field(default_factory=lambda: dict[str, Any]())
+    enhanced_prompt: str | None = None
+    deprecation: ModelDeprecation | None = None
 
     def save(
         self,

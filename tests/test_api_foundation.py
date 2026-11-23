@@ -32,11 +32,17 @@ from llm_venice.errors import (
     VeniceResponseError,
 )
 from llm_venice.params import ImageParams, SpeechParams, copy_params
-from llm_venice.results import GeneratedImage, ImageResult, SpeechResult
+from llm_venice.results import GeneratedImage, ImageResult, ModelDeprecation, SpeechResult
 from llm_venice.types import ApiKey, Character, CreatedApiKey, ModelInfo, RateLimits
 
 PNG = b"\x89PNG\r\n\x1a\nbytes"
 WEBP = b"RIFF0000WEBPbytes"
+# Targeted extract of Swagger 20261122.230254: request schemas, resources, errors.
+FIXTURE = Path(__file__).parent / "fixtures/openapi-2026-11-22.json"
+
+
+def dated_fixture():
+    return json.loads(FIXTURE.read_text())
 
 
 def response(**kwargs):
@@ -78,6 +84,9 @@ def test_defaults_aliases_and_extra_body_survive_copy_without_mutation():
         "overwrite_files",
         "extra_body",
         "width",
+        "enhance_prompt",
+        "disable_prompt_optimization_thinking",
+        "anon_user_id",
     ],
 )
 def test_reserved_extras_fail_even_when_field_is_omitted(field):
@@ -101,14 +110,18 @@ def test_mutated_params_revalidated_at_request_boundary():
 
 
 def test_endpoint_limits_match_dated_fixture():
-    fixture = json.loads((Path(__file__).parent / "fixtures/openapi-2026-10-26.json").read_text())
+    fixture = dated_fixture()
     image = fixture["schemas"]["GenerateImageRequest"]["properties"]
-    assert image["width"]["maximum"] == 1280
+    for side in ("width", "height"):
+        bounds = image[side]
+        assert (bounds["minimum"], bounds["exclusiveMinimum"], bounds["maximum"]) == (0, True, 4096)
+        for value in (1, bounds["maximum"]):
+            assert getattr(ImageParams.model_validate({side: value}), side) == value
+        for value in (bounds["minimum"], bounds["maximum"] + 1):
+            with pytest.raises(ValidationError):
+                ImageParams.model_validate({side: value})
     assert "minimum" not in image["steps"]
     assert ImageParams(width=1, steps=200).width == 1
-    for value in (0, 1281):
-        with pytest.raises(ValidationError):
-            ImageParams(width=value)
     assert set(image["quality"]["enum"]) == {"low", "medium", "high"}
     speech = fixture["schemas"]["CreateSpeechRequestSchema"]["properties"]
     for speed in (speech["speed"]["minimum"], speech["speed"]["maximum"]):
@@ -127,17 +140,61 @@ def test_endpoint_limits_match_dated_fixture():
             UpscaleInput(creativity=creativity)
 
 
+def test_image_prompt_controls_and_attribution_match_dated_fixture():
+    image = dated_fixture()["schemas"]["GenerateImageRequest"]["properties"]
+    for name in ("enhance_prompt", "disable_prompt_optimization_thinking"):
+        assert image[name]["type"] == "boolean"
+    declared = ImageParams.model_json_schema()["properties"]["anon_user_id"]["anyOf"][0]
+    for key in ("minLength", "maxLength", "pattern"):
+        assert declared[key] == image["anon_user_id"][key]
+    params = ImageParams(
+        enhance_prompt=True,
+        disable_prompt_optimization_thinking=False,
+        anon_user_id=image["anon_user_id"]["example"],
+    )
+    body = image_body("m", "p", params)
+    assert body["enhance_prompt"] is True
+    assert body["disable_prompt_optimization_thinking"] is False
+    assert body["anon_user_id"] == "end-user-123"
+    assert ImageParams(anon_user_id=" ~|" + "x" * 125).anon_user_id is not None
+    for value in ("", "x" * 129, "caf\u00e9", "tab\tid", "a||b"):
+        with pytest.raises(ValidationError):
+            ImageParams(anon_user_id=value)
+
+
 @pytest.mark.parametrize(
     "resource_name, kind",
     [("GET /api_keys", ApiKey), ("POST /api_keys", CreatedApiKey)],
 )
 def test_api_key_types_match_dated_fixture(resource_name, kind):
     """Each key type declares exactly the wire fields of the response it describes."""
-    fixture = json.loads((Path(__file__).parent / "fixtures/openapi-2026-10-26.json").read_text())
+    fixture = dated_fixture()
     schema = fixture["resources"][resource_name]["response"]["content"]["application/json"]
     data = schema["schema"]["properties"]["data"]
     item = data.get("items", data)
     assert set(kind.__annotations__) == set(item["properties"])
+
+
+def test_upscale_moderation_refusal_matches_dated_fixture():
+    """A 422 refusal is a VeniceAPIError carrying ContentViolationError's error text."""
+    fixture = dated_fixture()
+    refusal = fixture["resources"]["POST /image/upscale"]["errors"]["422"]
+    ref = refusal["content"]["application/json"]["schema"]["$ref"]
+    assert ref == "#/components/schemas/ContentViolationError"
+    schema = fixture["schemas"]["ContentViolationError"]
+    assert schema["required"] == ["error"]
+    # suggested_prompt is not extracted yet; a new field here needs a decision too.
+    assert set(schema["properties"]) == {"error", "suggested_prompt"}
+    body = {"error": "Image refused by content moderation", "suggested_prompt": "A lighthouse"}
+    refused = httpx2.Response(
+        422, json=body, request=httpx2.Request("POST", "https://example.com/image/upscale")
+    )
+    with pytest.raises(VeniceAPIError) as caught:
+        check_status(refused, "Upscaling image")
+    assert type(caught.value) is VeniceAPIError
+    assert caught.value.status_code == 422
+    assert caught.value.detail == body["error"]
+    assert str(caught.value).endswith(" - " + body["error"])
 
 
 def test_key_inputs_and_utc_serialization():
@@ -230,6 +287,53 @@ def test_images_preserve_partial_moderation_and_format():
         ).content_policy_violation_count
         == 2
     )
+
+
+def test_image_headers_carry_enhanced_prompt_and_deprecation():
+    images = {"images": [base64.b64encode(PNG).decode()]}
+    plain = parse_image(response(json=images), "m", None)
+    assert plain.enhanced_prompt is None and plain.deprecation is None
+    result = parse_image(
+        response(
+            json=images,
+            headers={
+                "x-venice-enhanced-prompt": "A%20lighthouse%2C%201%2B1%20%E2%86%92%20dusk",
+                "x-venice-deprecated": "true",
+                "x-venice-model-deprecation-date": "2026-12-01T00:00:00.000Z",
+                "x-venice-deprecated-replacement": "new-model",
+            },
+        ),
+        "m",
+        None,
+    )
+    assert result.enhanced_prompt == "A lighthouse, 1+1 \u2192 dusk"
+    assert result.deprecation == ModelDeprecation(
+        deprecated=True, date="2026-12-01T00:00:00.000Z", replacement="new-model"
+    )
+    scheduled = parse_image(
+        response(json=images, headers={"x-venice-model-deprecation-warning": "Moving soon"}),
+        "m",
+        None,
+    )
+    assert scheduled.deprecation == ModelDeprecation(warning="Moving soon")
+
+
+def test_unexpected_advisory_headers_do_not_fail_generation():
+    """The images are already paid for, so odd advisory values are ignored."""
+    result = parse_image(
+        response(
+            json={"images": [base64.b64encode(PNG).decode()]},
+            headers={
+                "x-venice-deprecated": "maybe",
+                "x-venice-deprecated-replacement": " ",
+                "x-venice-enhanced-prompt": "",
+            },
+        ),
+        "m",
+        None,
+    )
+    assert result.images[0].data == PNG
+    assert result.deprecation is None and result.enhanced_prompt is None
 
 
 @pytest.mark.parametrize(

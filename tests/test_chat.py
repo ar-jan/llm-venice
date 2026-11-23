@@ -817,6 +817,21 @@ def test_extra_body_option_parses_json_and_rejects_collisions():
 
 
 @pytest.mark.parametrize("cls", [VeniceChat, AsyncVeniceChat])
+def test_anon_user_id_is_sent_top_level_with_image_validation(cls):
+    """anon_user_id shares the image endpoint's attribution rules."""
+    chat = cls(model_id="venice/test-model", model_name="test-model")
+    options = VeniceChatOptions(anon_user_id="end-user-123")
+    kwargs = chat.build_kwargs(Prompt(prompt="Test", model=chat, options=options), stream=False)
+    assert kwargs["extra_body"] == {"anon_user_id": "end-user-123"}
+    assert "anon_user_id" not in kwargs
+    for value in ("", "x" * 129, "caf\u00e9", "a||b"):
+        with pytest.raises(ValidationError):
+            VeniceChatOptions(anon_user_id=value)
+    with pytest.raises(ValidationError, match="reserved fields: anon_user_id"):
+        VeniceChatOptions(extra_body={"anon_user_id": "end-user-123"})
+
+
+@pytest.mark.parametrize("cls", [VeniceChat, AsyncVeniceChat])
 def test_extra_body_option_is_merged_with_venice_parameters(cls):
     """User extra_body fields survive alongside option-derived fields."""
     chat = cls(model_id="venice/test-model", model_name="test-model")

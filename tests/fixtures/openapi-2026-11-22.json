@@ -1,6 +1,7 @@
 {
-  "retrieved": "2026-10-26",
+  "retrieved": "2026-11-23",
   "source": "https://api.venice.ai/api/v1/swagger.yaml",
+  "version": "20261122.230254",
   "schemas": {
     "GenerateImageRequest": {
       "type": "object",
@@ -42,9 +43,9 @@
           "type": "integer",
           "minimum": 0,
           "exclusiveMinimum": true,
-          "maximum": 1280,
+          "maximum": 4096,
           "default": 1024,
-          "description": "Height of the generated image.",
+          "description": "Height of the generated image, in pixels (max 4096). For models that list aspect ratios, width and height select the nearest aspect_ratio and a resolution tier (long edge above 1536 \u2192 2K, above 3072 \u2192 4K; the highest offered tier at or below that, otherwise the model default). An explicit aspect_ratio or resolution overrides only its own value. For models that render an exact canvas, each side must be at most 1280 before any model upscale.",
           "example": 1024
         },
         "hide_watermark": {
@@ -165,9 +166,9 @@
           "type": "integer",
           "minimum": 0,
           "exclusiveMinimum": true,
-          "maximum": 1280,
+          "maximum": 4096,
           "default": 1024,
-          "description": "Width of the generated image.",
+          "description": "Width of the generated image, in pixels (max 4096). For models that list aspect ratios, width and height select the nearest aspect_ratio and a resolution tier (long edge above 1536 \u2192 2K, above 3072 \u2192 4K; the highest offered tier at or below that, otherwise the model default). An explicit aspect_ratio or resolution overrides only its own value. For models that render an exact canvas, each side must be at most 1280 before any model upscale.",
           "example": 1024
         },
         "style_references": {
@@ -360,6 +361,23 @@
         "image": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAAIGNIUk0A...",
         "scale": 2
       }
+    },
+    "ContentViolationError": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "string",
+          "description": "A description of the error"
+        },
+        "suggested_prompt": {
+          "type": "string",
+          "description": "An optional provider-suggested replacement prompt that complies with content policy.",
+          "example": "A cinematic instrumental track inspired by stormy weather and dramatic tension."
+        }
+      },
+      "required": [
+        "error"
+      ]
     }
   },
   "resources": {
@@ -1356,6 +1374,55 @@
                 "object",
                 "type"
               ]
+            }
+          }
+        }
+      }
+    },
+    "POST /image/upscale": {
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpscaleImageRequest"
+            }
+          },
+          "multipart/form-data": {
+            "schema": {
+              "$ref": "#/components/schemas/UpscaleImageRequest"
+            }
+          }
+        }
+      },
+      "response": {
+        "description": "OK",
+        "headers": {
+          "X-Balance-Remaining": {
+            "description": "Remaining x402 credit balance in USD after this request (only present for x402 auth).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "4.230000"
+            }
+          }
+        },
+        "content": {
+          "image/png": {
+            "schema": {
+              "format": "binary",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "errors": {
+        "422": {
+          "description": "The image was refused by content moderation.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContentViolationError"
+              }
             }
           }
         }

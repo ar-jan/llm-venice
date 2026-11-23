@@ -15,6 +15,7 @@ from llm_venice.constants import (
     VENICE_API_BASE,
     VENICE_PARAMETERS,
 )
+from llm_venice.params import ANON_USER_ID_DESCRIPTION, AnonUserId
 from pydantic import Field, field_validator, model_validator
 from typing_extensions import Self
 
@@ -88,6 +89,10 @@ class _ChatOptions(Chat.Options):
     )
     prompt_cache_retention: Optional[str] = Field(
         description="Prompt cache retention: 'default', 'extended' or '24h'.",
+        default=None,
+    )
+    anon_user_id: Optional[AnonUserId] = Field(
+        description=ANON_USER_ID_DESCRIPTION,
         default=None,
     )
 

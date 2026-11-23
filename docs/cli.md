@@ -161,6 +161,10 @@ The `-o stdout true` option on `llm -m venice/tts-...` was removed in 0.10:
 - Generated images are stored in `<llm user dir>/images/` by default; override with `-o output_dir`, `-o output_filename`, and `-o overwrite_files true`.
 - Request up to 4 variants with `-o variants 4`. Multiple returned images are saved with numbered suffixes (`image_1.png`, `image_2.png`, …).
 - Supporting models accept `-o aspect_ratio`, `-o resolution`, and `-o enable_web_search`. Inspect every model's published limits and choices with `llm models list --query <model> --options`.
+- `-o width` and `-o height` accept up to 4096 pixels. On models that list aspect ratios they pick the nearest aspect ratio and a resolution tier (a long edge above 1536 selects 2K, above 3072 selects 4K, where offered); an explicit `aspect_ratio` or `resolution` overrides only its own value. Models without aspect ratios render an exact canvas of at most 1280 per side, which Venice enforces.
+- `-o enhance_prompt true` has Venice rewrite the prompt with more visual detail before generating, at extra cost and up to about 30 seconds of delay. The rewritten prompt is saved as `enhanced_prompt` in the response JSON (see `llm logs --json`). `-o disable_prompt_optimization_thinking true` skips the prompt-optimization thinking step on models that have one.
+- `-o anon_user_id ID` identifies your end user to upstream providers, on image and chat models. It takes 1 to 128 printable ASCII characters, without `||`.
+- When Venice reports that an image model is deprecated or scheduled for deprecation, a warning is printed to stderr once per model, naming the replacement model when there is one.
 
 ### Image upscaling (`llm venice upscale`)
 

@@ -9,6 +9,8 @@ from typing import Annotated, Any, Callable, Literal, cast
 from pydantic import AfterValidator, BaseModel, Field, TypeAdapter, create_model
 from pydantic.fields import FieldInfo
 
+from .params import IMAGE_SIDE_MAX
+
 
 class _CatalogOptions:
     """Return base Options on the class and catalog-specialized Options on instances."""
@@ -103,7 +105,8 @@ def normalize_policy(kind: str, spec: Any, image_constraints: Any = None) -> dic
     if kind == "image":
         fields["steps"] = _bounds(constraints.get("steps"))
         divisor = _positive_int(constraints.get("widthHeightDivisor"))
-        if divisor and divisor <= 1280:
+        # A divisor above the largest side would reject every size: ignore it.
+        if divisor and divisor <= IMAGE_SIDE_MAX:
             for name in ("width", "height"):
                 fields[name] = {"multiple_of": divisor}
         for name, key in (

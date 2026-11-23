@@ -1,7 +1,7 @@
 """Endpoint parameters. None omits a field and lets Venice choose its default."""
 
-from typing import Any, Literal, TypeVar
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
+from typing import Annotated, Any, Literal, TypeVar
+from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, model_validator
 from typing_extensions import Self
 
 
@@ -18,6 +18,25 @@ _RESERVED = {
     "progress",
     "stdout",
 }
+
+
+def _without_double_pipe(value: str) -> str:
+    if "||" in value:
+        raise ValueError("anon_user_id must not contain '||'")
+    return value
+
+
+# Chat and image requests share Venice's end-user attribution rules. The
+# description goes on each field, since llm does not read it from inside Optional.
+AnonUserId = Annotated[
+    str,
+    Field(min_length=1, max_length=128, pattern=r"^[\x20-\x7E]+$"),
+    AfterValidator(_without_double_pipe),
+]
+ANON_USER_ID_DESCRIPTION = (
+    "ID of your end user, for attribution to upstream providers: "
+    "1 to 128 printable ASCII characters, without '||'."
+)
 
 
 class _VeniceParams(BaseModel):
@@ -45,13 +64,23 @@ class _VeniceParams(BaseModel):
         return self
 
 
+# Models that list aspect ratios map width and height to the nearest aspect ratio
+# and resolution tier. Exact-canvas models allow at most 1280 per side; Venice
+# checks that, since the catalog implies an exact canvas only by omitting ratios.
+IMAGE_SIDE_MAX = 4096
+_SIDE = (
+    f"Pixels, up to {IMAGE_SIDE_MAX}. Models with aspect ratios use width and height to "
+    "pick the nearest aspect ratio and resolution tier; others allow at most 1280."
+)
+
+
 class ImageParams(_VeniceParams):
     """Image generation parameters, with API defaults rather than plugin defaults."""
 
     negative_prompt: str | None = Field(default=None, max_length=7500)
     style_preset: str | None = None
-    width: int | None = Field(default=None, gt=0, le=1280)
-    height: int | None = Field(default=None, gt=0, le=1280)
+    width: int | None = Field(default=None, gt=0, le=IMAGE_SIDE_MAX, description=_SIDE)
+    height: int | None = Field(default=None, gt=0, le=IMAGE_SIDE_MAX, description=_SIDE)
     aspect_ratio: str | None = None
     resolution: str | None = None
     steps: int | None = None
@@ -70,6 +99,15 @@ class ImageParams(_VeniceParams):
     )
     embed_exif_metadata: bool | None = None
     enable_web_search: bool | None = None
+    enhance_prompt: bool | None = Field(
+        default=None,
+        description="Rewrite the prompt with more visual detail before generating, at extra cost.",
+    )
+    disable_prompt_optimization_thinking: bool | None = Field(
+        default=None,
+        description="Skip the prompt-optimization thinking step on models that have one.",
+    )
+    anon_user_id: AnonUserId | None = Field(default=None, description=ANON_USER_ID_DESCRIPTION)
 
     @model_validator(mode="after")
     def _transparent_format(self) -> Self:

@@ -36,4 +36,5 @@ NON_OPENAI_COMPATIBLE_PARAMS = [
     "top_k",
     "repetition_penalty",
     "stop_token_ids",
+    "anon_user_id",
 ]

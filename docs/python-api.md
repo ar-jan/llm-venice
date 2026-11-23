@@ -64,6 +64,8 @@ VeniceClient(
 `ImageParams` and `SpeechParams` omit unset fields so Venice applies its own API defaults:
 
 - `ImageParams` accepts `image_format=` (dictionary validation also accepts the wire alias `format`).
+- `ImageParams.width` and `height` accept 1 to 4096. Models with aspect ratios map them to the nearest aspect ratio and resolution tier; models without aspect ratios allow at most 1280 per side, which Venice checks.
+- `ImageParams.anon_user_id` (and the chat model option of the same name) must be 1 to 128 printable ASCII characters without `||`. `enhance_prompt` and `disable_prompt_optimization_thinking` are plain booleans; Venice ignores the latter on models without a prompt-optimization step.
 - `extra_body` carries arbitrary future JSON fields (including explicit `None`/nulls), but cannot override named parameters, positional inputs, output options, or streaming/binary controls.
 - **Plugin adapters vs. direct client**: `llm`'s registered model adapters (`llm.get_model("venice/...")`) validate against their cached catalog snapshot and keep plugin defaults (PNG, `safe_mode=False`, `hide_watermark=True`; MP3 speech when supported). Inspect a registered model's `.Options` for its published limits and choices; the base class `.Options` holds the endpoint schema. Unknown catalog metadata adds no limits.
 
@@ -134,6 +136,7 @@ Buffered media results expose raw bytes on `.data` and report the actual format 
 - `ImageResult.images` is a `tuple[GeneratedImage, ...]`. `upscale_image()` returns a single `GeneratedImage`.
 - `upscale_image()` accepts a file path, `bytes`, or an open binary file object; caller-supplied file objects are read from their current position and remain open.
 - **Moderation flags**: `ImageResult.content_violation`, `content_policy_violation_count`, and `blurred` are independent facts. The library preserves every returned image, including moderated ones. (Plugin adapters suppress whole-response content violations, while still saving partial outputs when only some variants were omitted.)
+- **Response headers**: `ImageResult.enhanced_prompt` is the rewritten prompt, decoded from `x-venice-enhanced-prompt`, when `enhance_prompt` produced one. `ImageResult.deprecation` is a `llm_venice.results.ModelDeprecation` (`deprecated`, `warning`, `date`, `replacement`) when Venice sent model deprecation headers, otherwise `None`. Clients only report these; the image model adapters print the deprecation warning. Unexpected values in these headers never fail a generation.
 
 ### Save semantics
 
@@ -209,7 +212,7 @@ save_catalog(models, catalog_path())
 
 - `llm` plugin registration uses any usable cached catalog regardless of age, even when no API key is configured.
 - If the cache is missing, registration can bootstrap it with a 5-second timeout; failed bootstrap attempts are remembered for the same path/key until an explicit `refresh_catalog()` succeeds.
-- Offline models are skipped during registration; deprecation notices are emitted when a deprecated model is used.
+- Offline models are skipped during registration; deprecation notices are emitted when a deprecated model is used, and image models also warn when Venice's response headers report a deprecation.
 - There is no automatic TTL refresh, trait routing, or trait alias registration.
 
 ## Migration from 0.9
