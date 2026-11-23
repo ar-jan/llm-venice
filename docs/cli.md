@@ -28,7 +28,7 @@ Venice-specific parameters are passed with `llm`'s standard `-o/--option KEY VAL
 
 ### Web search and X search
 
-- **Web search (`enable_web_search`)** accepts `auto`, `on`, or `off` on web-enabled chat models (image models accept `on` or `off`). Pair it with `--no-stream` so citations are preserved in `response_json`.
+- **Web search (`enable_web_search`)** accepts `auto`, `on`, or `off` on web-enabled chat models (image models accept `on` or `off`). Citations are kept in the response JSON under `venice_parameters.web_search_citations`, whether the response streams or not (see `llm logs --json`).
 - **Web citations and scraping**: `enable_web_citations` requests superscript source citations (`^index^`), `include_search_results_in_stream` emits search results as the first stream chunk, and `enable_web_scraping` scrapes URLs found in the latest user message.
 - **xAI native search (`enable_x_search`)** enables both native web **and** X/Twitter search (not X alone) on chat models advertising `supportsXSearch`.
   - Omitting `enable_x_search` (or passing `None` in Python) leaves the field out of the request; Venice's API default is `false`.
@@ -36,6 +36,16 @@ Venice-specific parameters are passed with `llm`'s standard `-o/--option KEY VAL
   - When effective X search is `true`, it replaces Venice search augmentation: `enable_web_search`, `enable_web_citations`, `enable_web_scraping`, and `include_search_results_in_stream` are dropped, including settings from `VeniceWebSearch`.
   - When `enable_x_search` is `false` or unset, the usual Venice web-search settings and validation apply.
   - Tool settings override `-o` options: selecting `VeniceXSearch` enables X search even with `-o enable_x_search false`, including when the tool is restored by `-c` conversation continuation.
+
+### Response metadata
+
+Venice adds fields to chat responses that `llm`'s generic handling of streamed chunks leaves out. Streamed responses keep them too, in the response JSON logged by `llm` (`llm logs --json`), alongside `llm`'s usual `content`, `finish_reason` and `usage` keys:
+
+- `venice_parameters`, including `web_search_citations`, and `cost` (`usd`, `diem`).
+- `stop_reason` and `prompt_logprobs`.
+- `reasoning_content` (joined across chunks), `reasoning_details` (items in the order received), `thought_signature`, `extra_content` (such as `extra_content.google.thought_signature`) and `cache_control`.
+
+These fields are recorded but not sent back on later conversation turns.
 
 ### `extra_body`
 

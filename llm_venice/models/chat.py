@@ -1,10 +1,13 @@
 """Venice chat model implementation."""
 
+from contextvars import ContextVar
 import copy
+from itertools import islice
 import json
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Union
 
 import llm
+from llm.utils import remove_dict_none_values
 from llm_venice import _logging
 from llm_venice._options import CatalogOptionsMixin, normalize_policy, parse_json_object
 from ._common import model_error_boundary
@@ -439,6 +442,114 @@ def _build_venice_kwargs(
     return kwargs
 
 
+# Chunk list for the streaming execute() call that is creating its client. It is
+# set only for the first step of llm's execute(), which builds the client, so
+# concurrent or interleaved calls never share a list.
+_stream_chunks: ContextVar[Optional[List[Any]]] = ContextVar("venice_stream_chunks", default=None)
+
+# Venice fields that llm's combine_chunks() leaves out of streamed response_json.
+_CHUNK_FIELDS = ("venice_parameters", "cost", "prompt_logprobs")
+_CHOICE_FIELDS = ("stop_reason",)
+_DELTA_TEXT = ("reasoning_content",)
+_DELTA_LISTS = ("reasoning_details",)
+_DELTA_FIELDS = ("thought_signature", "extra_content", "cache_control")
+
+
+def _record(stream, chunks: List[Any]):
+    for chunk in stream:
+        chunks.append(chunk)
+        yield chunk
+
+
+async def _arecord(stream, chunks: List[Any]):
+    async for chunk in stream:
+        chunks.append(chunk)
+        yield chunk
+
+
+def _record_streams(client, *, async_: bool):
+    """Have this client's streamed completions record their chunks for execute()."""
+    chunks = _stream_chunks.get()
+    if chunks is None:
+        return client
+    completions = client.chat.completions
+    create = completions.create
+
+    def create_and_record(*args, **kwargs):
+        return _record(create(*args, **kwargs), chunks)
+
+    async def acreate_and_record(*args, **kwargs):
+        return _arecord(await create(*args, **kwargs), chunks)
+
+    # The client is new for this call, so patching it affects nothing else.
+    completions.create = acreate_and_record if async_ else create_and_record
+    return client
+
+
+def _plain(value: Any) -> Any:
+    """JSON data for a chunk field, whether the SDK declares it or keeps it as extra."""
+    dump = getattr(value, "model_dump", None)
+    if dump is not None:
+        return dump()
+    if isinstance(value, list):
+        return [_plain(item) for item in value]
+    return value
+
+
+def _merged(old: Any, new: Any) -> Any:
+    """Later chunks win, but objects merge so fields sent earlier are kept."""
+    if not (isinstance(old, dict) and isinstance(new, dict)):
+        return new
+    result = dict(old)
+    for key, value in new.items():
+        if value is not None:
+            result[key] = _merged(result.get(key), value)
+    return result
+
+
+def _stream_metadata(chunks: List[Any]) -> Dict[str, Any]:
+    metadata: Dict[str, Any] = {}
+
+    def keep(key: str, value: Any) -> None:
+        value = _plain(value)
+        if value is not None:
+            metadata[key] = _merged(metadata.get(key), value)
+
+    for chunk in chunks:
+        for key in _CHUNK_FIELDS:
+            keep(key, getattr(chunk, key, None))
+        for choice in getattr(chunk, "choices", None) or []:
+            # llm's text comes from the first choice.
+            if getattr(choice, "index", 0) != 0:
+                continue
+            for key in _CHOICE_FIELDS:
+                keep(key, getattr(choice, key, None))
+            delta = getattr(choice, "delta", None)
+            for key in _DELTA_TEXT:
+                text = getattr(delta, key, None)
+                if isinstance(text, str) and text:
+                    metadata[key] = metadata.get(key, "") + text
+            for key in _DELTA_LISTS:
+                items = _plain(getattr(delta, key, None))
+                if isinstance(items, list):
+                    metadata.setdefault(key, []).extend(items)
+            for key in _DELTA_FIELDS:
+                keep(key, getattr(delta, key, None))
+    return remove_dict_none_values(metadata)
+
+
+def _add_stream_metadata(response, chunks: List[Any]) -> None:
+    """Add Venice fields to llm's flattened streaming response_json, keeping its keys."""
+    if not chunks or not isinstance(response.response_json, dict):
+        return
+    combined = response.response_json
+    metadata = _stream_metadata(chunks)
+    response.response_json = {
+        **combined,
+        **{key: value for key, value in metadata.items() if key not in combined},
+    }
+
+
 def _openai_client(model: Union[Chat, AsyncChat], key, *, async_: bool):
     """Build the SDK client, using Venice's logging setting instead of llm's."""
     # Deferred like in llm (0.38+): importing openai at plugin load would slow
@@ -500,7 +611,27 @@ class VeniceChat(CatalogOptionsMixin, Chat):
         return tuple(tools)
 
     def get_client(self, key, *, async_=False):
-        return _openai_client(self, key, async_=async_)
+        return _record_streams(_openai_client(self, key, async_=async_), async_=async_)
+
+    def execute(self, prompt, stream, response, conversation=None, key=None):
+        """Run llm's chat execution, then keep the Venice fields of a streamed reply."""
+        events: Any = super().execute(prompt, stream, response, conversation, key)
+        if not stream:
+            # Non-streaming response_json is the full JSON response already.
+            yield from events
+            return
+        chunks: List[Any] = []
+        try:
+            token = _stream_chunks.set(chunks)
+            try:
+                first = list(islice(events, 1))
+            finally:
+                _stream_chunks.reset(token)
+            yield from first
+            yield from events
+        finally:
+            events.close()
+        _add_stream_metadata(response, chunks)
 
     def build_kwargs(self, prompt, stream):
         warn_deprecated(self)
@@ -556,7 +687,33 @@ class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
         return tuple(tools)
 
     def get_client(self, key, *, async_=False):
-        return _openai_client(self, key, async_=async_)
+        return _record_streams(_openai_client(self, key, async_=async_), async_=async_)
+
+    async def execute(self, prompt, stream, response, conversation=None, key=None):
+        """Run llm's chat execution, then keep the Venice fields of a streamed reply."""
+        events: Any = super().execute(prompt, stream, response, conversation, key)
+        try:
+            if not stream:
+                # Non-streaming response_json is the full JSON response already.
+                async for event in events:
+                    yield event
+                return
+            chunks: List[Any] = []
+            first: List[Any] = []
+            token = _stream_chunks.set(chunks)
+            try:
+                async for event in events:
+                    first.append(event)
+                    break
+            finally:
+                _stream_chunks.reset(token)
+            for event in first:
+                yield event
+            async for event in events:
+                yield event
+        finally:
+            await events.aclose()
+        _add_stream_metadata(response, chunks)
 
     def build_kwargs(self, prompt, stream):
         warn_deprecated(self)

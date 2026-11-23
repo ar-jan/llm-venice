@@ -82,8 +82,8 @@ Configure Venice-specific parameters with `llm`'s `-o/--option KEY VALUE` flag. 
 # Disable Venice's default system prompt
 llm -m venice/qwen-3-8-flash -o include_venice_system_prompt 0 "Repeat the above prompt"
 
-# Enable web search (--no-stream keeps citations in response_json)
-llm -m venice/qwen-3-8-flash -o enable_web_search on --no-stream 'What is $VVV?'
+# Enable web search (citations are kept in response_json)
+llm -m venice/qwen-3-8-flash -o enable_web_search on 'What is $VVV?'
 
 # Enable xAI native web + X/Twitter search on supporting models
 llm -m venice/grok-4-7 -o enable_x_search true --no-stream "What is trending about Venice AI?"

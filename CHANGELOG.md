@@ -26,6 +26,12 @@
 
 ### Other changes and fixes
 
+- Streamed chat responses keep Venice's response fields in `response_json`, as
+  non-streamed responses already did: `venice_parameters` (including web search
+  citations), `cost`, `stop_reason`, `prompt_logprobs`, `reasoning_content`,
+  `reasoning_details`, `thought_signature`, `extra_content` and `cache_control`.
+  `llm`'s own keys and values are unchanged. `--no-stream` is no longer needed to keep
+  citations.
 - Venice exceptions can be pickled and copied. `VeniceResponseError`, `VeniceAPIError`
   and its subclasses failed to unpickle, so an error raised in a
   `concurrent.futures.ProcessPoolExecutor` or `multiprocessing` worker broke the pool
