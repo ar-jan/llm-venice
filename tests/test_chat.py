@@ -1829,6 +1829,22 @@ def test_request_options_reach_the_request_body(
     assert payload["anon_user_id"] == "end-user-123"
 
 
+def test_cli_logs_reasoning_options(
+    cli_runner, hermetic_venice_model, httpx2_mock, mock_venice_api_key
+):
+    from llm.cli import cli
+
+    model = hermetic_venice_model()
+    httpx2_mock.add_response(method="POST", url=CHAT_URL, json=COMPLETION)
+    result = cli_runner.invoke(
+        cli, ["-m", model, "--no-stream", "-o", "reasoning", '{"enabled":false}', "hi"]
+    )
+    assert result.exit_code == 0, result.exception
+    logs = cli_runner.invoke(cli, ["logs", "--json"])
+    assert logs.exit_code == 0, logs.exception
+    assert json.loads(logs.stdout)[0]["options_json"]["reasoning"] == {"enabled": False}
+
+
 def test_reasoning_enabled_alone_is_sent():
     chat = VeniceChat("venice-model")
     options = VeniceChatOptions.model_validate({"reasoning": {"enabled": False}})

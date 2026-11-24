@@ -48,6 +48,14 @@ class _Reasoning(BaseModel):
 class _ChatOptions(Chat.Options):
     """Options for Venice chat models."""
 
+    def __iter__(self):
+        # llm persists dict(prompt.options). BaseModel's iterator leaves nested
+        # models intact, so convert reasoning to its JSON-compatible fields.
+        for name, value in super().__iter__():
+            if isinstance(value, _Reasoning):
+                value = value.model_dump(exclude_none=True)
+            yield name, value
+
     if TYPE_CHECKING:
         # llm assembles Chat.Options dynamically, so type checkers cannot see
         # the inherited parameters. Declare only the names here; the real
