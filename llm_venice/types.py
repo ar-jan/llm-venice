@@ -116,6 +116,9 @@ class ModelSpec(TypedDict, total=False):
     supported_formats: list[str]
     default_format: str
     supportsWebSearch: bool
+    embeddingDimensions: int
+    maxInputTokens: int
+    supportsCustomDimensions: bool
 
 
 class ModelInfo(TypedDict, total=False):

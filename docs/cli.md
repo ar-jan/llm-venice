@@ -7,6 +7,7 @@ Detailed behaviour, flags, and edge cases for `llm-venice` on the command line. 
 - [Model catalog (`llm venice refresh`)](#model-catalog-llm-venice-refresh)
 - [Venice options](#venice-options)
 - [Search and tools](#search-and-tools)
+- [Embeddings](#embeddings)
 - [Text-to-speech](#text-to-speech)
 - [Image generation and upscaling](#image-generation-and-upscaling)
 - [Characters and API keys](#characters-and-api-keys)
@@ -124,6 +125,22 @@ llm venice search -p exa -n 5 "private AI inference"
 - `-n/--limit` sets the maximum number of results from `1` to `20` (Venice defaults to up to 10).
 - `--json` outputs the raw JSON response.
 - Each search is billed.
+
+## Embeddings
+
+Every online embedding model in the cached catalog is registered for `llm`'s embedding commands as `venice/<model>`; `llm embed-models list` shows them.
+
+```bash
+llm embed -m venice/text-embedding-bge-m3 -c "Hello world"
+llm embed-multi notes --files docs '*.md' -m venice/text-embedding-qwen3-8b --store
+llm similar notes -c "private inference"
+```
+
+- **Size**: each model returns vectors of its native size, `embeddingDimensions` in the catalog (`llm venice refresh` updates it).
+- **Batching**: `llm embed-multi` sends up to 100 texts per request by default; change it with `--batch-size` (Venice accepts up to 2048).
+- **Input limits**: Venice rejects a text longer than the model's `maxInputTokens`; texts are not truncated. Embedding models take text only, not attachments or binary content.
+- **Shorter vectors**: models with `supportsCustomDimensions` can return fewer dimensions. `llm embed` has no option for this, so use `VeniceEmbeddingModel(..., dimensions=N)` from Python (see the [Python API](python-api.md#embeddings)).
+- **Deprecations**: using a model the catalog marks as deprecated prints a warning to stderr, once per model.
 
 ## Text-to-speech
 

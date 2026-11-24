@@ -13,6 +13,7 @@ from llm_venice.models.chat import (
     VeniceXSearch,
 )
 from llm_venice.models.audio import AsyncVeniceSpeech, VeniceSpeech
+from llm_venice.models.embedding import VeniceEmbeddingModel
 from llm_venice.models.image import AsyncVeniceImage, VeniceImage
 from llm_venice.catalog import catalog_path, read_catalog, save_catalog
 from llm_venice.client import VeniceClient
@@ -76,13 +77,17 @@ def _load_or_fetch_models(venice_models_path: pathlib.Path):
     return models
 
 
+def _online_models():
+    """Yield each online catalog model with its spec, loading or bootstrapping the cache."""
+    for model in _load_or_fetch_models(catalog_path()) or []:
+        spec = model.get("model_spec") or {}
+        if spec.get("offline") is not True:
+            yield model, spec
+
+
 def register_venice_models(register):
     """Register concrete online IDs, using the same metadata for sync and async."""
-    models = _load_or_fetch_models(catalog_path())
-    for model in models or []:
-        spec = model.get("model_spec") or {}
-        if spec.get("offline") is True:
-            continue
+    for model, spec in _online_models():
         capabilities = spec.get("capabilities") or {}
         if not isinstance(capabilities, dict):
             capabilities = {}
@@ -110,6 +115,13 @@ def register_venice_models(register):
             register(VeniceSpeech(**common), async_model=AsyncVeniceSpeech(**common))
 
 
+def register_venice_embedding_models(register):
+    """Register each online embedding model at its native size."""
+    for model, spec in _online_models():
+        if model["type"] == "embedding":
+            register(VeniceEmbeddingModel(model["id"], model["id"], spec))
+
+
 __all__ = [
     "VeniceChat",
     "AsyncVeniceChat",
@@ -119,5 +131,7 @@ __all__ = [
     "AsyncVeniceImage",
     "VeniceSpeech",
     "AsyncVeniceSpeech",
+    "VeniceEmbeddingModel",
     "register_venice_models",
+    "register_venice_embedding_models",
 ]

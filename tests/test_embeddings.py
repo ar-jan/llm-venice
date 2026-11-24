@@ -1,14 +1,18 @@
-"""Embeddings through /embeddings: request contract and clients."""
+"""Embeddings through /embeddings: request contract, clients and the llm adapter."""
 
 import asyncio
 import json
 from pathlib import Path
 
 import httpx2
+import llm
 import pytest
+from llm.cli import cli
 from pydantic import ValidationError
 from typing_extensions import assert_type
 
+from llm_venice import VeniceEmbeddingModel
+from llm_venice.models import _common, register_venice_embedding_models
 from llm_venice._endpoints import EMBEDDING_INPUT_LIMIT, EmbeddingInput, parse_embeddings
 from llm_venice.client import AsyncVeniceClient, VeniceClient
 from llm_venice.errors import VeniceAPIError, VeniceResponseError
@@ -191,3 +195,168 @@ def test_client_errors(is_async, httpx2_mock):
     httpx2_mock.add_response(url=URL, json=payload())
     with pytest.raises(VeniceResponseError, match="received 0"):
         invoke(is_async, "m", "hi")
+
+
+# The llm adapter: registration, `llm embed` and dimension variants.
+
+EMBEDDING_SPEC = {
+    "embeddingDimensions": 4,
+    "maxInputTokens": 8192,
+    "supportsCustomDimensions": True,
+}
+
+
+@pytest.fixture
+def embedding_catalog(hermetic_venice_catalog, monkeypatch):
+    monkeypatch.delenv("LLM_VENICE_KEY", raising=False)
+    hermetic_venice_catalog(
+        [
+            {"id": "emb", "type": "embedding", "model_spec": EMBEDDING_SPEC},
+            {"id": "fixed", "type": "embedding", "model_spec": {"embeddingDimensions": 4}},
+            {"id": "gone", "type": "embedding", "model_spec": {"offline": True}},
+            {"id": "chat", "type": "text", "model_spec": {}},
+        ]
+    )
+
+
+def registered(model_id):
+    model = llm.get_embedding_model(model_id)
+    assert isinstance(model, VeniceEmbeddingModel)
+    return model
+
+
+def respond(httpx2_mock, *vectors, **match):
+    httpx2_mock.add_response(
+        method="POST",
+        url=URL,
+        json=payload(*(embedding(index, vector) for index, vector in enumerate(vectors))),
+        **({"match_json": match} if match else {}),
+    )
+
+
+def test_registers_online_embedding_models_only(embedding_catalog):
+    ids = {model.model_id for model in llm.get_embedding_models()}
+    assert {"venice/emb", "venice/fixed"} <= ids
+    assert not {"venice/gone", "venice/chat"} & ids
+    assert "venice/emb" not in {model.model_id for model in llm.get_models()}
+    model = registered("venice/emb")
+    assert (model.model_name, model.dimensions, model.batch_size) == ("emb", None, 100)
+    assert str(model) == "Venice Embedding: venice/emb"
+    assert model.model_spec == EMBEDDING_SPEC
+
+
+def test_registration_without_catalog_or_key_registers_nothing(hermetic_llm_user_path, monkeypatch):
+    monkeypatch.delenv("LLM_VENICE_KEY", raising=False)
+    registered = []
+    register_venice_embedding_models(lambda model, aliases=None: registered.append(model))
+    assert registered == []
+
+
+def test_embed_sends_the_catalog_model_and_returns_floats(embedding_catalog, httpx2_mock):
+    respond(httpx2_mock, (1, 0.5, -2, 0), model="emb", input=["hello"])
+    vector = llm.get_embedding_model("venice/emb").embed("hello", key="k")
+    assert vector == [1.0, 0.5, -2.0, 0.0]
+    assert all(type(value) is float for value in vector)
+    assert httpx2_mock.get_request().headers["authorization"] == "Bearer k"
+
+
+def test_embed_multi_batches_by_100(embedding_catalog, httpx2_mock):
+    texts = [f"text {index}" for index in range(150)]
+    respond(httpx2_mock, *[(index,) for index in range(100)], model="emb", input=texts[:100])
+    respond(httpx2_mock, *[(index,) for index in range(50)], model="emb", input=texts[100:])
+    vectors = list(llm.get_embedding_model("venice/emb").embed_multi(texts, key="k"))
+    assert len(vectors) == 150
+    assert vectors[99] == [99.0] and vectors[100] == [0.0]
+    assert len(httpx2_mock.get_requests()) == 2
+
+
+def test_empty_batch_sends_no_request(embedding_catalog, httpx2_mock):
+    assert list(llm.get_embedding_model("venice/emb").embed_multi([], key="k")) == []
+    assert not httpx2_mock.get_requests()
+
+
+def test_dimension_variant_has_its_own_id_and_checks_the_size(embedding_catalog, httpx2_mock):
+    spec = registered("venice/emb").model_spec
+    model = VeniceEmbeddingModel("emb", model_spec=spec, dimensions=2)
+    assert (model.model_id, model.model_name) == ("venice/emb-2", "emb")
+    respond(httpx2_mock, (1, 2), model="emb", input=["hi"], dimensions=2)
+    assert model.embed("hi", key="k") == [1.0, 2.0]
+    # Venice answers an unsupported size with the native size; a collection needs one size.
+    respond(httpx2_mock, (1, 2, 3, 4))
+    with pytest.raises(llm.ModelError, match="requested 2 dimensions but received 4"):
+        model.embed("hi", key="k")
+
+
+@pytest.mark.parametrize(
+    "model_id,dimensions,message",
+    [
+        ("fixed", 2, "venice/fixed does not support custom dimensions"),
+        ("emb", 5, "at most 4, the native size of venice/emb"),
+        ("emb", 0, "positive integer"),
+        ("emb", True, "positive integer"),
+    ],
+)
+def test_dimensions_are_checked_against_the_catalog(
+    embedding_catalog, model_id, dimensions, message
+):
+    spec = registered(f"venice/{model_id}").model_spec
+    with pytest.raises(ValueError, match=message):
+        VeniceEmbeddingModel(model_id, model_spec=spec, dimensions=dimensions)
+
+
+def test_dimensions_without_catalog_metadata_are_left_to_venice(httpx2_mock):
+    model = VeniceEmbeddingModel("unknown", dimensions=8)
+    assert model.model_id == "venice/unknown-8"
+    respond(httpx2_mock, (0,) * 8, model="unknown", input=["hi"], dimensions=8)
+    assert len(model.embed("hi", key="k")) == 8
+
+
+def test_errors_become_model_errors(embedding_catalog, httpx2_mock):
+    model = llm.get_embedding_model("venice/emb")
+    httpx2_mock.add_response(url=URL, status_code=400, json={"error": "Input too long"})
+    with pytest.raises(llm.ModelError, match="Creating embeddings failed: .*400.*Input too long"):
+        model.embed("hi", key="k")
+    httpx2_mock.add_response(
+        url=URL, json=payload({"object": "embedding", "index": 0, "embedding": "AACAPw=="})
+    )
+    with pytest.raises(llm.ModelError, match="expected a list of floats"):
+        model.embed("hi", key="k")
+    with pytest.raises(ValueError, match="does not support binary data"):
+        model.embed(b"bytes", key="k")
+
+
+def test_missing_key_raises_needs_key(embedding_catalog, monkeypatch, httpx2_mock):
+    monkeypatch.setattr(llm, "get_key", lambda *_, **__: None)
+    with pytest.raises(llm.NeedsKeyException):
+        llm.get_embedding_model("venice/emb").embed("hi")
+    assert not httpx2_mock.get_requests()
+
+
+def test_deprecated_model_warns_once(hermetic_venice_catalog, httpx2_mock, monkeypatch, capsys):
+    monkeypatch.setattr(_common, "_deprecated_warnings", set())
+    deprecation = {"date": "2026-12-01", "replacementModelId": "new-emb"}
+    hermetic_venice_catalog(
+        [{"id": "old-emb", "type": "embedding", "model_spec": {"deprecation": deprecation}}]
+    )
+    model = llm.get_embedding_model("venice/old-emb")
+    respond(httpx2_mock, (1,))
+    respond(httpx2_mock, (2,))
+    model.embed("a", key="k")
+    model.embed("b", key="k")
+    assert capsys.readouterr().err == (
+        "Warning: venice/old-emb is deprecated; use venice/new-emb instead\n"
+    )
+
+
+def test_cli_embed_store_and_similar(
+    embedding_catalog, httpx2_mock, cli_runner, mock_venice_api_key
+):
+    respond(httpx2_mock, (1, 0, 0, 0), model="emb", input=["about cats"])
+    respond(httpx2_mock, (0, 1, 0, 0), model="emb", input=["about dogs"])
+    for item_id, text in (("cats", "about cats"), ("dogs", "about dogs")):
+        result = cli_runner.invoke(cli, ["embed", "pets", item_id, "-m", "venice/emb", "-c", text])
+        assert result.exit_code == 0, result.output
+    respond(httpx2_mock, (0.9, 0.1, 0, 0), model="emb", input=["kittens"])
+    result = cli_runner.invoke(cli, ["similar", "pets", "-c", "kittens", "-n", "1"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["id"] == "cats"
