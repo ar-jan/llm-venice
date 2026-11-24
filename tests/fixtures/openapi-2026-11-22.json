@@ -405,6 +405,90 @@
       "required": [
         "error"
       ]
+    },
+    "CreateEmbeddingRequestSchema": {
+      "type": "object",
+      "properties": {
+        "dimensions": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The number of dimensions the resulting output embeddings should have."
+        },
+        "encoding_format": {
+          "type": "string",
+          "enum": [
+            "float",
+            "base64"
+          ],
+          "default": "float",
+          "description": "The format to return the embeddings in. Can be either `float` or `base64`.",
+          "example": "float"
+        },
+        "input": {
+          "description": "Input text to embed, encoded as a string or array of strings. To embed multiple inputs in a single request, pass an array of strings. The input must not exceed the max input tokens for the model (8192 tokens), cannot be an empty string, and any array must contain 2048 items or less. Token arrays are not supported and return HTTP 400. LangChain OpenAIEmbeddings sends token arrays unless you set check_embedding_ctx_length=False.",
+          "anyOf": [
+            {
+              "description": "The string that will be turned into an embedding. Cannot be an empty string.",
+              "example": "This is a test.",
+              "minLength": 1,
+              "title": "string",
+              "type": "string"
+            },
+            {
+              "description": "The array of strings that will be turned into an embedding. Array must contain 2048 items or less.",
+              "example": [
+                "This is a test."
+              ],
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 2048,
+              "minItems": 1,
+              "title": "array",
+              "type": "array"
+            }
+          ],
+          "example": "The quick brown fox jumped over the lazy dog"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "text-embedding-bge-m3",
+                "text-embedding-bge-en-icl",
+                "text-embedding-qwen3-8b",
+                "text-embedding-qwen3-0-6b",
+                "text-embedding-multilingual-e5-large-instruct",
+                "text-embedding-3-small",
+                "text-embedding-3-large",
+                "gemini-embedding-2-preview",
+                "text-embedding-nemotron-embed-vl-1b-v2"
+              ]
+            }
+          ],
+          "description": "ID of the model to use. You can use the List models API to see all of your available models, or see our Model overview for descriptions of them.",
+          "example": "text-embedding-bge-m3"
+        },
+        "user": {
+          "type": "string",
+          "description": "This is an unused parameter and is discarded by Venice. It is supported solely for API compatibility with OpenAI."
+        }
+      },
+      "required": [
+        "input",
+        "model"
+      ],
+      "additionalProperties": false,
+      "description": "Create embeddings for the supplied input.",
+      "example": {
+        "encoding_format": "float",
+        "input": "The quick brown fox jumped over the lazy dog",
+        "model": "text-embedding-bge-m3"
+      }
     }
   },
   "resources": {
@@ -2871,6 +2955,148 @@
           }
         }
       }
+    },
+    "POST /embeddings": {
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateEmbeddingRequestSchema"
+            }
+          }
+        }
+      },
+      "response": {
+        "description": "OK",
+        "headers": {
+          "X-Balance-Remaining": {
+            "description": "Remaining x402 credit balance in USD after this request (only present for x402 auth).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "4.230000"
+            }
+          },
+          "Content-Encoding": {
+            "description": "The encoding used to compress the response",
+            "schema": {
+              "enum": [
+                "gzip",
+                "br"
+              ],
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "embedding": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "description": "The embedding vector"
+                      },
+                      "index": {
+                        "type": "integer",
+                        "description": "The index of this embedding in the list"
+                      },
+                      "object": {
+                        "type": "string",
+                        "enum": [
+                          "embedding"
+                        ],
+                        "description": "The object type, which is always \"embedding\""
+                      }
+                    },
+                    "required": [
+                      "embedding",
+                      "index",
+                      "object"
+                    ]
+                  },
+                  "description": "The list of embeddings generated by the model."
+                },
+                "model": {
+                  "type": "string",
+                  "description": "The name of the model used to generate the embedding."
+                },
+                "object": {
+                  "type": "string",
+                  "enum": [
+                    "list"
+                  ],
+                  "description": "The object type, which is always \"list\""
+                },
+                "usage": {
+                  "type": "object",
+                  "properties": {
+                    "prompt_tokens": {
+                      "type": "integer",
+                      "description": "The number of tokens used by the prompt."
+                    },
+                    "total_tokens": {
+                      "type": "integer",
+                      "description": "The total number of tokens used by the request."
+                    }
+                  },
+                  "required": [
+                    "prompt_tokens",
+                    "total_tokens"
+                  ],
+                  "description": "The usage information for the request."
+                }
+              },
+              "required": [
+                "data",
+                "model",
+                "object",
+                "usage"
+              ],
+              "example": {
+                "data": [
+                  {
+                    "embedding": [
+                      0.0023064255,
+                      -0.009327292,
+                      0.015797377
+                    ],
+                    "index": 0,
+                    "object": "embedding"
+                  }
+                ],
+                "model": "text-embedding-bge-m3",
+                "object": "list",
+                "usage": {
+                  "prompt_tokens": 8,
+                  "total_tokens": 8
+                }
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "description": "Supported compression encodings (gzip, br)",
+          "in": "header",
+          "name": "Accept-Encoding",
+          "required": false,
+          "schema": {
+            "example": "gzip, br",
+            "type": "string"
+          }
+        }
+      ]
     }
   }
 }
