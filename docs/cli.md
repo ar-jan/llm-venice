@@ -74,6 +74,12 @@ llm -m venice/qwen-3-8-flash -o responses_api auto "Hello"
 - Tools, `--schema`, image attachments, `-o reasoning`, `-o reasoning_effort`, `-o anon_user_id`, `-o fallbacks`, `-o prompt_cache_retention`, the `VeniceWebSearch` tool and the Venice parameters (`character_slug`, `include_venice_system_prompt`, and the web search options) all work. Chat-only options (`seed`, `stop`, `logit_bias`, `frequency_penalty`, `presence_penalty`, `min_p`, `top_k`, `repetition_penalty`, `stop_token_ids`, `prompt_cache_key`, `verbosity`, `enable_x_search`, `strip_thinking_response` and `disable_thinking`) and `VeniceXSearch` are refused before any request. E2EE models are not served by `/responses`.
 - A response cut short by `max_tokens` keeps its partial text; the response JSON then has `status: "incomplete"` and `incomplete_details`.
 
+### Audio and video attachments
+
+- Models with `supportsAudioInput` take audio attachments in WAV, MP3, AAC, Ogg, FLAC, M4A and AIFF, sent as `input_audio` in their own format. Support for formats other than WAV and MP3 varies by model: Gemini models accept them all, while some models answer only WAV and MP3 and fail with `500 Inference processing failed` otherwise.
+- `llm` does not recognise `.m4a` files from their name; give the type with `--at recording.m4a audio/mp4`.
+- Models with `supportsVideoInput` take MP4, MPEG, MOV and WebM video attachments, sent as `video_url`: a file as a base64 data URL, a URL as given (it must be public and must not redirect). Venice takes at most three videos per request.
+
 ### Response metadata
 
 Venice adds fields to chat responses that `llm`'s generic handling of streamed chunks leaves out. Streamed responses keep them too, in the response JSON logged by `llm` (`llm logs --json`), alongside `llm`'s usual `content`, `finish_reason` and `usage` keys:

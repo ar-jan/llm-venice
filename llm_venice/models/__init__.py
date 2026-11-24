@@ -102,6 +102,7 @@ def register_venice_models(register):
                 can_stream=True,
                 vision=capabilities.get("supportsVision") is True,
                 audio=capabilities.get("supportsAudioInput") is True,
+                video=capabilities.get("supportsVideoInput") is True,
                 supports_schema=capabilities.get("supportsResponseSchema") is True,
                 supports_tools=capabilities.get("supportsFunctionCalling") is True,
                 supports_web_search=web,

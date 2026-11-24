@@ -4,6 +4,10 @@
 
 ### New features
 
+- Chat models with `supportsAudioInput` accept AAC, Ogg, FLAC, M4A and AIFF audio as well
+  as WAV and MP3, each sent as `input_audio` in its own format (`llm` labelled every
+  audio attachment `mp3` or `wav`). Models with `supportsVideoInput` accept MP4, MPEG,
+  MOV and WebM video, sent as `video_url`.
 - Chat option `responses_api` (`auto`, `native` or `compat`) sends a prompt to Venice's
   `/responses` endpoint instead of Chat Completions, for example
   `llm -m venice/openai-gpt-6-luna -o responses_api native`. Chat Completions stays the

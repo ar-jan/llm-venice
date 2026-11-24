@@ -60,7 +60,7 @@ Models with schema support work with `llm`'s `--schema` option (see the [LLM sch
 llm -m venice/z-ai-glm-5-3 --schema "name, age int, one_sentence_bio" "Invent an evil supervillain"
 ```
 
-#### Attachments (vision & audio)
+#### Attachments (vision, audio & video)
 
 Vision models (such as `qwen-3-8-27b`) accept image attachments via `-a/--attachment`:
 
@@ -68,10 +68,11 @@ Vision models (such as `qwen-3-8-27b`) accept image attachments via `-a/--attach
 llm -m venice/qwen-3-8-27b -a https://upload.wikimedia.org/wikipedia/commons/a/a9/Corvus_corone_-near_Canford_Cliffs%2C_Poole%2C_England-8.jpg "Identify"
 ```
 
-Models with `supportsAudioInput` also accept WAV and MP3 attachments:
+Models with `supportsAudioInput` also accept audio attachments (WAV, MP3, AAC, Ogg, FLAC, M4A and AIFF; formats other than WAV and MP3 depend on the model), and models with `supportsVideoInput` accept MP4, MPEG, MOV and WebM video:
 
 ```bash
 llm -m venice/<audio-model> -a recording.wav "Transcribe this"
+llm -m venice/gemini-3-5-flash-lite -a clip.mp4 "What happens in this video?"
 ```
 
 ### Venice options (`-o`)

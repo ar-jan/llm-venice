@@ -669,6 +669,88 @@ def _openai_client(model: Union[Chat, AsyncChat], key, *, async_: bool):
     return openai.AsyncOpenAI(**kwargs) if async_ else openai.OpenAI(**kwargs)
 
 
+# Swagger's input_audio formats, keyed by the MIME types llm detects for them.
+# PCM has no MIME type to detect, so it is not offered.
+AUDIO_FORMATS = {
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "audio/mpeg": "mp3",
+    "audio/aac": "aac",
+    "audio/x-aac": "aac",
+    "audio/ogg": "ogg",
+    # Ogg detected from bytes rather than a .ogg name.
+    "application/ogg": "ogg",
+    "audio/flac": "flac",
+    "audio/x-flac": "flac",
+    "audio/mp4": "m4a",
+    "audio/x-m4a": "m4a",
+    "audio/aiff": "aiff",
+    "audio/x-aiff": "aiff",
+}
+# Video types Venice accepts (mp4, mpeg, mov, webm), and the type to send.
+VIDEO_TYPES = {
+    "video/mp4": "video/mp4",
+    "video/mpeg": "video/mpeg",
+    # What llm detects for an MPEG program stream, the usual .mpeg file.
+    "video/dvd": "video/mpeg",
+    "video/quicktime": "video/quicktime",
+    "video/webm": "video/webm",
+}
+
+
+def _venice_attachment(attachment: Any, item: Dict[str, Any]) -> Dict[str, Any]:
+    """Correct llm's content part for audio and video, which it labels mp3 audio.
+
+    llm sends every non-image, non-PDF attachment as input_audio, with format
+    wav or mp3, after encoding it when it has no URL.
+    """
+    type_ = attachment.resolve_type()
+    if type_ in VIDEO_TYPES:
+        url = attachment.url
+        if not url:
+            data = (item.get("input_audio") or {}).get("data") or attachment.base64_content()
+            url = f"data:{VIDEO_TYPES[type_]};base64,{data}"
+        return {"type": "video_url", "video_url": {"url": url}}
+    if type_ in AUDIO_FORMATS and item.get("type") == "input_audio":
+        return {
+            "type": "input_audio",
+            "input_audio": {**item["input_audio"], "format": AUDIO_FORMATS[type_]},
+        }
+    return item
+
+
+class _VeniceMessages:
+    """Chat message serialization shared by the sync and async chat models."""
+
+    def _append_llm_message(self, out, message, current_system, image_detail=None):
+        from llm.parts import AttachmentPart
+
+        attachments = [
+            part.attachment
+            for part in message.parts
+            if isinstance(part, AttachmentPart) and part.attachment
+        ]
+        start = len(out)
+        current_system = super()._append_llm_message(  # type: ignore[misc]
+            out, message, current_system, image_detail=image_detail
+        )
+        content = out[start].get("content") if attachments and len(out) > start else None
+        if isinstance(content, list):
+            # llm puts the attachments, in order, after the message's text block.
+            first = len(content) - len(attachments)
+            for index, attachment in enumerate(attachments, first):
+                content[index] = _venice_attachment(attachment, content[index])
+        return current_system
+
+
+def _add_media_types(model: Any, video: bool) -> None:
+    # llm enables WAV and MP3 for audio models; Venice also takes these formats.
+    if "audio/wav" in model.attachment_types:
+        model.attachment_types.update(AUDIO_FORMATS)
+    if video:
+        model.attachment_types.update(VIDEO_TYPES)
+
+
 def _responses_kwargs(model: Union[Chat, AsyncChat]) -> Dict[str, Any]:
     """Construct a /responses model with this chat model's ID, endpoint and capabilities."""
     chat: Any = model
@@ -687,7 +769,7 @@ def _responses_kwargs(model: Union[Chat, AsyncChat]) -> Dict[str, Any]:
     }
 
 
-class VeniceChat(CatalogOptionsMixin, Chat):
+class VeniceChat(_VeniceMessages, CatalogOptionsMixin, Chat):
     """Venice AI chat model."""
 
     needs_key = "venice"
@@ -701,6 +783,7 @@ class VeniceChat(CatalogOptionsMixin, Chat):
         *args,
         supports_web_search: bool = False,
         supports_x_search: bool = False,
+        video: bool = False,
         model_spec=None,
         **kwargs,
     ):
@@ -717,6 +800,7 @@ class VeniceChat(CatalogOptionsMixin, Chat):
         self.catalog_policy = normalize_policy("text", self.model_spec)
         self.supports_web_search = supports_web_search
         self.supports_x_search = supports_x_search
+        _add_media_types(self, video)
 
     def __str__(self):  # type: ignore[invalid-argument-type]
         return f"Venice Chat: {self.model_id}"
@@ -778,7 +862,7 @@ class VeniceChat(CatalogOptionsMixin, Chat):
         )
 
 
-class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
+class AsyncVeniceChat(_VeniceMessages, CatalogOptionsMixin, AsyncChat):
     """Venice AI async chat model."""
 
     needs_key = "venice"
@@ -792,6 +876,7 @@ class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
         *args,
         supports_web_search: bool = False,
         supports_x_search: bool = False,
+        video: bool = False,
         model_spec=None,
         **kwargs,
     ):
@@ -808,6 +893,7 @@ class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
         self.catalog_policy = normalize_policy("text", self.model_spec)
         self.supports_web_search = supports_web_search
         self.supports_x_search = supports_x_search
+        _add_media_types(self, video)
 
     def __str__(self):  # type: ignore[invalid-argument-type]
         return f"Venice Chat: {self.model_id}"
