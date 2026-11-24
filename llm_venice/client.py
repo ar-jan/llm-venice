@@ -44,6 +44,7 @@ from .types import (
     EmbeddingResponse,
     ImageEditOptions,
     ModelInfo,
+    MultiEditOptions,
     RateLimitLogEntry,
     RateLimits,
 )
@@ -70,6 +71,24 @@ def _image_file(image: ImageInput) -> tuple[str, bytes] | tuple[str, bytes, str]
     if filename == "image":
         filename = f"image.{'jpg' if format == 'jpeg' else format}"
     return filename, content, f"image/{format}"
+
+
+def _image_list(images: Sequence[ImageInput]) -> list[ImageInput]:
+    # A str or bytes is a Sequence too, but would be split into characters or ints.
+    if isinstance(images, (str, bytes, os.PathLike)):
+        raise TypeError("images must be a list of images, not a single image")
+    return list(images)
+
+
+def _multi_edit_request(
+    images: list[ImageInput], urls: list[str | None], body: dict[str, Any]
+) -> dict[str, Any]:
+    """Multipart when every image is local; JSON, with local images inlined, otherwise."""
+    if not any(urls):
+        files = [("images", _image_file(image)) for image in images]
+        return {"data": ep.form_fields(body), "files": files}
+    encoded = [url or ep.data_url(_image_file(image)) for url, image in zip(urls, images)]
+    return {"json": {**body, "images": encoded}}
 
 
 def _document_file(file: FileInput, filename: str | None) -> tuple[str, bytes, str]:
@@ -486,6 +505,33 @@ class VeniceClient(_Configuration):
         )
         response = self._send("POST", "image/edit", ep.IMAGE_EDIT_ACTION, **request)
         return ep.parse_image_edit(response, ep.IMAGE_EDIT_ACTION)
+
+    def multi_edit_image(
+        self,
+        images: Sequence[ImageInput],
+        prompt: str,
+        *,
+        model: str | None = None,
+        **options: Unpack[MultiEditOptions],
+    ) -> ImageEditResult:
+        """Edit layered images as ``prompt`` directs; the first image is the base.
+
+        Each image is a path, bytes, borrowed binary file or http(s) URL string, as
+        for ``edit_image()``. When all are local they are uploaded as files; when any
+        is a URL, the request is JSON and local images are sent base64-encoded. The
+        most images a model takes is ``maxInputImages`` in its catalog constraints,
+        which this method does not check. ``model`` is an edit model ID; omitted,
+        Venice uses its default edit model.
+        """
+        self._ensure_open()
+        inputs = _image_list(images)
+        urls = [image if ep.is_image_url(image) else None for image in inputs]
+        body = ep.MultiImageEditInput.model_validate(
+            {**options, "prompt": prompt, "model": model, "image_urls": urls}
+        ).body()
+        request = _multi_edit_request(inputs, urls, body)
+        response = self._send("POST", "image/multi-edit", ep.MULTI_EDIT_ACTION, **request)
+        return ep.parse_image_edit(response, ep.MULTI_EDIT_ACTION)
 
     def generate_speech(
         self,
@@ -913,6 +959,33 @@ class AsyncVeniceClient(_Configuration):
             request = {"data": ep.form_fields(inputs.body()), "files": {"image": file}}
         response = await self._send("POST", "image/edit", ep.IMAGE_EDIT_ACTION, **request)
         return ep.parse_image_edit(response, ep.IMAGE_EDIT_ACTION)
+
+    async def multi_edit_image(
+        self,
+        images: Sequence[ImageInput],
+        prompt: str,
+        *,
+        model: str | None = None,
+        **options: Unpack[MultiEditOptions],
+    ) -> ImageEditResult:
+        """Edit layered images as ``prompt`` directs; the first image is the base.
+
+        Each image is a path, bytes, borrowed binary file or http(s) URL string, as
+        for ``edit_image()``. When all are local they are uploaded as files; when any
+        is a URL, the request is JSON and local images are sent base64-encoded. The
+        most images a model takes is ``maxInputImages`` in its catalog constraints,
+        which this method does not check. ``model`` is an edit model ID; omitted,
+        Venice uses its default edit model.
+        """
+        self._ensure_open()
+        inputs = _image_list(images)
+        urls = [image if ep.is_image_url(image) else None for image in inputs]
+        body = ep.MultiImageEditInput.model_validate(
+            {**options, "prompt": prompt, "model": model, "image_urls": urls}
+        ).body()
+        request = await async_file_call(_multi_edit_request, inputs, urls, body)
+        response = await self._send("POST", "image/multi-edit", ep.MULTI_EDIT_ACTION, **request)
+        return ep.parse_image_edit(response, ep.MULTI_EDIT_ACTION)
 
     async def generate_speech(
         self,

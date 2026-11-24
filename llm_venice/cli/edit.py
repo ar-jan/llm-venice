@@ -1,5 +1,7 @@
 """Image edit commands for Venice CLI."""
 
+from typing import get_args
+
 import click
 from pydantic import ValidationError
 
@@ -17,6 +19,7 @@ from llm_venice.cli.images import (
 )
 from llm_venice.cli.notices import emit_cli_notices
 from llm_venice.cli.output import clean_text
+from llm_venice.types import ImageQuality
 
 _OPTION_NAMES = (
     "aspect_ratio",
@@ -27,6 +30,7 @@ _OPTION_NAMES = (
     "enhance_prompt",
     "disable_prompt_optimization_thinking",
     "anon_user_id",
+    "quality",
 )
 
 
@@ -36,7 +40,7 @@ _FLAGS = {"prompt": "PROMPT", "output_format": "--format"}
 
 def _given(values: dict) -> dict:
     """The edit options that were set; the rest are left to Venice."""
-    return {name: values[name] for name in _OPTION_NAMES if values[name] is not None}
+    return {name: values[name] for name in _OPTION_NAMES if values.get(name) is not None}
 
 
 def _usage_error(exc: ValidationError) -> click.UsageError:
@@ -111,3 +115,49 @@ def create_edit_command():
         )
 
     return edit
+
+
+def create_multi_edit_command():
+    """
+    Create the multi-edit command.
+
+    Returns:
+        Click command for editing layered images with one prompt
+    """
+
+    @click.command(name="multi-edit")
+    @click.argument("images", nargs=-1, required=True, type=ImageSource())
+    @click.option("-p", "--prompt", required=True, help="Directions for the edit")
+    @click.option(
+        "--quality",
+        type=click.Choice(get_args(ImageQuality)),
+        help="Output quality on models that offer it; higher can cost more",
+    )
+    @edit_options
+    def multi_edit(images, prompt, quality, model, output_path, overwrite, **values):
+        """Edit layered images with one prompt; the first IMAGE is the base.
+
+        Each IMAGE is a local file or an http(s) URL, which Venice fetches. The rest
+        are layers or masks; how many a model takes is maxInputImages in the catalog.
+        The result is saved as <name>_edited.<ext> after the first image. Each edit is
+        billed.
+
+        \b
+        Example:
+          llm venice multi-edit room.jpg sofa.png -p "place the sofa in the room"
+        """
+        options = _given({**values, "quality": quality})
+        _save(
+            lambda client, model_id: client.multi_edit_image(
+                images, prompt, model=model_id, **options
+            ),
+            images[0],
+            model,
+            prompt,
+            options,
+            output_path,
+            overwrite,
+            images=len(images),
+        )
+
+    return multi_edit

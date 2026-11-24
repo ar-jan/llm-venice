@@ -276,6 +276,20 @@ llm venice edit IMAGE PROMPT... [-m MODEL] [--aspect-ratio RATIO] [--resolution 
 - An image that Venice marks as a content violation is not saved, and the command fails. Model deprecation warnings from Venice are printed to stderr.
 - Each edit is billed, by model and resolution.
 
+### Multi-image editing (`llm venice multi-edit`)
+
+Edit layered images with one prompt. The first image is the base; the others are layers or masks:
+
+```bash
+llm venice multi-edit room.jpg sofa.png -p "place the sofa in the room" -m qwen-image-2-1-turbo-edit
+```
+
+- Each `IMAGE` is a local file or an `http`/`https` URL. When every image is local they are uploaded as files; when any is a URL, local images are sent inline (base64) alongside it.
+- `-p/--prompt` is required. `--quality` (`low`, `medium` or `high`) applies on models that offer it; the other options are those of `llm venice edit`.
+- How many images a model takes is `maxInputImages` in its catalog constraints. When the model is in the cached catalog, the count, quality and the `edit` checks are applied before anything is sent.
+- The result is saved as `<name>_edited.<ext>` after the first image.
+- Each edit is billed; some models charge per additional input image.
+
 ### Background removal (`llm venice background-remove`)
 
 ```text

@@ -53,6 +53,16 @@ class ImageEditOptions(TypedDict, total=False):
     anon_user_id: str
 
 
+ImageQuality = Literal["low", "medium", "high"]
+"""Output quality on models that offer it; higher can cost more."""
+
+
+class MultiEditOptions(ImageEditOptions, total=False):
+    """Optional settings for ``multi_edit_image()``: the edit settings and ``quality``."""
+
+    quality: ImageQuality
+
+
 class ModelCapabilities(TypedDict, total=False):
     """Optional capability metadata supplied by the catalog."""
 

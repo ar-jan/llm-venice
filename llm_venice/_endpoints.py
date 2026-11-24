@@ -45,6 +45,7 @@ from .types import (
     EmbeddingEncodingFormat,
     EmbeddingResponse,
     ImageOutputFormat,
+    ImageQuality,
     ModelInfo,
 )
 
@@ -671,6 +672,26 @@ class SingleImageEditInput(ImageEditInput):
         body = super().body(model_key)
         url = body.pop("image_url", None)
         return {"image": url, **body} if url is not None else body
+
+
+MULTI_EDIT_ACTION = "Editing images"
+
+
+class MultiImageEditInput(ImageEditInput):
+    quality: ImageQuality | None = None
+    # One entry per image, base image first: its URL, or None for a local image.
+    image_urls: list[WebUrl | None] = Field(min_length=1)
+
+    def body(self, model_key: str = "modelId") -> dict[str, Any]:
+        body = super().body(model_key)
+        body.pop("image_urls")
+        return body
+
+
+def data_url(file: tuple[str, bytes] | tuple[str, bytes, str]) -> str:
+    """A local image for a JSON body: a data URL when its type is known, else base64."""
+    encoded = base64.b64encode(file[1]).decode("ascii")
+    return f"data:{file[2]};base64,{encoded}" if len(file) == 3 else encoded
 
 
 def form_fields(body: dict[str, Any]) -> dict[str, str]:

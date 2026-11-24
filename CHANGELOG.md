@@ -4,6 +4,11 @@
 
 ### New features
 
+- `multi_edit_image()` client methods and the `llm venice multi-edit IMAGE... -p PROMPT`
+  command for `/image/multi-edit`, editing a base image with layers or masks. Local
+  images are uploaded as files, or sent inline when any image is a URL. It takes the
+  edit options plus `quality`, and the command checks the image count against the
+  model's `maxInputImages` in the cached catalog.
 - `edit_image()` client methods and the `llm venice edit IMAGE PROMPT` command for
   `/image/edit`. The image is a path, bytes or binary file, uploaded, or an `http(s)`
   URL that Venice fetches. Options cover the model (Venice's default edit model when

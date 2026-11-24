@@ -207,6 +207,7 @@ Edit a local image or an image URL with a prompt, using one of the edit models (
 
 ```bash
 llm venice edit photo.jpg "change the sky to sunrise" -m qwen-image-2-1-turbo-edit
+llm venice multi-edit room.jpg sofa.png -p "place the sofa in the room"
 ```
 
 The result is saved as `photo_edited.<ext>`. See [CLI reference — Image editing](https://github.com/ar-jan/llm-venice/blob/develop/docs/cli.md#image-editing-llm-venice-edit) for aspect ratios, resolutions, transparency, and catalog checks.

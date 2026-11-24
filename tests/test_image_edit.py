@@ -1,6 +1,7 @@
-"""Image editing through /image/edit: contract, clients and CLI."""
+"""Image editing through /image/edit and /image/multi-edit: contract, clients and CLI."""
 
 import asyncio
+import base64
 import io
 import json
 import re
@@ -16,7 +17,9 @@ from llm_venice import GeneratedImage, ImageEditResult
 from llm_venice._endpoints import (
     ASPECT_RATIO_PATTERN,
     ImageEditInput,
+    MultiImageEditInput,
     SingleImageEditInput,
+    data_url,
     form_fields,
     parse_image_edit,
 )
@@ -478,3 +481,185 @@ def test_cli_errors(cli_runner, httpx2_mock, mock_venice_api_key, photo, tmp_pat
     assert result.output == (
         "Error: Editing image failed: Venice API returned 400 Bad Request - Image too small\n"
     )
+
+
+# Multi-image edits through /image/multi-edit.
+
+MULTI_URL = "https://api.venice.ai/api/v1/image/multi-edit"
+JPEG = b"\xff\xd8\xff\xe0layer"
+
+
+def test_multi_edit_body_names_the_model_model_id():
+    inputs = MultiImageEditInput(prompt="p", model="m", quality="high", image_urls=[None])
+    assert inputs.body() == {"modelId": "m", "prompt": "p", "quality": "high"}
+    with pytest.raises(ValidationError):
+        MultiImageEditInput(prompt="p", image_urls=[])
+    with pytest.raises(ValidationError):
+        MultiImageEditInput.model_validate({"prompt": "p", "image_urls": [None], "quality": "max"})
+    with pytest.raises(ValidationError):
+        MultiImageEditInput(prompt="p", image_urls=["https://"])
+
+
+def test_multi_edit_matches_dated_fixture():
+    fixture = json.loads(FIXTURE.read_text())
+    for name in ("MultiEditImageRequest", "MultiEditImageMultipartRequest"):
+        schema = fixture["schemas"][name]
+        properties = schema["properties"]
+        every = MultiImageEditInput(
+            prompt="p",
+            model="m",
+            image_urls=[None],
+            aspect_ratio="auto",
+            resolution="1K",
+            quality="low",
+            output_format="webp",
+            safe_mode=True,
+            transparent_background=True,
+            enhance_prompt=True,
+            disable_prompt_optimization_thinking=True,
+            anon_user_id="u",
+        ).body()
+        assert set(every) | {"images"} == set(properties)
+        assert set(schema["required"]) == {"prompt", "images"}
+        assert properties["images"]["minItems"] == 1
+        assert set(properties["quality"]["enum"]) == {"low", "medium", "high"}
+        assert properties["aspect_ratio"]["pattern"] == ASPECT_RATIO_PATTERN
+    resource = fixture["resources"]["POST /image/multi-edit"]
+    assert set(resource["requestBody"]["content"]) == {"application/json", "multipart/form-data"}
+
+
+def test_data_urls_carry_known_types():
+    assert data_url(("image.png", b"\x00\x01", "image/png")) == "data:image/png;base64,AAE="
+    assert data_url(("image", b"\x00\x01")) == "AAE="
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_local_images_are_uploaded_in_order(is_async, httpx2_mock, multipart_parts, tmp_path):
+    base = tmp_path / "base.png"
+    base.write_bytes(PNG)
+    respond(httpx2_mock, url=MULTI_URL)
+    result = invoke(
+        is_async,
+        "multi_edit_image",
+        [base, JPEG, io.BytesIO(b"unknown")],
+        "combine",
+        model="qwen-image-2-1-turbo-edit",
+        quality="low",
+    )
+    assert result.model_name == "Qwen Image 2.1 Turbo"
+    parts = multipart_parts()
+    assert parts["images"] == [
+        ("base.png", "image/png", PNG),
+        ("image.jpg", "image/jpeg", JPEG),
+        ("image", "application/octet-stream", b"unknown"),
+    ]
+    fields = {name: value[0][2] for name, value in parts.items() if name != "images"}
+    assert fields == {
+        "modelId": b"qwen-image-2-1-turbo-edit",
+        "prompt": b"combine",
+        "quality": b"low",
+    }
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_any_url_sends_json_with_local_images_inlined(is_async, httpx2_mock, request_json):
+    respond(httpx2_mock, url=MULTI_URL)
+    invoke(is_async, "multi_edit_image", (IMAGE_URL, PNG), "combine", safe_mode=True)
+    assert httpx2_mock.get_request().headers["content-type"] == "application/json"
+    assert request_json() == {
+        "prompt": "combine",
+        "safe_mode": True,
+        "images": [IMAGE_URL, "data:image/png;base64," + base64.b64encode(PNG).decode()],
+    }
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize("images", [[], "photo.png", PNG, Path("photo.png")])
+def test_multi_edit_needs_a_list_of_images(is_async, images, httpx2_mock):
+    with pytest.raises((ValidationError, TypeError)):
+        invoke(is_async, "multi_edit_image", images, "p")
+    assert not httpx2_mock.get_requests()
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_multi_edit_errors(is_async, httpx2_mock):
+    httpx2_mock.add_response(
+        url=MULTI_URL,
+        status_code=400,
+        json={"error": "Model 'm' supports a maximum of 6 input images"},
+    )
+    with pytest.raises(VeniceAPIError, match="Editing images failed: .*400.*maximum of 6"):
+        invoke(is_async, "multi_edit_image", [PNG] * 7, "p", model="m")
+
+
+def test_multi_edit_result_type(httpx2_mock):
+    respond(httpx2_mock, url=MULTI_URL)
+    with VeniceClient(key="test") as client:
+        assert_type(client.multi_edit_image([PNG], "p"), ImageEditResult)
+
+
+def multi_edit_cli(cli_runner, *args):
+    return cli_runner.invoke(cli, ["venice", "multi-edit", *map(str, args)])
+
+
+def test_cli_multi_edit_saves_after_the_base_image(
+    cli_runner, httpx2_mock, mock_venice_api_key, multipart_parts, photo, tmp_path
+):
+    layer = tmp_path / "layer.jpg"
+    layer.write_bytes(JPEG)
+    respond(httpx2_mock, url=MULTI_URL)
+    result = multi_edit_cli(
+        cli_runner, photo, layer, "-p", "combine them", "--quality", "high", "-m", "edit-model"
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout == f"Edited image saved to {tmp_path / 'photo_edited.jpg'}\n"
+    parts = multipart_parts()
+    assert [part[0] for part in parts["images"]] == ["photo.png", "layer.jpg"]
+    fields = {name: value[0][2] for name, value in parts.items() if name != "images"}
+    assert fields == {
+        "modelId": b"edit-model",
+        "prompt": b"combine them",
+        "safe_mode": b"false",
+        "quality": b"high",
+    }
+
+
+def test_cli_multi_edit_with_a_url(
+    cli_runner, httpx2_mock, mock_venice_api_key, request_json, photo, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    respond(httpx2_mock, url=MULTI_URL)
+    result = multi_edit_cli(cli_runner, IMAGE_URL, photo, "-p", "p")
+    assert result.exit_code == 0, result.output
+    assert request_json()["images"][0] == IMAGE_URL
+    assert request_json()["images"][1].startswith("data:image/png;base64,")
+    assert (tmp_path / "sky_edited.jpg").exists()
+
+
+@pytest.mark.parametrize(
+    "args,message",
+    [
+        (["--quality", "medium"], "--quality for edit-model must be one of: low, high"),
+        (["--aspect-ratio", "4:3"], "--aspect-ratio for edit-model must be one of"),
+    ],
+)
+def test_cli_multi_edit_checks_the_catalog(
+    cli_runner, httpx2_mock, photo, hermetic_venice_catalog, args, message
+):
+    hermetic_venice_catalog(CATALOG)
+    result = multi_edit_cli(cli_runner, photo, "-p", "p", "-m", "edit-model", *args)
+    assert result.exit_code == 2
+    assert message in result.output
+    result = multi_edit_cli(cli_runner, photo, photo, photo, "-p", "p", "-m", "edit-model")
+    assert result.exit_code == 2
+    assert "edit-model accepts at most 2 input images" in result.output
+    assert not httpx2_mock.get_requests()
+
+
+def test_cli_multi_edit_needs_images_and_a_prompt(cli_runner, photo):
+    result = multi_edit_cli(cli_runner, "-p", "p")
+    assert result.exit_code == 2
+    assert "Missing argument 'IMAGES...'" in result.output
+    result = multi_edit_cli(cli_runner, photo)
+    assert result.exit_code == 2
+    assert "Missing option '-p' / '--prompt'" in result.output
