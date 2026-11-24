@@ -193,13 +193,14 @@ def _summary_parts(item: Any) -> None:
 
 
 def _normalize_response(response: Any) -> Any:
+    if getattr(response, "status", None) == "failed":
+        raise llm.ModelError(_failure(getattr(response, "error", None)))
     for item in getattr(response, "output", None) or []:
         _summary_parts(item)
     return response
 
 
-def _failure(event: Any) -> str:
-    error: Any = getattr(getattr(event, "response", None), "error", None) or event
+def _failure(error: Any) -> str:
     message = getattr(error, "message", None) or "no reason given"
     code = getattr(error, "code", None)
     return f"Venice response failed: {message}" + (f" ({code})" if code else "")
@@ -225,7 +226,9 @@ def _translate(event: Any) -> Any:
             # its status and incomplete_details, and the partial output and usage.
             return SimpleNamespace(type="response.completed", response=event.response)
     elif kind in ("response.failed", "error"):
-        raise llm.ModelError(_failure(event))
+        raise llm.ModelError(
+            _failure(getattr(getattr(event, "response", None), "error", None) or event)
+        )
     return event
 
 
@@ -305,6 +308,22 @@ class _VeniceResponsesMixin:
 
     def get_client(self, key: Any, *, async_: bool = False) -> Any:
         return _adapt_client(_openai_client(self, key, async_=async_), async_=async_)  # type: ignore[arg-type]
+
+    def _build_responses_input(self, prompt, image_detail=None):
+        from llm.parts import AttachmentPart
+
+        # llm falls back to input_image for unknown media. Check the full history
+        # before llm reads or encodes attachments for the Responses request.
+        for message in prompt.messages:
+            for part in message.parts:
+                if isinstance(part, AttachmentPart) and part.attachment:
+                    mime = part.attachment.resolve_type() or ""
+                    if mime != "application/pdf" and not mime.startswith("image/"):
+                        raise llm.ModelError(
+                            f"The Venice Responses API does not support {mime!r} attachments; "
+                            "use Chat Completions without responses_api"
+                        )
+        return super()._build_responses_input(prompt, image_detail=image_detail)  # type: ignore[misc]
 
     def _finalize_responses_kwargs(
         self, prompt: Any, stream: bool, instructions: Optional[str] = None

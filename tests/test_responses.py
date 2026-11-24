@@ -429,6 +429,14 @@ def test_failed_streams_raise(is_async, event, message, httpx2_mock, mock_venice
         run(make(is_async))
 
 
+@pytest.mark.parametrize("is_async", [False, True])
+def test_failed_non_streaming_response_raises(is_async, httpx2_mock, mock_venice_api_key):
+    body = payload(status="failed", error={"code": "server_error", "message": "Upstream failed"})
+    add_response(httpx2_mock, stream=False, body=body)
+    with pytest.raises(llm.ModelError, match=re.escape("Upstream failed (server_error)")):
+        run(make(is_async), stream=False)
+
+
 def test_events_close_the_stream_when_abandoned():
     closed = []
 
@@ -528,6 +536,24 @@ def test_delegated_web_search_tool(httpx2_mock, mock_venice_api_key, sent):
     model = chat_model(False, supports_web_search=True)
     run(model, stream=False, responses_api="compat", tools=[VeniceWebSearch()])
     assert sent()["venice_parameters"]["enable_web_search"] == "auto"
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_responses_reject_audio_before_request(is_async, httpx2_mock, mock_venice_api_key):
+    audio = llm.Attachment(content=b"audio", type="audio/wav")
+    with pytest.raises(llm.ModelError, match="audio/wav.*use Chat Completions"):
+        run(chat_model(is_async, audio=True), attachments=[audio], responses_api="compat")
+    assert not httpx2_mock.get_requests()
+
+
+def test_switching_to_responses_checks_earlier_attachments(httpx2_mock, mock_venice_api_key):
+    httpx2_mock.add_response(method="POST", url=CHAT_URL, json=chat_completion("One"))
+    conversation = chat_model(False, audio=True).conversation()
+    audio = llm.Attachment(content=b"audio", type="audio/wav")
+    conversation.prompt("first", attachments=[audio], stream=False).text()
+    with pytest.raises(llm.ModelError, match="audio/wav.*use Chat Completions"):
+        conversation.prompt("second", responses_api="auto").text()
+    assert len(httpx2_mock.get_requests()) == 1
 
 
 def test_a_conversation_can_switch_to_responses(httpx2_mock, mock_venice_api_key, sent):
