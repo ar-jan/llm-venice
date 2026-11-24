@@ -191,6 +191,15 @@ class _ChatOptions(Chat.Options):
         default=None,
     )
 
+    responses_api: Optional[Literal["auto", "native", "compat"]] = Field(
+        description=(
+            "Send this prompt to Venice's Responses API instead of Chat Completions: "
+            "'native' forwards to OpenAI's Responses API (most OpenAI models), 'compat' "
+            "translates through Chat Completions, 'auto' lets Venice choose."
+        ),
+        default=None,
+    )
+
     extra_body: Optional[Dict[str, Any]] = Field(
         description=(
             "Additional API fields, as a JSON object; cannot override other options. "
@@ -660,6 +669,24 @@ def _openai_client(model: Union[Chat, AsyncChat], key, *, async_: bool):
     return openai.AsyncOpenAI(**kwargs) if async_ else openai.OpenAI(**kwargs)
 
 
+def _responses_kwargs(model: Union[Chat, AsyncChat]) -> Dict[str, Any]:
+    """Construct a /responses model with this chat model's ID, endpoint and capabilities."""
+    chat: Any = model
+    return {
+        "model_id": chat.model_id,
+        "key": chat.key,
+        "model_name": chat.model_name,
+        "api_base": chat.api_base,
+        "headers": chat.headers,
+        "can_stream": chat.can_stream,
+        "vision": chat.vision,
+        "supports_schema": chat.supports_schema,
+        "supports_tools": chat.supports_tools,
+        "supports_web_search": chat.supports_web_search,
+        "model_spec": chat.model_spec,
+    }
+
+
 class VeniceChat(CatalogOptionsMixin, Chat):
     """Venice AI chat model."""
 
@@ -711,7 +738,16 @@ class VeniceChat(CatalogOptionsMixin, Chat):
         return _record_streams(_openai_client(self, key, async_=async_), async_=async_)
 
     def execute(self, prompt, stream, response, conversation=None, key=None):
-        """Run llm's chat execution, then keep the Venice fields of a streamed reply."""
+        """Run llm's chat execution, then keep the Venice fields of a streamed reply.
+
+        With the responses_api option, the prompt goes to /responses instead.
+        """
+        if getattr(prompt.options, "responses_api", None) is not None:
+            from .responses import VeniceResponses
+
+            responses = VeniceResponses(**_responses_kwargs(self))
+            yield from responses.execute(prompt, stream, response, conversation, key)
+            return
         events: Any = super().execute(prompt, stream, response, conversation, key)
         if not stream:
             # Non-streaming response_json is the full JSON response already.
@@ -792,7 +828,17 @@ class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
         return _record_streams(_openai_client(self, key, async_=async_), async_=async_)
 
     async def execute(self, prompt, stream, response, conversation=None, key=None):
-        """Run llm's chat execution, then keep the Venice fields of a streamed reply."""
+        """Run llm's chat execution, then keep the Venice fields of a streamed reply.
+
+        With the responses_api option, the prompt goes to /responses instead.
+        """
+        if getattr(prompt.options, "responses_api", None) is not None:
+            from .responses import AsyncVeniceResponses
+
+            responses = AsyncVeniceResponses(**_responses_kwargs(self))
+            async for event in responses.execute(prompt, stream, response, conversation, key):
+                yield event
+            return
         events: Any = super().execute(prompt, stream, response, conversation, key)
         try:
             if not stream:

@@ -27,6 +27,7 @@ from .models.chat import VeniceChat, AsyncVeniceChat, VeniceWebSearch, VeniceXSe
 from .models.image import VeniceImage, AsyncVeniceImage
 from .models.audio import VeniceSpeech, AsyncVeniceSpeech
 from .models.embedding import VeniceEmbeddingModel
+from .models.responses import VeniceResponses, AsyncVeniceResponses
 from .tools import (
     TOOLS as _TOOLS,
     venice_augment_scrape,
@@ -93,6 +94,8 @@ __all__ = [
     "VeniceSpeech",
     "AsyncVeniceSpeech",
     "VeniceEmbeddingModel",
+    "VeniceResponses",
+    "AsyncVeniceResponses",
     "VeniceWebSearch",
     "VeniceXSearch",
     "venice_augment_search",

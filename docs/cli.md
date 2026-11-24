@@ -58,6 +58,22 @@ Venice-specific parameters are passed with `llm`'s standard `-o/--option KEY VAL
 - **End-user attribution**: `-o anon_user_id ID` identifies your end user to upstream providers, with 1 to 128 printable ASCII characters and no `||`.
 - **Image detail**: `-o image_detail` accepts `original` as well as `auto`, `low`, and `high`. Venice passes `original` to OpenAI models and treats it as `high` elsewhere.
 
+### Responses API (`-o responses_api`)
+
+Chat models use Venice's Chat Completions endpoint. `-o responses_api MODE` sends a prompt to Venice's `/responses` endpoint instead, through `llm`'s Responses support:
+
+```bash
+llm -m venice/openai-gpt-6-luna -o responses_api native -o reasoning_effort low "Plan a trip"
+llm -m venice/qwen-3-8-flash -o responses_api auto "Hello"
+```
+
+- `MODE` sets Venice's `x-venice-responses-mode` header: `native` forwards to OpenAI's Responses API, which most OpenAI models use; `compat` translates through Chat Completions, as Venice does for other models and for Venice features such as web search and characters; `auto` lets Venice choose. The lane that served the prompt is recorded in the response JSON under `venice_headers` (see `llm logs --json`).
+- Venice stores no responses, so each request carries the whole conversation; `-c` continuations work, and a conversation can switch between the endpoints. The option applies to one prompt, so pass it again when continuing.
+- On reasoning models, reasoning summaries and encrypted reasoning are requested and replayed on later turns. Reasoning from the compat lane is shown as reasoning text.
+- Use Chat Completions for conversations containing audio or video attachments, including earlier turns.
+- Tools, `--schema`, image attachments, `-o reasoning`, `-o reasoning_effort`, `-o anon_user_id`, `-o fallbacks`, `-o prompt_cache_retention`, the `VeniceWebSearch` tool and the Venice parameters (`character_slug`, `include_venice_system_prompt`, and the web search options) all work. Chat-only options (`seed`, `stop`, `logit_bias`, `frequency_penalty`, `presence_penalty`, `min_p`, `top_k`, `repetition_penalty`, `stop_token_ids`, `prompt_cache_key`, `verbosity`, `enable_x_search`, `strip_thinking_response` and `disable_thinking`) and `VeniceXSearch` are refused before any request. E2EE models are not served by `/responses`.
+- A response cut short by `max_tokens` keeps its partial text; the response JSON then has `status: "incomplete"` and `incomplete_details`.
+
 ### Response metadata
 
 Venice adds fields to chat responses that `llm`'s generic handling of streamed chunks leaves out. Streamed responses keep them too, in the response JSON logged by `llm` (`llm logs --json`), alongside `llm`'s usual `content`, `finish_reason` and `usage` keys:

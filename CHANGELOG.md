@@ -4,6 +4,23 @@
 
 ### New features
 
+- Chat option `responses_api` (`auto`, `native` or `compat`) sends a prompt to Venice's
+  `/responses` endpoint instead of Chat Completions, for example
+  `llm -m venice/openai-gpt-6-luna -o responses_api native`. Chat Completions stays the
+  default, and the Responses models take the same options class, so the prompt is
+  handed over unchanged; options that `/responses` lacks are refused.
+- The Responses models read Venice's compat lane, which serves non-OpenAI models through
+  Chat Completions: its `response.reasoning.delta` events and plain-string reasoning
+  summaries become `llm` reasoning, streamed or not, and summaries are replayed on later
+  turns. An incomplete response (`max_output_tokens`, `content_filter`) keeps its partial
+  text, usage, `status` and `incomplete_details`, where `llm` alone recorded nothing, and
+  a failed response or stream error raises `llm.ModelError`.
+- `VeniceResponses` and `AsyncVeniceResponses` models for Venice's `/responses` endpoint,
+  built on `llm`'s Responses support. They take the chat options plus `responses_api`
+  (`auto`, `native` or `compat`, sent as `x-venice-responses-mode`), send
+  `anon_user_id`, `fallbacks`, `prompt_cache_retention` and the Venice parameters, and
+  record the `x-venice-responses-lane` and `x-venice-responses-compat-reason` headers in
+  `response_json["venice_headers"]`. Chat-only options and E2EE models are refused.
 - `llm venice billing` with `balance`, `history` and `analytics` commands. `history`
   takes the first-page filters (`--currency`, `--start`, `--end`, `--page-size`) or a
   `--cursor`, prints the cursor for the next page to stderr, and with `--all-pages`
