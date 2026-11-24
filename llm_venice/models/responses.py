@@ -50,6 +50,7 @@ _CHAT_ONLY_OPTIONS = (
     "enable_x_search",
     "strip_thinking_response",
     "disable_thinking",
+    "cache_control",
 )
 # Top-level /responses fields that llm's OpenAI SDK call does not take as arguments.
 _TOP_LEVEL_OPTIONS = ("anon_user_id", "fallbacks", "prompt_cache_retention")

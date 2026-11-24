@@ -54,6 +54,7 @@ Venice-specific parameters are passed with `llm`'s standard `-o/--option KEY VAL
 - **Reasoning**: `-o reasoning_effort LEVEL` sets the effort, and `-o reasoning '{"effort": "high", "summary": "auto", "enabled": true}'` sets the full `reasoning` object. `summary` is `auto`, `concise`, or `detailed`; `"enabled": false` turns reasoning off on supporting models. Both efforts are checked against the model's published choices, and when both are given Venice uses `reasoning_effort`.
 - **Verbosity**: `-o verbosity` accepts `low`, `medium`, `high`, or `auto`.
 - **Prompt caching**: `-o prompt_cache_key KEY` groups related requests, and `-o prompt_cache_retention` accepts `default`, `extended`, or `24h`.
+- **Cache breakpoints**: `-o cache_control 5m` (or `1h`) marks the system prompt and the newest message with `cache_control` (`type: ephemeral`) for providers that cache explicitly, such as Anthropic; one-hour cache writes cost more. Usage reports the cache writes and reads in the response JSON.
 - **Refusal fallbacks**: `-o fallbacks '["claude-opus-4-8"]'` lists up to 10 models to try if an Anthropic model refuses the request; Venice forwards it on direct Anthropic routes only. IDs may carry the `venice/` prefix, and the API's `[{"model": "claude-opus-4-8"}]` form works too.
 - **End-user attribution**: `-o anon_user_id ID` identifies your end user to upstream providers, with 1 to 128 printable ASCII characters and no `||`.
 - **Image detail**: `-o image_detail` accepts `original` as well as `auto`, `low`, and `high`. Venice passes `original` to OpenAI models and treats it as `high` elsewhere.
@@ -88,7 +89,7 @@ Venice adds fields to chat responses that `llm`'s generic handling of streamed c
 - `stop_reason` and `prompt_logprobs`.
 - `reasoning_content` (joined across chunks), `reasoning_details` (items in the order received), `thought_signature`, `extra_content` (such as `extra_content.google.thought_signature`) and `cache_control`.
 
-These fields are recorded but not sent back on later conversation turns.
+On later turns of a conversation, including `llm -c` and tool chains, the assistant's `thought_signature`, `extra_content` and `reasoning_details`, and the `thought_signature` of each tool call, are sent back exactly as received, as Venice asks for Gemini thought signatures. They go back only to the model that sent them, so switching models mid-conversation drops them. The other fields are recorded but not sent back.
 
 ### `extra_body`
 

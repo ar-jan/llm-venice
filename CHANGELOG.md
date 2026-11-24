@@ -4,6 +4,14 @@
 
 ### New features
 
+- Chat models send Gemini thought signatures back on later turns, as Venice asks:
+  an assistant message's `thought_signature`, `extra_content` and `reasoning_details`,
+  and each tool call's `thought_signature`, exactly as received and only to the model
+  that sent them. They are kept on the message, so `llm -c` and tool chains replay
+  them too; `llm` dropped them before.
+- Chat option `cache_control` (`5m` or `1h`) marks the system prompt and the newest
+  message as prompt-cache breakpoints (`cache_control`, `type: ephemeral`), for
+  providers that cache explicitly, such as Anthropic.
 - Chat models with `supportsAudioInput` accept AAC, Ogg, FLAC, M4A and AIFF audio as well
   as WAV and MP3, each sent as `input_audio` in its own format (`llm` labelled every
   audio attachment `mp3` or `wav`). Models with `supportsVideoInput` accept MP4, MPEG,
