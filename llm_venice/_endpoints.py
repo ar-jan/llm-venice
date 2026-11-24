@@ -2,20 +2,30 @@
 
 import base64
 import binascii
+import ipaddress
 import json
 from datetime import datetime, timezone
 from functools import lru_cache
-from typing import Any, Literal, TypeVar, cast
-from urllib.parse import unquote
+from typing import Annotated, Any, Literal, TypeVar, cast
+from urllib.parse import quote, unquote
 
 import httpx2
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
-from typing_extensions import get_type_hints
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
+from typing_extensions import Self, get_type_hints
 
 from .errors import VeniceResponseError
 from .params import ImageParams, SpeechParams, copy_params, parameter_body
 from .results import NO_AUDIO, GeneratedImage, ImageResult, ModelDeprecation, SpeechResult
-from .types import AugmentSearchProvider, ModelInfo
+from .types import AugmentSearchProvider, ApiKeyLimitPeriod, ApiKeyModelPrivacy, ModelInfo
 
 
 class _Input(BaseModel):
@@ -38,13 +48,35 @@ class UpscaleInput(BaseModel):
     creativity: float | None = Field(default=None, ge=0, le=0.02)
 
 
-class KeyInput(BaseModel):
+def _ip_or_subnet(value: str) -> str:
+    """Check the syntax only; Venice decides which addresses are globally reachable."""
+    try:
+        ipaddress.ip_network(value, strict=False)
+    except ValueError:
+        raise ValueError(f"{value!r} is not an IP address or CIDR subnet") from None
+    return value
+
+
+IpAllowlistEntry = Annotated[str, Field(max_length=64), AfterValidator(_ip_or_subnet)]
+KeyLimit = Annotated[float, Field(ge=0, le=9_999_999_999)]
+
+
+def _utc(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+class _KeySettings(BaseModel):
+    """Settings shared by key creation and update; None leaves a field out."""
+
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
-    key_type: Literal["ADMIN", "INFERENCE"]
-    description: str = Field(default="", max_length=64)
     expires_at: datetime | None = None
-    limit_usd: float | None = Field(default=None, ge=0, le=9_999_999_999)
-    limit_vcu: float | None = Field(default=None, ge=0, le=9_999_999_999)
+    limit_usd: KeyLimit | None = None
+    limit_diem: KeyLimit | None = None
+    # Deprecated by Venice in favour of Diem; still accepted.
+    limit_vcu: KeyLimit | None = None
+    limit_period: ApiKeyLimitPeriod | None = None
+    model_privacy: ApiKeyModelPrivacy | None = None
+    ip_allowlist: list[IpAllowlistEntry] | None = Field(default=None, max_length=100)
 
     @field_validator("expires_at")
     @classmethod
@@ -53,17 +85,71 @@ class KeyInput(BaseModel):
             raise ValueError("expires_at must be timezone-aware")
         return value
 
+    def _limits(self, names: set[str]) -> dict[str, float | None]:
+        return {
+            wire: getattr(self, name)
+            for name, wire in (("limit_usd", "usd"), ("limit_diem", "diem"), ("limit_vcu", "vcu"))
+            if name in names
+        }
+
+    def _settings(self, names: set[str]) -> dict[str, Any]:
+        """The wire fields for the settings in ``names``, with None sent as null."""
+        body: dict[str, Any] = {}
+        if "expires_at" in names:
+            body["expiresAt"] = _utc(self.expires_at) if self.expires_at else None
+        limits = self._limits(names)
+        if limits:
+            body["consumptionLimit"] = limits
+        for name, wire in (
+            ("limit_period", "limitPeriod"),
+            ("model_privacy", "modelPrivacy"),
+            ("ip_allowlist", "ipAllowlist"),
+        ):
+            if name in names:
+                body[wire] = getattr(self, name)
+        return body
+
+
+class KeyInput(_KeySettings):
+    key_type: Literal["ADMIN", "INFERENCE"]
+    description: str = Field(default="", max_length=64)
+
     def body(self) -> dict[str, Any]:
+        """Venice requires the type and description; unset optional fields are omitted."""
+        given = {name for name in _KeySettings.model_fields if getattr(self, name) is not None}
         return {
             "apiKeyType": self.key_type,
             "description": self.description,
-            "expiresAt": self.expires_at.astimezone(timezone.utc)
-            .isoformat(timespec="milliseconds")
-            .replace("+00:00", "Z")
-            if self.expires_at
-            else "",
-            "consumptionLimit": {"usd": self.limit_usd, "vcu": self.limit_vcu},
+            **self._settings(given),
         }
+
+
+# Venice has no null for these, so None cannot clear them in an update.
+_NOT_CLEARABLE = ("description", "limit_period", "model_privacy", "ip_allowlist")
+
+
+class KeyUpdateInput(_KeySettings):
+    """Only the settings given are sent; None clears the expiry or a limit."""
+
+    id: str = Field(min_length=1)
+    description: str | None = Field(default=None, max_length=64)
+
+    @model_validator(mode="after")
+    def _check_changes(self) -> Self:
+        if not self.model_fields_set - {"id"}:
+            raise ValueError("no API key settings to update")
+        for name in _NOT_CLEARABLE:
+            if name in self.model_fields_set and getattr(self, name) is None:
+                hint = " (an empty list allows any IP)" if name == "ip_allowlist" else ""
+                raise ValueError(f"{name} cannot be None; leave it out to keep it{hint}")
+        return self
+
+    def body(self) -> dict[str, Any]:
+        changed = self.model_fields_set - {"id"}
+        body: dict[str, Any] = {"id": self.id}
+        if "description" in changed:
+            body["description"] = self.description
+        return {**body, **self._settings(changed)}
 
 
 class KeyIdInput(BaseModel):
@@ -423,6 +509,17 @@ def json_operation(name: str, inputs: dict[str, Any]) -> tuple[str, str, str, di
             "Deleting API key",
             {"params": KeyIdInput.model_validate(inputs).model_dump()},
         )
+    if name == "get_key":
+        # Quote the ID so it stays one path segment and cannot reach another endpoint.
+        key_id = quote(KeyIdInput.model_validate(inputs).id, safe="")
+        return "GET", f"api_keys/{key_id}", "Retrieving API key", {}
+    if name == "update_key":
+        return (
+            "PATCH",
+            "api_keys",
+            "Updating API key",
+            {"json": KeyUpdateInput.model_validate(inputs).body()},
+        )
     if name == "augment_search":
         return (
             "POST",
@@ -471,6 +568,9 @@ def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[st
         resource(obj.get("data"), RateLimits, action)
     elif name == "create_key":
         resource(obj.get("data"), CreatedApiKey, action)
+    elif name in ("get_key", "update_key"):
+        # An update returns the key without its usage fields, which are optional.
+        resource(obj.get("data"), ApiKey, action)
     elif name == "delete_key":
         # A 200 must confirm the revocation; anything else may have left the key live.
         if obj.get("success") is not True:
