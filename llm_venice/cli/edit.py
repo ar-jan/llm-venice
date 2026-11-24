@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from llm_venice.client import VeniceClient
 from llm_venice.errors import VeniceError
 from llm_venice.models._common import normalize_model_id
-from llm_venice.cli.errors import handle_cli_error
+from llm_venice.cli.errors import handle_cli_error, usage_error
 from llm_venice.cli.images import (
     ImageSource,
     check_edit_request,
@@ -35,25 +35,16 @@ _OPTION_NAMES = (
 
 
 # Arguments and flags whose names differ from their fields.
-_FLAGS = {"prompt": "PROMPT", "output_format": "--format"}
+_FLAGS = {
+    "prompt": "PROMPT",
+    "output_format": "--format",
+    "transparent_background": "--transparent-background",
+}
 
 
 def _given(values: dict) -> dict:
     """The edit options that were set; the rest are left to Venice."""
     return {name: values[name] for name in _OPTION_NAMES if values.get(name) is not None}
-
-
-def _usage_error(exc: ValidationError) -> click.UsageError:
-    messages = []
-    for error in exc.errors():
-        if not error["loc"]:
-            # A check across options, such as a transparent background in JPEG.
-            messages.append(str(error.get("ctx", {}).get("error") or error["msg"]))
-            continue
-        field = str(error["loc"][0])
-        flag = _FLAGS.get(field, f"--{field.replace('_', '-')}")
-        messages.append(f"Invalid value for {flag}: {error['msg']}")
-    return click.UsageError("\n".join(messages))
 
 
 def _save(client_call, source, model, prompt, options, output_path, overwrite, images=1):
@@ -70,7 +61,7 @@ def _save(client_call, source, model, prompt, options, output_path, overwrite, i
         target = output_target(source, "edited", result.image, output_path)
         saved_path = save_image(result.image, target, overwrite=overwrite)
     except ValidationError as exc:
-        raise _usage_error(exc) from exc
+        raise usage_error(exc, _FLAGS) from exc
     except (VeniceError, ValueError, OSError) as e:
         handle_cli_error(e)
     if result.enhanced_prompt:

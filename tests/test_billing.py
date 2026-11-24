@@ -1,4 +1,4 @@
-"""Billing through /billing/balance, /billing/usage-history and /billing/usage-analytics."""
+"""Billing: /billing/balance, /billing/usage-history and /billing/usage-analytics, and the CLI."""
 
 import asyncio
 import re
@@ -9,6 +9,7 @@ from typing import get_args
 
 import httpx2
 import pytest
+from llm.cli import cli
 from pydantic import ValidationError
 from typing_extensions import assert_type
 
@@ -335,3 +336,139 @@ def test_result_types(httpx2_mock):
         assert_type(client.list_usage_history(), UsageHistoryPage)
         assert_type(client.export_usage_history(), UsageHistoryCsv)
         assert_type(client.get_usage_analytics(), UsageAnalytics)
+
+
+# `llm venice billing`
+
+
+def billing_cli(cli_runner, *args):
+    return cli_runner.invoke(cli, ["venice", "billing", *args])
+
+
+def history_url(query=""):
+    return f"{API}/usage-history" + (f"?{query}" if query else "")
+
+
+def test_cli_balance(cli_runner, httpx2_mock, mock_venice_api_key):
+    httpx2_mock.add_response(url=f"{API}/balance", json=BALANCE)
+    result = billing_cli(cli_runner, "balance")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == BALANCE
+    httpx2_mock.add_response(
+        url=f"{API}/balance", status_code=401, json={"error": "Admin API key required"}
+    )
+    result = billing_cli(cli_runner, "balance")
+    assert result.exit_code == 1
+    assert result.output == (
+        "Error: Retrieving billing balance failed: Venice API returned 401 Unauthorized"
+        " - Admin API key required\n"
+    )
+
+
+def test_cli_history_one_page(cli_runner, httpx2_mock, mock_venice_api_key):
+    httpx2_mock.add_response(
+        url=history_url(
+            "currency=DIEM&startTimestamp=2026-11-01T00%3A00%3A00.000Z"
+            "&endTimestamp=2026-11-02T12%3A30%3A00.000Z&pageSize=10"
+        ),
+        json=PAGE,
+    )
+    result = billing_cli(
+        cli_runner,
+        "history",
+        "--currency",
+        "DIEM",
+        "--start",
+        "2026-11-01",
+        "--end",
+        "2026-11-02T12:30",
+        "--page-size",
+        "10",
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == PAGE
+    assert result.stderr == "More entries remain; continue with --cursor next_page-1\n"
+
+
+def test_cli_history_all_pages(cli_runner, httpx2_mock, mock_venice_api_key):
+    second = {**ENTRY, "amount": 0.5}
+    httpx2_mock.add_response(url=history_url("currency=USD"), json=PAGE)
+    httpx2_mock.add_response(
+        url=history_url("cursor=next_page-1"), json={"data": [second], "nextCursor": None}
+    )
+    result = billing_cli(cli_runner, "history", "--currency", "USD", "--all-pages")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {"data": [ENTRY, second], "nextCursor": None}
+    assert result.stderr == ""
+
+
+def test_cli_history_csv_pages_keep_one_header(cli_runner, httpx2_mock, mock_venice_api_key):
+    headers = {"content-type": "text/csv", "x-next-cursor": "c2"}
+    httpx2_mock.add_response(url=history_url(), text="sku,amount\r\na,1\r\n", headers=headers)
+    httpx2_mock.add_response(
+        url=history_url("cursor=c2"),
+        text="sku,amount\r\nb,2\r\n",
+        headers={"content-type": "text/csv"},
+    )
+    result = billing_cli(cli_runner, "history", "--csv", "--all-pages")
+    assert result.exit_code == 0, result.output
+    assert result.stdout_bytes == b"sku,amount\r\na,1\r\nb,2\r\n"
+    assert all(request.headers["accept"] == "text/csv" for request in httpx2_mock.get_requests())
+    httpx2_mock.add_response(url=history_url(), text="sku,amount\n", headers=headers)
+    result = billing_cli(cli_runner, "history", "--csv")
+    assert result.stdout == "sku,amount\n"
+    assert result.stderr == "More entries remain; continue with --cursor c2\n"
+
+
+def test_cli_history_stops_on_a_repeated_cursor(cli_runner, httpx2_mock, mock_venice_api_key):
+    httpx2_mock.add_response(url=history_url(), json=PAGE)
+    httpx2_mock.add_response(url=history_url("cursor=next_page-1"), json=PAGE)
+    result = billing_cli(cli_runner, "history", "--all-pages")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["data"] == [ENTRY, ENTRY]
+    assert "Warning: Venice repeated a cursor; the history may be incomplete" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "args,message",
+    [
+        (["--cursor", "c", "--currency", "USD"], "a cursor continues a walk"),
+        (["--start", "2026-11-02", "--end", "2026-11-01"], "--end must be later than --start"),
+        (["--page-size", "5"], "5 is not in the range 10<=x<=1000"),
+        (["--cursor", "a b"], "Invalid value for --cursor: String should match"),
+    ],
+)
+def test_cli_history_rejects_before_requesting(cli_runner, httpx2_mock, args, message):
+    result = billing_cli(cli_runner, "history", *args)
+    assert result.exit_code == 2
+    assert message in result.output
+    assert not httpx2_mock.get_requests()
+
+
+def test_cli_analytics(cli_runner, httpx2_mock, mock_venice_api_key):
+    httpx2_mock.add_response(url=f"{API}/usage-analytics?lookback=30d", json=ANALYTICS)
+    result = billing_cli(cli_runner, "analytics", "--lookback", "30d")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == ANALYTICS
+    httpx2_mock.add_response(
+        url=f"{API}/usage-analytics?startDate=2026-11-01&endDate=2026-11-07", json=ANALYTICS
+    )
+    result = billing_cli(
+        cli_runner, "analytics", "--start-date", "2026-11-01", "--end-date", "2026-11-07"
+    )
+    assert result.exit_code == 0, result.output
+
+
+@pytest.mark.parametrize(
+    "args,message",
+    [
+        (["--start-date", "2026-11-01"], "--start-date and --end-date must be given together"),
+        (["--lookback", "91d"], "--lookback must be at most 90d"),
+        (["--lookback", "month"], "Invalid value for --lookback: String should match"),
+    ],
+)
+def test_cli_analytics_rejects_before_requesting(cli_runner, httpx2_mock, args, message):
+    result = billing_cli(cli_runner, "analytics", *args)
+    assert result.exit_code == 2
+    assert message in result.output
+    assert not httpx2_mock.get_requests()

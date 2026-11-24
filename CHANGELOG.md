@@ -4,6 +4,10 @@
 
 ### New features
 
+- `llm venice billing` with `balance`, `history` and `analytics` commands. `history`
+  takes the first-page filters (`--currency`, `--start`, `--end`, `--page-size`) or a
+  `--cursor`, prints the cursor for the next page to stderr, and with `--all-pages`
+  follows cursors to the end; `--csv` prints Venice's CSV export with one header row.
 - Billing client methods, which need an ADMIN key: `get_billing_balance()` (including
   bundled and earned credits), `list_usage_history()` and `export_usage_history()` (CSV)
   for cursor-paginated usage, with first-page filters for currency (including
