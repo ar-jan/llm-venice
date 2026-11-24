@@ -189,6 +189,8 @@ llm -m venice/nano-banana-2-1 "Current spring fashion street photography" -o ena
 llm -m venice/qwen-image-3 "Dutch windmill" -o variants 4 -o output_dir ./out -o output_filename windmill.png
 ```
 
+List the style presets for `-o style_preset` with `llm venice image-styles`.
+
 ### Image upscaling
 
 Upscale an image (`--scale` from `2` to `4`, optional `--creativity` from `0` to `0.02`, `--output-path`, `--overwrite`):

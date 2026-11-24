@@ -4,6 +4,8 @@
 
 ### New features
 
+- `list_image_styles()` client methods and the `llm venice image-styles` command list
+  the style presets for `style_preset` (`-o style_preset`).
 - `augment_parse_text()` client methods and the `llm venice parse FILE` command for
   `/augment/text-parser`, extracting the text of PDF, DOCX, PPTX, XLSX, EPUB, text and
   source-code files. A path, bytes or binary file is uploaded under a filename whose

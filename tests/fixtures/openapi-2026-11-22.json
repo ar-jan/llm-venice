@@ -3264,6 +3264,45 @@
           }
         }
       }
+    },
+    "GET /image/styles": {
+      "requestBody": null,
+      "response": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "List of available image styles",
+                  "example": [
+                    "3D Model",
+                    "Analog Film",
+                    "Anime",
+                    "Cinematic",
+                    "Comic Book"
+                  ]
+                },
+                "object": {
+                  "type": "string",
+                  "enum": [
+                    "list"
+                  ]
+                }
+              },
+              "required": [
+                "data",
+                "object"
+              ]
+            }
+          }
+        }
+      }
     }
   }
 }

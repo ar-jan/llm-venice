@@ -687,6 +687,8 @@ def json_operation(name: str, inputs: dict[str, Any]) -> tuple[str, str, str, di
             "Listing character reviews",
             {"params": reviews.query()},
         )
+    if name == "image_styles":
+        return "GET", "image/styles", "Listing image styles", {}
     if name == "keys":
         return "GET", "api_keys", "Listing API keys", {}
     if name == "rate_limits":
@@ -762,6 +764,9 @@ def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[st
         if items and not valid:
             raise VeniceResponseError(action, "no usable models returned")
         obj = {**obj, "data": valid}
+    elif name == "image_styles":
+        if not all(isinstance(item, str) for item in list_data(obj, action)):
+            raise VeniceResponseError(action, "image styles must be strings")
     elif name == "characters":
         for item in list_data(obj, action):
             resource(item, Character, action)

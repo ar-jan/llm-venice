@@ -236,6 +236,10 @@ class VeniceClient(_Configuration):
             self._json_operation("character_reviews", slug=slug, page=page, page_size=page_size),
         )
 
+    def list_image_styles(self) -> list[str]:
+        """Return the style names that ``ImageParams.style_preset`` accepts."""
+        return cast(list[str], self._json_operation("image_styles")["data"])
+
     def get_rate_limits(self) -> RateLimits:
         """Return this key's access, balance and rate-limit resource."""
         return cast(RateLimits, self._json_operation("rate_limits")["data"])
@@ -601,6 +605,10 @@ class AsyncVeniceClient(_Configuration):
                 "character_reviews", slug=slug, page=page, page_size=page_size
             ),
         )
+
+    async def list_image_styles(self) -> list[str]:
+        """Return the style names that ``ImageParams.style_preset`` accepts."""
+        return cast(list[str], (await self._json_operation("image_styles"))["data"])
 
     async def get_rate_limits(self) -> RateLimits:
         """Return this key's access, balance and rate-limit resource."""

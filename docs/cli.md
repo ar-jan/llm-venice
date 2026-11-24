@@ -9,7 +9,7 @@ Detailed behaviour, flags, and edge cases for `llm-venice` on the command line. 
 - [Search and tools](#search-and-tools)
 - [Embeddings](#embeddings)
 - [Text-to-speech](#text-to-speech)
-- [Image generation and upscaling](#image-generation-and-upscaling)
+- [Image generation and editing](#image-generation-and-editing)
 - [Characters and API keys](#characters-and-api-keys)
 - [Debugging HTTP requests](#debugging-http-requests)
 
@@ -226,7 +226,7 @@ The `-o stdout true` option on `llm -m venice/tts-...` was removed in 0.10:
 | `llm -m venice/tts-kokoro "Hello." -o stdout true -o response_format mp3 > out.mp3` | `llm venice tts "Hello." --format mp3 -o - > out.mp3` |
 | `llm -m venice/tts-kokoro "Hello." -o stdout true -o output_dir . -o output_filename out.mp3` | `llm venice tts "Hello." -o - \| tee out.mp3`, or `-o out.mp3` |
 
-## Image generation and upscaling
+## Image generation and editing
 
 ### Image generation
 
@@ -239,6 +239,15 @@ The `-o stdout true` option on `llm -m venice/tts-...` was removed in 0.10:
 - `-o anon_user_id ID` identifies your end user to upstream providers, on image and chat models. It takes 1 to 128 printable ASCII characters, without `||`.
 - When Venice reports that an image model is deprecated or scheduled for deprecation, a warning is printed to stderr once per model, naming the replacement model when there is one.
 - When Venice refuses a prompt under a content policy, the error keeps its usual first line and exit code, followed by Venice's suggested prompt, its recommended model (as `venice/<id>`), and whether retrying may succeed, when Venice sends them. Other 422 errors, such as an oversized style reference image, are reported as before.
+
+### Image styles (`llm venice image-styles`)
+
+List the style presets that image models accept with `-o style_preset`, one per line (`--json` for the raw response):
+
+```bash
+llm venice image-styles
+llm -m venice/qwen-image-3 -o style_preset "Watercolor" "A Dutch windmill"
+```
 
 ### Image upscaling (`llm venice upscale`)
 
