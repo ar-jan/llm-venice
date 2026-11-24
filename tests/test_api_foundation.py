@@ -17,6 +17,8 @@ from typing_extensions import assert_type
 
 from llm_venice import _files
 from llm_venice._endpoints import (
+    CharacterFilters,
+    CharacterReviewsInput,
     KeyInput,
     KeyUpdateInput,
     UpscaleInput,
@@ -47,6 +49,12 @@ from llm_venice.types import (
     ApiKeyLimitPeriod,
     ApiKeyModelPrivacy,
     Character,
+    CharacterReview,
+    CharacterReviewPage,
+    CharacterReviewPagination,
+    CharacterReviewSummary,
+    CharacterSortBy,
+    CharacterSortOrder,
     CreatedApiKey,
     ModelInfo,
     RateLimits,
@@ -314,6 +322,72 @@ def test_drifted_policy_fields_do_not_break_error_mapping():
     error = caught.value
     assert (error.suggested_prompt, error.recommended_model, error.retryable) == (None, None, None)
     assert error.detail == "Refused"
+
+
+def test_character_filters_match_dated_fixture():
+    resource = dated_fixture()["resources"]["GET /characters"]
+    parameters = {parameter["name"]: parameter["schema"] for parameter in resource["parameters"]}
+    every_filter = CharacterFilters(
+        web_enabled=True,
+        adult=False,
+        pro=True,
+        categories=["roleplay"],
+        tags=["helpful"],
+        model_ids=["kimi-k2-6"],
+        search="assistant",
+        sort_by="featured",
+        sort_order="asc",
+        limit=parameters["limit"]["maximum"],
+        offset=0,
+    ).query()
+    assert set(every_filter) == set(parameters)
+    for flag in ("isWebEnabled", "isAdult", "isPro"):
+        assert every_filter[flag] in parameters[flag]["enum"]
+    assert set(get_args(CharacterSortBy)) == set(parameters["sortBy"]["enum"])
+    assert set(get_args(CharacterSortOrder)) == set(parameters["sortOrder"]["enum"])
+    for name, wire in (("categories", "categories"), ("tags", "tags"), ("model_ids", "modelId")):
+        assert parameters[wire]["type"] == "array"
+        limits = CharacterFilters.model_json_schema()["properties"][name]["anyOf"][0]
+        assert limits["maxItems"] == parameters[wire]["maxItems"]
+        assert limits["items"]["maxLength"] == parameters[wire]["items"]["maxLength"]
+    search = CharacterFilters.model_json_schema()["properties"]["search"]["anyOf"][0]
+    assert search["maxLength"] == parameters["search"]["maxLength"]
+
+
+def response_schema(resource_name):
+    resource = dated_fixture()["resources"][resource_name]
+    return resource["response"]["content"]["application/json"]["schema"]
+
+
+def test_character_type_matches_dated_fixture():
+    """The list and the detail share one character schema, so both use Character."""
+    listed = response_schema("GET /characters")["properties"]["data"]["items"]
+    detail = response_schema("GET /characters/{slug}")["properties"]["data"]
+    assert detail == listed
+    assert set(Character.__annotations__) == set(listed["properties"])
+    assert Character.__required_keys__ <= set(listed["required"])
+
+
+def test_character_review_types_match_dated_fixture():
+    page = response_schema("GET /characters/{slug}/reviews")
+    review = page["properties"]["data"]["items"]
+    assert set(CharacterReviewPage.__annotations__) == set(page["properties"])
+    assert CharacterReviewPage.__required_keys__ <= set(page["required"])
+    assert set(CharacterReview.__annotations__) == set(review["properties"])
+    assert CharacterReview.__required_keys__ <= set(review["required"])
+    for name, kind in (
+        ("pagination", CharacterReviewPagination),
+        ("summary", CharacterReviewSummary),
+    ):
+        assert set(kind.__annotations__) == set(page["properties"][name]["properties"])
+    resource = dated_fixture()["resources"]["GET /characters/{slug}/reviews"]
+    parameters = {parameter["name"]: parameter["schema"] for parameter in resource["parameters"]}
+    query = CharacterReviewsInput(
+        slug="s", page=1, page_size=parameters["pageSize"]["maximum"]
+    ).query()
+    assert set(query) | {"slug"} == set(parameters)
+    with pytest.raises(ValidationError):
+        CharacterReviewsInput(slug="s", page_size=parameters["pageSize"]["maximum"] + 1)
 
 
 def test_updated_key_is_an_api_key_without_usage():

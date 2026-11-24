@@ -94,6 +94,22 @@ def invoke(is_async, method, *args, key="test", **kwargs):
         ("delete_api_key", ("k",), {}, "/api_keys?id=k", {"success": True}, None),
         ("get_api_key", ("k",), {}, "/api_keys/k", {"data": {"id": "k"}}, {"id": "k"}),
         (
+            "get_character",
+            ("s",),
+            {},
+            "/characters/s",
+            {"data": {"id": "a", "slug": "s"}},
+            {"id": "a", "slug": "s"},
+        ),
+        (
+            "list_character_reviews",
+            ("s",),
+            {"page": 1},
+            "/characters/s/reviews?page=1",
+            {"data": [{"id": "r"}], "summary": {"totalReviews": 1}},
+            {"data": [{"id": "r"}], "summary": {"totalReviews": 1}},
+        ),
+        (
             "update_api_key",
             ("k",),
             {"description": "new"},

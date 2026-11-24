@@ -8,6 +8,20 @@ from typing_extensions import Required, TypedDict
 AugmentSearchProvider = Literal["brave", "google", "exa"]
 """Search providers accepted by ``/augment/search``; Venice uses Brave when omitted."""
 
+CharacterSortBy = Literal[
+    "featured",
+    "highestRating",
+    "highlyRated",
+    "highlyRatedAndRecent",
+    "imports",
+    "mostRecent",
+    "ratingCount",
+]
+"""Character discovery orders accepted by ``/characters``."""
+
+CharacterSortOrder = Literal["asc", "desc"]
+"""Direction of the character sort; Venice sorts descending when omitted."""
+
 ApiKeyLimitPeriod = Literal["EPOCH", "MONTH", "LIFETIME"]
 """When key consumption limits reset: each UTC day (Venice's default), month, or never."""
 
@@ -134,6 +148,45 @@ class Character(TypedDict, total=False):
     updatedAt: str
     stats: dict[str, Any]
     tags: list[str]
+
+
+class CharacterReview(TypedDict, total=False):
+    """A public character review; the message, locale and avatar may be null."""
+
+    id: Required[str]
+    characterId: str
+    rating: int
+    message: str | None
+    locale: str | None
+    username: str
+    userAvatarUrl: str | None
+    isOwner: bool
+    createdAt: str
+
+
+class CharacterReviewPagination(TypedDict, total=False):
+    """The requested page and the totals across all of a character's reviews."""
+
+    page: int
+    pageSize: int
+    total: int
+    totalPages: int
+
+
+class CharacterReviewSummary(TypedDict, total=False):
+    """A character's average rating and review count."""
+
+    averageRating: float
+    totalReviews: int
+
+
+class CharacterReviewPage(TypedDict, total=False):
+    """One page of reviews in ``data``, with paging totals and the rating summary."""
+
+    data: Required[list[CharacterReview]]
+    object: str
+    pagination: CharacterReviewPagination
+    summary: CharacterReviewSummary
 
 
 class ApiTier(TypedDict, total=False):

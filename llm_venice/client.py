@@ -30,8 +30,11 @@ from .types import (
     ApiKeyLimitPeriod,
     ApiKeyModelPrivacy,
     AugmentSearchProvider,
+    CharacterSortBy,
+    CharacterSortOrder,
     AugmentSearchResponse,
     Character,
+    CharacterReviewPage,
     CreatedApiKey,
     ModelInfo,
     RateLimitLogEntry,
@@ -157,12 +160,21 @@ class VeniceClient(_Configuration):
         *,
         web_enabled: bool | None = None,
         adult: bool | None = None,
+        pro: bool | None = None,
+        categories: Sequence[str] | None = None,
+        tags: Sequence[str] | None = None,
+        model_ids: Sequence[str] | None = None,
+        search: str | None = None,
+        sort_by: CharacterSortBy | None = None,
+        sort_order: CharacterSortOrder | None = None,
         limit: int | None = None,
         offset: int | None = None,
     ) -> list[Character]:
         """List one page of characters (Venice default 50, max 100 per page).
 
-        Page with ``offset``; a page shorter than ``limit`` is the last one.
+        Unset filters are not sent. ``categories``, ``tags`` and ``model_ids`` take
+        up to 20 values each. Page with ``offset``; a page shorter than ``limit`` is
+        the last one.
         """
         return cast(
             list[Character],
@@ -170,9 +182,33 @@ class VeniceClient(_Configuration):
                 "characters",
                 web_enabled=web_enabled,
                 adult=adult,
+                pro=pro,
+                categories=categories,
+                tags=tags,
+                model_ids=model_ids,
+                search=search,
+                sort_by=sort_by,
+                sort_order=sort_order,
                 limit=limit,
                 offset=offset,
             )["data"],
+        )
+
+    def get_character(self, slug: str) -> Character:
+        """Return one public character by its slug."""
+        return cast(Character, self._json_operation("character", slug=slug)["data"])
+
+    def list_character_reviews(
+        self, slug: str, *, page: int | None = None, page_size: int | None = None
+    ) -> CharacterReviewPage:
+        """Return one page of a character's public reviews (Venice default 20, max 100).
+
+        Pages start at 1. The result holds the reviews in ``data``, the page totals in
+        ``pagination`` and the rating summary in ``summary``.
+        """
+        return cast(
+            CharacterReviewPage,
+            self._json_operation("character_reviews", slug=slug, page=page, page_size=page_size),
         )
 
     def get_rate_limits(self) -> RateLimits:
@@ -402,12 +438,21 @@ class AsyncVeniceClient(_Configuration):
         *,
         web_enabled: bool | None = None,
         adult: bool | None = None,
+        pro: bool | None = None,
+        categories: Sequence[str] | None = None,
+        tags: Sequence[str] | None = None,
+        model_ids: Sequence[str] | None = None,
+        search: str | None = None,
+        sort_by: CharacterSortBy | None = None,
+        sort_order: CharacterSortOrder | None = None,
         limit: int | None = None,
         offset: int | None = None,
     ) -> list[Character]:
         """List one page of characters (Venice default 50, max 100 per page).
 
-        Page with ``offset``; a page shorter than ``limit`` is the last one.
+        Unset filters are not sent. ``categories``, ``tags`` and ``model_ids`` take
+        up to 20 values each. Page with ``offset``; a page shorter than ``limit`` is
+        the last one.
         """
         return cast(
             list[Character],
@@ -416,10 +461,36 @@ class AsyncVeniceClient(_Configuration):
                     "characters",
                     web_enabled=web_enabled,
                     adult=adult,
+                    pro=pro,
+                    categories=categories,
+                    tags=tags,
+                    model_ids=model_ids,
+                    search=search,
+                    sort_by=sort_by,
+                    sort_order=sort_order,
                     limit=limit,
                     offset=offset,
                 )
             )["data"],
+        )
+
+    async def get_character(self, slug: str) -> Character:
+        """Return one public character by its slug."""
+        return cast(Character, (await self._json_operation("character", slug=slug))["data"])
+
+    async def list_character_reviews(
+        self, slug: str, *, page: int | None = None, page_size: int | None = None
+    ) -> CharacterReviewPage:
+        """Return one page of a character's public reviews (Venice default 20, max 100).
+
+        Pages start at 1. The result holds the reviews in ``data``, the page totals in
+        ``pagination`` and the rating summary in ``summary``.
+        """
+        return cast(
+            CharacterReviewPage,
+            await self._json_operation(
+                "character_reviews", slug=slug, page=page, page_size=page_size
+            ),
         )
 
     async def get_rate_limits(self) -> RateLimits:

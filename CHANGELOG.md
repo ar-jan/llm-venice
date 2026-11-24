@@ -4,6 +4,15 @@
 
 ### New features
 
+- `get_character()` and `list_character_reviews()` client methods, with
+  `llm venice characters get SLUG` and `llm venice characters reviews SLUG` commands,
+  for one character's details and a page of its public reviews with paging totals and
+  the rating summary. `llm venice characters` with its options still lists and saves
+  every character as before.
+- `list_characters()` and `llm venice characters` filter by Pro model use (`pro`,
+  `--pro`), categories, tags and model IDs (repeatable `--category`, `--tag` and
+  `--model-id`) and a search term (`search`, `--search`), and sort with `sort_by` /
+  `--sort-by` and `sort_order` / `--sort-order`.
 - `get_api_key()` and `update_api_key()` client methods, with `llm venice api-keys get`
   and `llm venice api-keys update` commands, for `GET /api_keys/{id}` and
   `PATCH /api_keys`. An update changes only the settings given: description, expiry,
