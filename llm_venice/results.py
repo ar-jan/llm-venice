@@ -108,6 +108,14 @@ class ImageEditResult:
 
 
 @dataclass(frozen=True)
+class UsageHistoryCsv:
+    """One page of usage history as CSV, and the cursor for the next page (None at the end)."""
+
+    text: str
+    next_cursor: str | None = None
+
+
+@dataclass(frozen=True)
 class SpeechResult:
     """Buffered speech with its actual output format; no implicit file writes."""
 

@@ -6,7 +6,8 @@ import codecs
 import ipaddress
 import json
 import mimetypes
-from datetime import datetime, timezone
+import re
+from datetime import date, datetime, timezone
 from functools import lru_cache
 from typing import Annotated, Any, Literal, TypeVar, cast
 from urllib.parse import quote, unquote, urlsplit
@@ -33,12 +34,14 @@ from .results import (
     ImageResult,
     ModelDeprecation,
     SpeechResult,
+    UsageHistoryCsv,
 )
 from .types import (
     AugmentSearchProvider,
     AugmentTextFormat,
     AugmentTextParserResponse,
     ApiKeyLimitPeriod,
+    BillingCurrency,
     ApiKeyModelPrivacy,
     CharacterSortBy,
     CharacterSortOrder,
@@ -340,6 +343,91 @@ def _string_map(obj: dict[str, Any], action: str) -> None:
         isinstance(value, str) for value in cast(dict[str, Any], data).values()
     ):
         raise VeniceResponseError(action, "expected data mapping names to model IDs")
+
+
+USAGE_HISTORY_ACTION = "Retrieving usage history"
+_CURSOR = r"^[A-Za-z0-9_-]+$"
+
+
+def _aware(value: datetime | None, name: str) -> datetime | None:
+    if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+        raise ValueError(f"{name} must be timezone-aware")
+    return value
+
+
+class UsageHistoryQuery(BaseModel):
+    """The first page's filters, or the cursor that continues a walk, never both."""
+
+    model_config = ConfigDict(extra="forbid")
+    currency: BillingCurrency | None = None
+    start_timestamp: datetime | None = None
+    end_timestamp: datetime | None = None
+    page_size: int | None = Field(default=None, ge=10, le=1000, strict=True)
+    cursor: str | None = Field(default=None, max_length=512, pattern=_CURSOR)
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        _aware(self.start_timestamp, "start_timestamp")
+        _aware(self.end_timestamp, "end_timestamp")
+        if self.start_timestamp and self.end_timestamp:
+            if self.end_timestamp <= self.start_timestamp:
+                raise ValueError("end_timestamp must be later than start_timestamp")
+        # The cursor carries the walk's filters, and Venice rejects them beside it.
+        filters = ("currency", "start_timestamp", "end_timestamp", "page_size")
+        if self.cursor is not None and any(getattr(self, name) is not None for name in filters):
+            raise ValueError("a cursor continues a walk; send it without filters")
+        return self
+
+    def query(self) -> dict[str, str]:
+        query: dict[str, str] = {}
+        if self.cursor is not None:
+            return {"cursor": self.cursor}
+        if self.currency is not None:
+            query["currency"] = self.currency
+        if self.start_timestamp is not None:
+            query["startTimestamp"] = _utc(self.start_timestamp)
+        if self.end_timestamp is not None:
+            query["endTimestamp"] = _utc(self.end_timestamp)
+        if self.page_size is not None:
+            query["pageSize"] = str(self.page_size)
+        return query
+
+
+def parse_usage_csv(response: httpx2.Response) -> UsageHistoryCsv:
+    """Read a CSV page; the next page's cursor comes in the x-next-cursor header."""
+    if _media_type(response.headers.get("content-type")) == "application/json":
+        raise VeniceResponseError(USAGE_HISTORY_ACTION, "expected CSV but received JSON")
+    cursor = _header_text(response, "x-next-cursor")
+    if cursor is not None and not re.fullmatch(_CURSOR, cursor):
+        raise VeniceResponseError(USAGE_HISTORY_ACTION, "invalid x-next-cursor header")
+    return UsageHistoryCsv(response.text, cursor)
+
+
+class UsageAnalyticsQuery(BaseModel):
+    """A lookback of 1 to 90 days, or a start and end date; Venice's default is 7d."""
+
+    model_config = ConfigDict(extra="forbid")
+    lookback: str | None = Field(default=None, pattern=r"^[1-9]\d*d$")
+    start_date: date | None = None
+    end_date: date | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        if self.lookback is not None and int(self.lookback[:-1]) > 90:
+            raise ValueError("lookback must be at most 90d")
+        if (self.start_date is None) != (self.end_date is None):
+            raise ValueError("start_date and end_date must be given together")
+        if self.start_date and self.end_date:
+            if self.lookback is not None:
+                raise ValueError("give a lookback or a start and end date, not both")
+            if self.end_date < self.start_date:
+                raise ValueError("end_date must not be before start_date")
+        return self
+
+    def query(self) -> dict[str, str]:
+        if self.start_date and self.end_date:
+            return {"startDate": self.start_date.isoformat(), "endDate": self.end_date.isoformat()}
+        return {"lookback": self.lookback} if self.lookback is not None else {}
 
 
 CHARACTER_PAGE_LIMIT = 100
@@ -838,6 +926,14 @@ def json_operation(name: str, inputs: dict[str, Any]) -> tuple[str, str, str, di
             "Fetching model compatibility mapping",
             {"params": params},
         )
+    if name == "billing_balance":
+        return "GET", "billing/balance", "Retrieving billing balance", {}
+    if name == "usage_history":
+        params = UsageHistoryQuery.model_validate(inputs).query()
+        return "GET", "billing/usage-history", USAGE_HISTORY_ACTION, {"params": params}
+    if name == "usage_analytics":
+        params = UsageAnalyticsQuery.model_validate(inputs).query()
+        return "GET", "billing/usage-analytics", "Retrieving usage analytics", {"params": params}
     if name == "image_styles":
         return "GET", "image/styles", "Listing image styles", {}
     if name == "keys":
@@ -892,12 +988,15 @@ def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[st
     from .types import (
         ApiKey,
         AugmentScrapeResponse,
+        BillingBalance,
         AugmentSearchResult,
         Character,
         CharacterReview,
         CreatedApiKey,
         RateLimitLogEntry,
         RateLimits,
+        UsageAnalytics,
+        UsageEntry,
     )
 
     if name == "delete_key" and response.status_code == 204:
@@ -915,6 +1014,17 @@ def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[st
         if items and not valid:
             raise VeniceResponseError(action, "no usable models returned")
         obj = {**obj, "data": valid}
+    elif name == "billing_balance":
+        # Not an envelope.
+        resource(obj, BillingBalance, action)
+    elif name == "usage_history":
+        cursor: Any = obj.get("nextCursor", ...)
+        if cursor is not None and not isinstance(cursor, str):
+            raise VeniceResponseError(action, "invalid UsageHistoryPage: nextCursor")
+        for item in list_data(obj, action):
+            resource(item, UsageEntry, action)
+    elif name == "usage_analytics":
+        resource(obj, UsageAnalytics, action)
     elif name in ("model_traits", "model_compatibility"):
         _string_map(obj, action)
     elif name == "image_styles":

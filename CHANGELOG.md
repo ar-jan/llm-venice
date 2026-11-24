@@ -4,6 +4,12 @@
 
 ### New features
 
+- Billing client methods, which need an ADMIN key: `get_billing_balance()` (including
+  bundled and earned credits), `list_usage_history()` and `export_usage_history()` (CSV)
+  for cursor-paginated usage, with first-page filters for currency (including
+  `EARNED_CREDITS`), time range and page size, and `get_usage_analytics()` for totals by
+  day, model and key. A cursor combined with filters is rejected before the request, as
+  Venice would.
 - `list_model_traits()` and `get_model_compatibility_mapping()` client methods, with
   `llm venice traits` and `llm venice compatibility-mapping`, show which model each trait
   selects and which Venice model serves another provider's model name, optionally for
