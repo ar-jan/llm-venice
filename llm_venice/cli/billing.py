@@ -1,7 +1,9 @@
 """Billing commands for Venice CLI."""
 
+from collections.abc import Iterable
 from datetime import timezone
 import json
+import re
 from typing import Any, get_args
 
 import click
@@ -58,10 +60,26 @@ def _walk(fetch, first: dict[str, Any], *, all_pages: bool):
     )
 
 
-def _csv_rows(text: str, header: str | None) -> str:
-    """A later CSV page without the header line the first page already printed."""
-    first, _, rest = text.partition("\n")
-    return rest if header is not None and first.rstrip("\r") == header else text
+def _write_csv_pages(pages: Iterable[str]) -> None:
+    """Keep one header and separate records even when a page omits its final newline."""
+    header = None
+    separator = "\n"
+    needs_separator = False
+    for text in pages:
+        if not text:
+            continue
+        first, *remainder = re.split(r"(\r\n|\r|\n)", text, maxsplit=1)
+        if header is None:
+            header = first
+            if remainder:
+                separator = remainder[0]
+        elif first == header:
+            text = remainder[1] if remainder else ""
+        if text:
+            if needs_separator:
+                click.echo(separator, nl=False)
+            click.echo(text, nl=False)
+            needs_separator = not text.endswith(("\r", "\n"))
 
 
 def create_billing_group():
@@ -131,10 +149,7 @@ def create_billing_group():
                         page = client.export_usage_history(**query)
                         return page.text, page.next_cursor
 
-                    header = None
-                    for text in _walk(fetch_csv, first, all_pages=all_pages):
-                        click.echo(_csv_rows(text, header), nl=False)
-                        header = header or text.partition("\n")[0].rstrip("\r")
+                    _write_csv_pages(_walk(fetch_csv, first, all_pages=all_pages))
                     return
 
                 def fetch_json(**query):

@@ -402,9 +402,14 @@ def test_cli_history_all_pages(cli_runner, httpx2_mock, mock_venice_api_key):
     assert result.stderr == ""
 
 
-def test_cli_history_csv_pages_keep_one_header(cli_runner, httpx2_mock, mock_venice_api_key):
+@pytest.mark.parametrize("page_ending", ["\r\n", ""])
+def test_cli_history_csv_pages_keep_one_header(
+    cli_runner, httpx2_mock, mock_venice_api_key, page_ending
+):
     headers = {"content-type": "text/csv", "x-next-cursor": "c2"}
-    httpx2_mock.add_response(url=history_url(), text="sku,amount\r\na,1\r\n", headers=headers)
+    httpx2_mock.add_response(
+        url=history_url(), text="sku,amount\r\na,1" + page_ending, headers=headers
+    )
     httpx2_mock.add_response(
         url=history_url("cursor=c2"),
         text="sku,amount\r\nb,2\r\n",
