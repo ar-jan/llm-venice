@@ -4,6 +4,12 @@
 
 ### New features
 
+- `VeniceResponses` and `AsyncVeniceResponses` models for Venice's `/responses` endpoint,
+  built on `llm`'s Responses support. They take the chat options plus `responses_api`
+  (`auto`, `native` or `compat`, sent as `x-venice-responses-mode`), send
+  `anon_user_id`, `fallbacks`, `prompt_cache_retention` and the Venice parameters, and
+  record the `x-venice-responses-lane` and `x-venice-responses-compat-reason` headers in
+  `response_json["venice_headers"]`. Chat-only options and E2EE models are refused.
 - `llm venice billing` with `balance`, `history` and `analytics` commands. `history`
   takes the first-page filters (`--currency`, `--start`, `--end`, `--page-size`) or a
   `--cursor`, prints the cursor for the next page to stderr, and with `--all-pages`

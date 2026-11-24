@@ -218,6 +218,25 @@ print(chain.text())
 - See [CLI reference — Venice options](cli.md#venice-options) for how `enable_x_search`, `VeniceXSearch`, and `VeniceWebSearch` interact.
 - `response.response_json` keeps Venice's response fields (such as `venice_parameters.web_search_citations`, `cost` and `reasoning_content`) for streamed responses too; see [CLI reference — Response metadata](cli.md#response-metadata).
 
+### Responses API models
+
+`VeniceResponses` and `AsyncVeniceResponses` send prompts to Venice's `/responses` endpoint, using `llm`'s Responses support (tools, structured output, attachments and reasoning items). They take the chat options, plus `responses_api`, which sets the `x-venice-responses-mode` header: `native` forwards to OpenAI's Responses API (most OpenAI models), `compat` translates through Chat Completions, and `auto` lets Venice choose.
+
+```python
+from llm_venice import VeniceResponses, load_catalog
+
+spec = next(m["model_spec"] for m in load_catalog() if m["id"] == "openai-gpt-6-luna")
+model = VeniceResponses("openai-gpt-6-luna", model_spec=spec)
+response = model.prompt("Say hello", responses_api="native", reasoning_effort="low")
+print(response.text())
+print(response.response_json["venice_headers"])  # {'x-venice-responses-lane': 'native'}
+```
+
+- Venice stores no responses, so each request sends the whole conversation and never a `previous_response_id`. A reasoning model's `model_spec` (`supportsReasoning`) makes requests ask for reasoning summaries and encrypted reasoning, which `llm` replays on later turns.
+- `response_json["venice_headers"]` records `x-venice-responses-lane` (the lane that served the request) and, when Venice sends it, `x-venice-responses-compat-reason`.
+- `anon_user_id`, `fallbacks`, `prompt_cache_retention` and the Venice parameters (`character_slug`, `include_venice_system_prompt`, `enable_web_search`, `enable_web_scraping`, `enable_web_citations`, `include_search_results_in_stream`, and the `VeniceWebSearch` tool) are sent as Venice's Responses fields.
+- Chat options without a `/responses` equivalent (`seed`, `stop`, `logit_bias`, `frequency_penalty`, `presence_penalty`, `min_p`, `top_k`, `repetition_penalty`, `stop_token_ids`, `prompt_cache_key`, `verbosity`, `enable_x_search`, `strip_thinking_response` and `disable_thinking`) raise `llm.ModelError` before any request, as does an E2EE model, which Venice does not serve here.
+
 ## Media values and saving files
 
 Buffered media results expose raw bytes on `.data` and report the actual format returned by Venice on `.format` — saving never transcodes bytes to match a filename extension.
