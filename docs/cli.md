@@ -10,7 +10,7 @@ Detailed behaviour, flags, and edge cases for `llm-venice` on the command line. 
 - [Embeddings](#embeddings)
 - [Text-to-speech](#text-to-speech)
 - [Image generation and editing](#image-generation-and-editing)
-- [Characters and API keys](#characters-and-api-keys)
+- [Characters, API keys and billing](#characters-api-keys-and-billing)
 - [Debugging HTTP requests](#debugging-http-requests)
 
 ## Model catalog (`llm venice refresh`)
@@ -22,6 +22,17 @@ Re-run it whenever:
 - New models have been made available.
 - Deprecated models have been removed.
 - Model capabilities, voices, or parameter limits have changed.
+
+### Model traits and compatibility mappings
+
+```bash
+llm venice traits                         # trait -> model ID, such as default or most_uncensored
+llm venice traits --type image
+llm venice compatibility-mapping          # other providers' model names -> Venice model IDs
+llm venice compatibility-mapping --type embedding
+```
+
+Both print Venice's JSON response. `-t/--type` picks the model type (`text` when omitted); `traits` also accepts `all` and `code`.
 
 ## Venice options
 
@@ -315,7 +326,7 @@ llm venice upscale IMAGE_PATH [--scale FLOAT] [--creativity FLOAT]
 - Images refused by content moderation fail with the usual error line, followed by a suggested prompt if Venice sends one.
 - Passing a filename to `-o/--output-path` uses that exact name even if its extension differs from the returned image format. Passing a directory saves the default filename inside it.
 
-## Characters and API keys
+## Characters, API keys and billing
 
 ### Public characters (`llm venice characters`)
 
@@ -373,6 +384,22 @@ llm venice api-keys create --type INFERENCE --limits-diem 2 --limit-period MONTH
 ```bash
 llm venice api-keys update <API_KEY_ID> --no-expiration --limits-usd none --ip-allowlist 11.22.33.44
 ```
+
+### Billing (`llm venice billing`)
+
+The billing commands require a Venice `ADMIN` key and print JSON unless noted:
+
+```bash
+llm venice billing balance
+llm venice billing history --currency USD --start 2026-11-01 --end 2026-12-01
+llm venice billing history --all-pages --csv > usage.csv
+llm venice billing analytics --lookback 30d
+llm venice billing analytics --start-date 2026-11-01 --end-date 2026-11-30
+```
+
+- `balance` shows whether the account can make requests (`canConsume`), the currency it is consuming, and the Diem, USD, bundled-credit and earned-credit balances. A balance that is unavailable is `null`; USD is net of pending holds, so it can be negative, and is `null` when zero.
+- `history` shows usage oldest first, one page at a time (`--page-size` 10 to 1000; Venice's default 1000). `--currency` (`USD`, `DIEM`, `BUNDLED_CREDITS` or `EARNED_CREDITS`), `--start` (inclusive) and `--end` (exclusive) filter it; times are dates or date-times in UTC. When more entries remain, the cursor to continue with is printed to stderr: pass it alone as `--cursor`, since it carries the filters. `--all-pages` follows the cursors to the end (stopping, with a warning, after 1000 pages), merging the entries into one JSON list. `--csv` prints Venice's CSV export instead, with one header row.
+- `analytics` (a Venice beta endpoint, cached for 10 minutes) shows usage totals by day, model and API key, with chart series for the top eight models and keys. `--lookback` takes `1d` to `90d` (Venice's default `7d`); or give `--start-date` and `--end-date` together.
 
 ## Debugging HTTP requests
 

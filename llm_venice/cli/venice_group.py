@@ -6,10 +6,15 @@ from llm_venice.catalog import refresh_catalog, catalog_path
 from llm_venice.errors import VeniceError
 from llm_venice.cli.api_keys import create_api_keys_group
 from llm_venice.cli.background_remove import create_background_remove_command
+from llm_venice.cli.billing import create_billing_group
 from llm_venice.cli.characters import create_characters_command
 from llm_venice.cli.edit import create_edit_command, create_multi_edit_command
 from llm_venice.cli.errors import handle_cli_error
 from llm_venice.cli.image_styles import create_image_styles_command
+from llm_venice.cli.model_extras import (
+    create_compatibility_mapping_command,
+    create_traits_command,
+)
 from llm_venice.cli.parse import create_parse_command
 from llm_venice.cli.scrape import create_scrape_command
 from llm_venice.cli.search import create_search_command
@@ -42,13 +47,16 @@ def create_venice_group():
 
     venice.add_command(create_api_keys_group())
     venice.add_command(create_background_remove_command())
+    venice.add_command(create_billing_group())
     venice.add_command(create_characters_command())
+    venice.add_command(create_compatibility_mapping_command())
     venice.add_command(create_edit_command())
     venice.add_command(create_image_styles_command())
     venice.add_command(create_multi_edit_command())
     venice.add_command(create_parse_command())
     venice.add_command(create_scrape_command())
     venice.add_command(create_search_command())
+    venice.add_command(create_traits_command())
     venice.add_command(create_tts_command())
     venice.add_command(create_upscale_command())
 

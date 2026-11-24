@@ -2,7 +2,7 @@
 
 from collections.abc import AsyncGenerator, Generator, Sequence
 from contextlib import AsyncExitStack, ExitStack, asynccontextmanager, contextmanager
-from datetime import datetime
+from datetime import date, datetime
 import os
 from pathlib import Path
 from typing import Any, BinaryIO, Literal, cast, overload
@@ -24,6 +24,7 @@ from .results import (
     ImageResult,
     SpeechResult,
     SpeechStream,
+    UsageHistoryCsv,
 )
 from .types import (
     ApiKey,
@@ -34,6 +35,8 @@ from .types import (
     AugmentSearchProvider,
     AugmentTextFormat,
     AugmentTextParserResponse,
+    BillingBalance,
+    BillingCurrency,
     CharacterSortBy,
     CharacterSortOrder,
     AugmentSearchResponse,
@@ -47,6 +50,8 @@ from .types import (
     MultiEditOptions,
     RateLimitLogEntry,
     RateLimits,
+    UsageAnalytics,
+    UsageHistoryPage,
 )
 
 FileInput = str | os.PathLike[str] | bytes | BinaryIO
@@ -128,6 +133,7 @@ class _Configuration:
         elif not self._key:
             self._key = resolve_key(self._key)
         headers = request_headers(self._key)
+        headers.update(kwargs.get("headers") or {})
         if "json" in kwargs:
             headers["Content-Type"] = "application/json"
         return f"{self._base_url}/{path.lstrip('/')}", {
@@ -201,6 +207,21 @@ class VeniceClient(_Configuration):
         """Fetch catalog resources, skipping malformed entries; empty filtered results are valid."""
         return cast(list[ModelInfo], self._json_operation("models", type=type)["data"])
 
+    def list_model_traits(self, *, type: str | None = None) -> dict[str, str]:
+        """Map each trait, such as ``default`` or ``most_uncensored``, to its model ID.
+
+        ``type`` picks a model type (Venice's default: ``text``); ``all`` and ``code``
+        also work.
+        """
+        return cast(dict[str, str], self._json_operation("model_traits", type=type)["data"])
+
+    def get_model_compatibility_mapping(self, *, type: str | None = None) -> dict[str, str]:
+        """Map other providers' model names, such as ``gpt-4o``, to Venice model IDs.
+
+        ``type`` picks a model type (Venice's default: ``text``).
+        """
+        return cast(dict[str, str], self._json_operation("model_compatibility", type=type)["data"])
+
     def list_characters(
         self,
         *,
@@ -255,6 +276,88 @@ class VeniceClient(_Configuration):
         return cast(
             CharacterReviewPage,
             self._json_operation("character_reviews", slug=slug, page=page, page_size=page_size),
+        )
+
+    def get_billing_balance(self) -> BillingBalance:
+        """Return whether the account can make requests, and its balances (ADMIN key)."""
+        return cast(BillingBalance, self._json_operation("billing_balance"))
+
+    def list_usage_history(
+        self,
+        *,
+        currency: BillingCurrency | None = None,
+        start_timestamp: datetime | None = None,
+        end_timestamp: datetime | None = None,
+        page_size: int | None = None,
+        cursor: str | None = None,
+    ) -> UsageHistoryPage:
+        """Return one page of usage, oldest first (Venice's default: 1000 entries).
+
+        The first page takes filters: ``currency``, a ``start_timestamp`` (inclusive)
+        and ``end_timestamp`` (exclusive), which must be timezone-aware and are sent
+        in UTC, and ``page_size`` (10 to 1000). Fetch the next page by passing the
+        previous page's ``nextCursor`` as ``cursor``, alone: the cursor carries the
+        filters. ``nextCursor`` is None on the last page. Requires an ADMIN key.
+        """
+        return cast(
+            UsageHistoryPage,
+            self._json_operation(
+                "usage_history",
+                currency=currency,
+                start_timestamp=start_timestamp,
+                end_timestamp=end_timestamp,
+                page_size=page_size,
+                cursor=cursor,
+            ),
+        )
+
+    def export_usage_history(
+        self,
+        *,
+        currency: BillingCurrency | None = None,
+        start_timestamp: datetime | None = None,
+        end_timestamp: datetime | None = None,
+        page_size: int | None = None,
+        cursor: str | None = None,
+    ) -> UsageHistoryCsv:
+        """Return one page of usage as CSV, with the cursor for the next page.
+
+        Takes the filters and cursor of ``list_usage_history()``. Requires an ADMIN key.
+        """
+        params = ep.UsageHistoryQuery(
+            currency=currency,
+            start_timestamp=start_timestamp,
+            end_timestamp=end_timestamp,
+            page_size=page_size,
+            cursor=cursor,
+        ).query()
+        response = self._send(
+            "GET",
+            "billing/usage-history",
+            ep.USAGE_HISTORY_ACTION,
+            params=params,
+            headers={"Accept": "text/csv"},
+        )
+        return ep.parse_usage_csv(response)
+
+    def get_usage_analytics(
+        self,
+        *,
+        lookback: str | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> UsageAnalytics:
+        """Return usage totals by day, model and API key (beta; ADMIN key).
+
+        Give a ``lookback`` such as ``"30d"`` (at most 90 days; Venice's default is
+        ``"7d"``), or a ``start_date`` and ``end_date``. Venice caches the data for 10
+        minutes.
+        """
+        return cast(
+            UsageAnalytics,
+            self._json_operation(
+                "usage_analytics", lookback=lookback, start_date=start_date, end_date=end_date
+            ),
         )
 
     def list_image_styles(self) -> list[str]:
@@ -643,6 +746,23 @@ class AsyncVeniceClient(_Configuration):
         """Fetch catalog resources, skipping malformed entries; empty filtered results are valid."""
         return cast(list[ModelInfo], (await self._json_operation("models", type=type))["data"])
 
+    async def list_model_traits(self, *, type: str | None = None) -> dict[str, str]:
+        """Map each trait, such as ``default`` or ``most_uncensored``, to its model ID.
+
+        ``type`` picks a model type (Venice's default: ``text``); ``all`` and ``code``
+        also work.
+        """
+        return cast(dict[str, str], (await self._json_operation("model_traits", type=type))["data"])
+
+    async def get_model_compatibility_mapping(self, *, type: str | None = None) -> dict[str, str]:
+        """Map other providers' model names, such as ``gpt-4o``, to Venice model IDs.
+
+        ``type`` picks a model type (Venice's default: ``text``).
+        """
+        return cast(
+            dict[str, str], (await self._json_operation("model_compatibility", type=type))["data"]
+        )
+
     async def list_characters(
         self,
         *,
@@ -700,6 +820,88 @@ class AsyncVeniceClient(_Configuration):
             CharacterReviewPage,
             await self._json_operation(
                 "character_reviews", slug=slug, page=page, page_size=page_size
+            ),
+        )
+
+    async def get_billing_balance(self) -> BillingBalance:
+        """Return whether the account can make requests, and its balances (ADMIN key)."""
+        return cast(BillingBalance, (await self._json_operation("billing_balance")))
+
+    async def list_usage_history(
+        self,
+        *,
+        currency: BillingCurrency | None = None,
+        start_timestamp: datetime | None = None,
+        end_timestamp: datetime | None = None,
+        page_size: int | None = None,
+        cursor: str | None = None,
+    ) -> UsageHistoryPage:
+        """Return one page of usage, oldest first (Venice's default: 1000 entries).
+
+        The first page takes filters: ``currency``, a ``start_timestamp`` (inclusive)
+        and ``end_timestamp`` (exclusive), which must be timezone-aware and are sent
+        in UTC, and ``page_size`` (10 to 1000). Fetch the next page by passing the
+        previous page's ``nextCursor`` as ``cursor``, alone: the cursor carries the
+        filters. ``nextCursor`` is None on the last page. Requires an ADMIN key.
+        """
+        return cast(
+            UsageHistoryPage,
+            await self._json_operation(
+                "usage_history",
+                currency=currency,
+                start_timestamp=start_timestamp,
+                end_timestamp=end_timestamp,
+                page_size=page_size,
+                cursor=cursor,
+            ),
+        )
+
+    async def export_usage_history(
+        self,
+        *,
+        currency: BillingCurrency | None = None,
+        start_timestamp: datetime | None = None,
+        end_timestamp: datetime | None = None,
+        page_size: int | None = None,
+        cursor: str | None = None,
+    ) -> UsageHistoryCsv:
+        """Return one page of usage as CSV, with the cursor for the next page.
+
+        Takes the filters and cursor of ``list_usage_history()``. Requires an ADMIN key.
+        """
+        params = ep.UsageHistoryQuery(
+            currency=currency,
+            start_timestamp=start_timestamp,
+            end_timestamp=end_timestamp,
+            page_size=page_size,
+            cursor=cursor,
+        ).query()
+        response = await self._send(
+            "GET",
+            "billing/usage-history",
+            ep.USAGE_HISTORY_ACTION,
+            params=params,
+            headers={"Accept": "text/csv"},
+        )
+        return ep.parse_usage_csv(response)
+
+    async def get_usage_analytics(
+        self,
+        *,
+        lookback: str | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> UsageAnalytics:
+        """Return usage totals by day, model and API key (beta; ADMIN key).
+
+        Give a ``lookback`` such as ``"30d"`` (at most 90 days; Venice's default is
+        ``"7d"``), or a ``start_date`` and ``end_date``. Venice caches the data for 10
+        minutes.
+        """
+        return cast(
+            UsageAnalytics,
+            await self._json_operation(
+                "usage_analytics", lookback=lookback, start_date=start_date, end_date=end_date
             ),
         )
 

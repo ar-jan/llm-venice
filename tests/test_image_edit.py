@@ -440,7 +440,11 @@ def test_cli_does_not_save_a_content_violation(cli_runner, httpx2_mock, mock_ven
         ),
         # The catalog is checked first; a model without an entry gets the request checks.
         ("other", ["--aspect-ratio", "wide"], "Invalid value for --aspect-ratio: String should"),
-        ("other", ["--format", "jpeg", "--transparent-background"], "output_format png or webp"),
+        (
+            "other",
+            ["--format", "jpeg", "--transparent-background"],
+            "--transparent-background requires --format png or webp",
+        ),
     ],
 )
 def test_cli_checks_options_before_editing(

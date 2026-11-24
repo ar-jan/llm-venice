@@ -365,6 +365,118 @@ class AugmentTextParserResponse(TypedDict, total=False):
     tokens: int
 
 
+BillingCurrency = Literal["USD", "DIEM", "BUNDLED_CREDITS", "EARNED_CREDITS"]
+"""Currencies that usage is charged in, for filtering ``list_usage_history()``."""
+
+
+class BillingBalances(TypedDict, total=False):
+    """Remaining balances. Each is None when unavailable; USD is None when it is zero.
+
+    USD is net of pending holds, so it can be negative while a hold exceeds it or
+    when the account owes USD.
+    """
+
+    diem: float | None
+    usd: float | None
+    bundledCredits: float | None
+    earnedCredits: float | None
+
+
+class BillingBalance(TypedDict, total=False):
+    """Whether the account can make requests, its balances and its Diem allocation."""
+
+    canConsume: Required[bool]
+    consumptionCurrency: str | None
+    balances: Required[BillingBalances]
+    diemEpochAllocation: float
+
+
+class UsageInferenceDetails(TypedDict, total=False):
+    """The request behind a usage entry; counts are None when not recorded."""
+
+    completionTokens: int | None
+    inferenceExecutionTime: int | None
+    promptTokens: int | None
+    requestId: str
+
+
+class UsageEntry(TypedDict, total=False):
+    """One charge. ``apiKeyId`` is None for usage not charged to an API key."""
+
+    amount: Required[float]
+    apiKeyId: str | None
+    currency: Required[str]
+    inferenceDetails: UsageInferenceDetails | None
+    notes: str
+    pricePerUnitUsd: float
+    sku: str
+    timestamp: Required[str]
+    units: float
+
+
+class UsageHistoryPage(TypedDict, total=False):
+    """One page of usage in ascending time order; ``nextCursor`` is None on the last."""
+
+    data: Required[list[UsageEntry]]
+    nextCursor: Required[str | None]
+
+
+class UsageByDate(TypedDict, total=False):
+    """Usage totals for one day (``YYYY-MM-DD``)."""
+
+    date: str
+    USD: float
+    DIEM: float
+
+
+class UsageBreakdown(TypedDict, total=False):
+    """A model's usage of one unit type, such as input or output tokens."""
+
+    type: str
+    usd: float
+    diem: float
+    units: float
+
+
+class UsageByModel(TypedDict, total=False):
+    """A model's usage totals; ``breakdown`` is present when it used several types."""
+
+    modelName: str
+    unitType: str
+    modelType: str | None
+    totalUsd: float
+    totalDiem: float
+    totalUnits: float
+    breakdown: list[UsageBreakdown]
+
+
+class UsageByKey(TypedDict, total=False):
+    """An API key's usage totals; ``apiKeyId`` is None for the web app."""
+
+    apiKeyId: str | None
+    description: str
+    totalUsd: float
+    totalDiem: float
+    totalUnits: float
+
+
+class UsageAnalytics(TypedDict, total=False):
+    """Usage totals by day, model and API key, with chart series for the top eight.
+
+    ``lookback`` is the period, as ``Nd`` or ``startDate:endDate``. The daily series
+    map ``date`` and each model name or key description to amounts.
+    """
+
+    lookback: Required[str]
+    byDate: list[UsageByDate]
+    byModel: list[UsageByModel]
+    byModelDaily: list[dict[str, float]]
+    topModels: list[str]
+    byKey: list[UsageByKey]
+    byKeyDaily: list[dict[str, float]]
+    topKeyNames: list[str]
+
+
 class RateLimitLogEntry(TypedDict, total=False):
     """A rate-limit event with its key ID, type and wire timestamp."""
 

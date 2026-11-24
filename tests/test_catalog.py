@@ -1,15 +1,20 @@
-"""Disk-only persistence and bounded, cache-first registration policy."""
+"""Disk-only persistence, cache-first registration policy, and model trait mappings."""
 
+import asyncio
 import json
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import httpx2
 import llm
 import pytest
+from llm.cli import cli
+from pydantic import ValidationError
+from typing_extensions import assert_type
 
 from llm_venice.catalog import load_catalog, refresh_catalog, save_catalog
-from llm_venice.client import VeniceClient
+from llm_venice.client import AsyncVeniceClient, VeniceClient
 from llm_venice.errors import VeniceResponseError
 from llm_venice.models import register_venice_models
 from llm_venice.models._common import warn_deprecated
@@ -127,3 +132,96 @@ def test_offline_and_traits_and_deprecation(tmp_path, monkeypatch, capsys):
     warn_deprecated(models[0])
     warn_deprecated(models[1])
     assert capsys.readouterr().err == "Warning: venice/old is deprecated; use venice/new instead\n"
+
+
+# Model traits and compatibility mappings: /models/traits and /models/compatibility_mapping.
+
+API = "https://api.venice.ai/api/v1"
+MAPPINGS = [
+    ("list_model_traits", "models/traits", "model_traits", "traits"),
+    (
+        "get_model_compatibility_mapping",
+        "models/compatibility_mapping",
+        "model_compatibility",
+        "compatibility-mapping",
+    ),
+]
+DATA = {"default": "qwen-3-8-flash", "most_uncensored": "venice-uncensored-1-2"}
+
+
+def invoke(is_async, method, **kwargs):
+    if is_async:
+
+        async def run():
+            async with AsyncVeniceClient(key="test") as client:
+                return await getattr(client, method)(**kwargs)
+
+        return asyncio.run(run())
+    with VeniceClient(key="test") as client:
+        return getattr(client, method)(**kwargs)
+
+
+@pytest.mark.parametrize(
+    "path,schema_name",
+    [
+        ("/models/traits", "ModelTraitSchema"),
+        ("/models/compatibility_mapping", "ModelCompatibilitySchema"),
+    ],
+)
+def test_mappings_match_dated_fixture(path, schema_name):
+    fixture = json.loads((Path(__file__).parent / "fixtures/openapi-2026-11-22.json").read_text())
+    resource = fixture["resources"][f"GET {path}"]
+    (parameter,) = resource["parameters"]
+    assert (parameter["name"], parameter["in"], parameter["schema"]["default"]) == (
+        "type",
+        "query",
+        "text",
+    )
+    assert {"text", "image", "embedding", "inpaint"} <= set(parameter["schema"]["enum"])
+    schema = resource["response"]["content"]["application/json"]["schema"]
+    assert schema["properties"]["data"] == {"$ref": f"#/components/schemas/{schema_name}"}
+    mapping = fixture["schemas"][schema_name]
+    assert (mapping["type"], mapping["additionalProperties"]) == ("object", {"type": "string"})
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize("method,path,operation,command", MAPPINGS)
+def test_mapping_clients(is_async, method, path, operation, command, httpx2_mock):
+    body = {"object": "list", "type": "text", "data": DATA}
+    httpx2_mock.add_response(method="GET", url=f"{API}/{path}", json=body)
+    assert invoke(is_async, method) == DATA
+    httpx2_mock.add_response(method="GET", url=f"{API}/{path}?type=image", json=body)
+    assert invoke(is_async, method, type="image") == DATA
+    with pytest.raises(ValidationError):
+        invoke(is_async, method, type="")
+    assert len(httpx2_mock.get_requests()) == 2
+
+
+@pytest.mark.parametrize("method,path,operation,command", MAPPINGS)
+@pytest.mark.parametrize("data", [None, ["a"], {"trait": 1}, {"trait": None}])
+def test_malformed_mappings(method, path, operation, command, data, httpx2_mock):
+    httpx2_mock.add_response(url=f"{API}/{path}", json={"object": "list", "data": data})
+    with pytest.raises(VeniceResponseError, match="expected data mapping names to model IDs"):
+        invoke(False, method)
+
+
+@pytest.mark.parametrize("method,path,operation,command", MAPPINGS)
+def test_mapping_commands(
+    method, path, operation, command, httpx2_mock, cli_runner, mock_venice_api_key
+):
+    body = {"object": "list", "type": "embedding", "data": {"x": "y"}}
+    httpx2_mock.add_response(url=f"{API}/{path}?type=embedding", json=body)
+    result = cli_runner.invoke(cli, ["venice", command, "--type", "embedding"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == body
+    httpx2_mock.add_response(url=f"{API}/{path}", status_code=400, json={"error": "Bad type"})
+    result = cli_runner.invoke(cli, ["venice", command])
+    assert result.exit_code == 1
+    assert "400" in result.output and "Bad type" in result.output
+
+
+def test_mapping_result_types(httpx2_mock):
+    httpx2_mock.add_response(json={"data": DATA}, is_reusable=True)
+    with VeniceClient(key="test") as client:
+        assert_type(client.list_model_traits(), dict[str, str])
+        assert_type(client.get_model_compatibility_mapping(), dict[str, str])

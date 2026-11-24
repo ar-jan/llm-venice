@@ -234,12 +234,15 @@ Scraping is also available to models as the `venice_augment_scrape` function too
 
 ### Other `llm venice` commands
 
-`llm venice` also includes commands for listing public characters and managing API keys and rate limits:
+`llm venice` also includes commands for listing public characters, managing API keys and rate limits, showing billing (with an `ADMIN` key), and model traits:
 
 ```bash
 llm venice characters
 llm venice api-keys list
 llm venice api-keys rate-limits
+llm venice billing balance
+llm venice billing history --all-pages --csv > usage.csv
+llm venice traits
 llm venice --help
 ```
 
@@ -255,7 +258,7 @@ See [CLI reference — Debugging HTTP requests](https://github.com/ar-jan/llm-ve
 
 ## Documentation
 
-- [CLI reference](https://github.com/ar-jan/llm-venice/blob/develop/docs/cli.md) — detailed notes on Venice options, search tools, `llm venice tts`, upscaling, characters, API keys, and HTTP request logging.
+- [CLI reference](https://github.com/ar-jan/llm-venice/blob/develop/docs/cli.md) — detailed notes on Venice options, search and scraping tools, embeddings, `llm venice tts`, image editing and upscaling, characters, API keys, billing, and HTTP request logging.
 - [Python API](https://github.com/ar-jan/llm-venice/blob/develop/docs/python-api.md) — `VeniceClient`, `AsyncVeniceClient`, typed parameters/results, streaming, atomic saves, error handling, and catalog helpers.
 - [Changelog & migration guide](https://github.com/ar-jan/llm-venice/blob/develop/CHANGELOG.md) — release notes and the 0.9-to-0.10 migration tables.
 - [LLM documentation](https://llm.datasette.io/en/stable/usage.html) — general `llm` CLI and library usage.

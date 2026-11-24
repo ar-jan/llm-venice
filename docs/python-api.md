@@ -76,6 +76,8 @@ JSON methods unwrap Venice's `data` envelope and return ordinary typed dictionar
 | Method | Returns | Notes |
 |---|---|---|
 | `list_models(type="all")` | `list[ModelInfo]` | Filters by model type (e.g. `"text"`, `"image"`, `"tts"`). Skips malformed entries. |
+| `list_model_traits(type=None)` | `dict[str, str]` | Maps each trait (such as `default` or `most_uncensored`) to a model ID. `type` picks the model type; Venice uses `text` when omitted, and also accepts `all` and `code`. |
+| `get_model_compatibility_mapping(type=None)` | `dict[str, str]` | Maps other providers' model names (such as `gpt-4o`) to the Venice model that serves them; `type` as above. |
 | `list_characters(web_enabled=None, adult=None, pro=None, categories=None, tags=None, model_ids=None, search=None, sort_by=None, sort_order=None, limit=None, offset=None)` | `list[Character]` | Returns one page (Venice default 50, max 100). Stop when a page is shorter than `limit`. Unset filters are not sent; `categories`, `tags` and `model_ids` take up to 20 values each, and `sort_by` takes the `CharacterSortBy` values. (`llm venice characters` fetches all pages.) |
 | `get_character(slug)` | `Character` | One public character, with the same fields as a listed one. |
 | `list_character_reviews(slug, page=None, page_size=None)` | `CharacterReviewPage` | One page of public reviews (Venice default 20, max 100, pages from 1). Returns the page, not just the reviews: `data`, `pagination` (`page`, `pageSize`, `total`, `totalPages`) and `summary` (`averageRating`, `totalReviews`). |
@@ -85,6 +87,10 @@ JSON methods unwrap Venice's `data` envelope and return ordinary typed dictionar
 | `get_api_key(key_id)` | `ApiKey` | Requires an `ADMIN` key. Returns the same fields as a listed key. |
 | `update_api_key(key_id, **changes)` | `ApiKey` | Requires an `ADMIN` key. Changes only the settings given (typed by `ApiKeyChanges`: `description`, `expires_at`, `limit_usd`, `limit_diem`, `limit_vcu`, `limit_period`, `model_privacy`, `ip_allowlist`); the others are kept. `None` removes the expiry or a limit, and `ip_allowlist=[]` allows any IP address. The returned key has no usage fields. |
 | `delete_api_key(key_id)` | `None` | Requires an `ADMIN` key. |
+| `get_billing_balance()` | `BillingBalance` | Requires an `ADMIN` key. Not unwrapped: `canConsume`, `consumptionCurrency`, `balances` and `diemEpochAllocation`. See [Billing](#billing). |
+| `list_usage_history(currency=None, start_timestamp=None, end_timestamp=None, page_size=None, cursor=None)` | `UsageHistoryPage` | Requires an `ADMIN` key. One page of usage, with `nextCursor`. |
+| `export_usage_history(...)` | `UsageHistoryCsv` | The same page as CSV `text`, with `next_cursor`. |
+| `get_usage_analytics(lookback=None, start_date=None, end_date=None)` | `UsageAnalytics` | Requires an `ADMIN` key. Totals by day, model and key (Venice beta). |
 | `get_rate_limits()` | `RateLimits` | Current access status, balances, and rate limits. |
 | `get_rate_limits_log()` | `list[RateLimitLogEntry]` | Recent rate-limit events. |
 | `augment_search(query, limit=None, provider=None)` | `AugmentSearchResponse` | Returns `{"query": ..., "results": [...]}`. |
@@ -103,6 +109,32 @@ with VeniceClient() as client:
 
 - `provider` is `"brave"`, `"google"`, or `"exa"`. Omitted options use Venice's defaults (Brave, up to 10 results).
 - Each result has `title` and `url`, plus optional `content` (snippet) and `date` which may be missing, `None`, or empty.
+
+### Billing
+
+```python
+from datetime import datetime, timezone
+
+with VeniceClient() as client:  # an ADMIN key
+    balance = client.get_billing_balance()
+    print(balance["balances"]["diem"], balance["canConsume"])
+
+    entries = []
+    page = client.list_usage_history(
+        currency="USD", start_timestamp=datetime(2026, 11, 1, tzinfo=timezone.utc)
+    )
+    while True:
+        entries.extend(page["data"])
+        if page["nextCursor"] is None:
+            break
+        page = client.list_usage_history(cursor=page["nextCursor"])
+```
+
+- The billing endpoints require an `ADMIN` key; others raise `AuthenticationError`.
+- `balances` holds `diem`, `usd`, `bundledCredits` and `earnedCredits`, each `None` when unavailable. USD is net of pending holds, so it can be negative, and is `None` when zero.
+- Usage history is a cursor walk, oldest first. The first request takes the filters: `currency` (`USD`, `DIEM`, `BUNDLED_CREDITS` or `EARNED_CREDITS`), `start_timestamp` (inclusive) and `end_timestamp` (exclusive) as timezone-aware datetimes sent in UTC, and `page_size` (10 to 1000; Venice's default is 1000). Each later request passes only `cursor`, since the cursor carries the filters; combining them raises `ValidationError`. An entry's `apiKeyId` is `None` for usage not charged to an API key.
+- `export_usage_history()` returns the same pages as CSV: `UsageHistoryCsv(text, next_cursor)`.
+- `get_usage_analytics()` takes a `lookback` of `"1d"` to `"90d"` (Venice's default `"7d"`), or a `start_date` and `end_date` (`datetime.date`), and returns totals by date, model and API key with chart series for the top eight. Venice marks it beta and caches it for 10 minutes.
 
 ### Document text extraction
 
