@@ -21,7 +21,8 @@ from .models.image import VeniceImage, AsyncVeniceImage
 from .models.audio import VeniceSpeech, AsyncVeniceSpeech
 from .models.embedding import VeniceEmbeddingModel
 from .tools import (
-    AUGMENT_SEARCH_TOOLS as _AUGMENT_SEARCH_TOOLS,
+    TOOLS as _TOOLS,
+    venice_augment_scrape,
     venice_augment_search,
     venice_augment_search_brave,
     venice_augment_search_google,
@@ -53,7 +54,7 @@ def register_embedding_models(register):
 @llm.hookimpl
 def register_tools(register):
     """Register Venice function tools with llm's plugin system."""
-    for tool in _AUGMENT_SEARCH_TOOLS:
+    for tool in _TOOLS:
         register(tool)
 
 
@@ -90,4 +91,5 @@ __all__ = [
     "venice_augment_search_brave",
     "venice_augment_search_google",
     "venice_augment_search_exa",
+    "venice_augment_scrape",
 ]

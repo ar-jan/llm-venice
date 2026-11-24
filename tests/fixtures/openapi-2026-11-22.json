@@ -489,6 +489,58 @@
         "input": "The quick brown fox jumped over the lazy dog",
         "model": "text-embedding-bge-m3"
       }
+    },
+    "WebScrapeRequest": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "The URL to scrape",
+          "example": "https://example.com"
+        }
+      },
+      "required": [
+        "url"
+      ]
+    },
+    "WebScrapeResponse": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "The URL that was scraped",
+          "example": "https://example.com"
+        },
+        "content": {
+          "type": "string",
+          "description": "The scraped content in markdown format"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "markdown"
+          ],
+          "description": "The format of the scraped content"
+        }
+      },
+      "required": [
+        "url",
+        "content",
+        "format"
+      ]
+    },
+    "StandardError": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "string",
+          "description": "A description of the error"
+        }
+      },
+      "required": [
+        "error"
+      ]
     }
   },
   "resources": {
@@ -3097,6 +3149,49 @@
           }
         }
       ]
+    },
+    "POST /augment/scrape": {
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/WebScrapeRequest"
+            }
+          }
+        }
+      },
+      "response": {
+        "description": "Successfully scraped the URL",
+        "headers": {
+          "X-Balance-Remaining": {
+            "description": "Remaining x402 credit balance in USD after this request (only present for x402 auth).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "4.230000"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/WebScrapeResponse"
+            }
+          }
+        }
+      },
+      "errors": {
+        "502": {
+          "description": "The URL could not be scraped.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StandardError"
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

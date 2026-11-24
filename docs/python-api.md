@@ -87,6 +87,7 @@ JSON methods unwrap Venice's `data` envelope and return ordinary typed dictionar
 | `get_rate_limits()` | `RateLimits` | Current access status, balances, and rate limits. |
 | `get_rate_limits_log()` | `list[RateLimitLogEntry]` | Recent rate-limit events. |
 | `augment_search(query, limit=None, provider=None)` | `AugmentSearchResponse` | Returns `{"query": ..., "results": [...]}`. |
+| `augment_scrape(url)` | `AugmentScrapeResponse` | Returns `{"url": ..., "content": ..., "format": "markdown"}` for an absolute `http`/`https` URL. Sites that block automated access fail with a 400 `VeniceAPIError`, and pages that could not be scraped with a 502. |
 | `create_embeddings(model, input, dimensions=None, encoding_format=None)` | `EmbeddingResponse` | Embeds a string, or each string of a list (up to 2048), and returns one embedding per input in `data`, in input order. Not unwrapped, so `usage` is kept. See [Embeddings](#embeddings). |
 
 ### Web search via `augment_search()`
@@ -158,7 +159,7 @@ chain = chat.chain("Find recent papers on private inference", tools=[venice_augm
 print(chain.text())
 ```
 
-- The four function search tools (`venice_augment_search`, `venice_augment_search_brave`, `venice_augment_search_google`, `venice_augment_search_exa`) are plain synchronous functions exported from `llm_venice`.
+- The four function search tools (`venice_augment_search`, `venice_augment_search_brave`, `venice_augment_search_google`, `venice_augment_search_exa`) and `venice_augment_scrape(url)` are plain synchronous functions exported from `llm_venice`.
 - Calling `venice_augment_search` directly requires an explicit `provider`:
 
   ```python

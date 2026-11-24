@@ -199,13 +199,16 @@ llm venice upscale /path/to/image.jpg
 
 By default this saves `image_upscaled.<ext>` alongside the original without overwriting existing files.
 
-### Direct web search
+### Direct web search and scraping
 
-Search the web through Venice without invoking a model (`-p brave|google|exa`, `-n 1..20`, `--json`):
+Search the web through Venice without invoking a model (`-p brave|google|exa`, `-n 1..20`, `--json`), or fetch a page as markdown:
 
 ```bash
 llm venice search -p exa -n 5 "private AI inference"
+llm venice scrape https://venice.ai > venice.md
 ```
+
+Scraping is also available to models as the `venice_augment_scrape` function tool.
 
 ### Other `llm venice` commands
 

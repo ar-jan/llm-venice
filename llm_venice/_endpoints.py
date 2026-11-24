@@ -7,7 +7,7 @@ import json
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Annotated, Any, Literal, TypeVar, cast
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlsplit
 
 import httpx2
 from pydantic import (
@@ -238,6 +238,19 @@ def parse_embeddings(response: httpx2.Response, count: int) -> EmbeddingResponse
         raise VeniceResponseError(action, "embedding indexes do not match the inputs")
     # Venice lists them in input order already; sorting makes that a guarantee.
     return {**obj, "data": sorted(data, key=lambda item: item["index"])}
+
+
+def _web_url(value: str) -> str:
+    parts = urlsplit(value)
+    if parts.scheme.lower() not in {"http", "https"} or not parts.netloc:
+        raise ValueError("url must be an absolute http or https URL")
+    return value
+
+
+class AugmentScrapeInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Sent as given; Venice fetches the page, so only the form is checked here.
+    url: Annotated[str, Field(strict=True), AfterValidator(_web_url)]
 
 
 CHARACTER_PAGE_LIMIT = 100
@@ -658,12 +671,20 @@ def json_operation(name: str, inputs: dict[str, Any]) -> tuple[str, str, str, di
             "Searching the web",
             {"json": AugmentSearchInput.model_validate(inputs).body()},
         )
+    if name == "augment_scrape":
+        return (
+            "POST",
+            "augment/scrape",
+            "Scraping web page",
+            {"json": AugmentScrapeInput.model_validate(inputs).model_dump()},
+        )
     raise ValueError(f"Unknown JSON operation: {name}")
 
 
 def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[str, Any]:
     from .types import (
         ApiKey,
+        AugmentScrapeResponse,
         AugmentSearchResult,
         Character,
         CharacterReview,
@@ -722,4 +743,6 @@ def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[st
             raise VeniceResponseError(action, "invalid AugmentSearchResponse: results")
         for item in cast(list[Any], results):
             resource(item, AugmentSearchResult, action)
+    elif name == "augment_scrape":
+        resource(obj, AugmentScrapeResponse, action)
     return obj

@@ -126,6 +126,28 @@ llm venice search -p exa -n 5 "private AI inference"
 - `--json` outputs the raw JSON response.
 - Each search is billed.
 
+### Web page scraping (`llm venice scrape`)
+
+Fetch one web page through Venice's `/augment/scrape` endpoint and print it as markdown:
+
+```bash
+llm venice scrape https://venice.ai > venice.md
+```
+
+- `URL` must be an absolute `http` or `https` URL.
+- Sites that block automated access, such as X/Twitter and Reddit, are refused, and pages Venice cannot fetch fail with its error (for example `502 Bad Gateway - Could not resolve hostname`).
+- Control characters other than newlines and tabs are removed from the printed markdown; `--json` outputs the raw JSON response (`url`, `content`, `format`).
+- Each scrape is billed.
+
+The same endpoint is registered as the `venice_augment_scrape` function tool, which takes a `url` and returns that JSON to the model, so a model can read a page it found with a search tool:
+
+```bash
+llm -m venice/z-ai-glm-5-3 -T venice_augment_search_brave -T venice_augment_scrape --td \
+  "Find the Venice API documentation and summarize its authentication page"
+```
+
+Each tool call is a separate, billed request; use `--ta/--tools-approve` to confirm them. Scraped pages are untrusted web content, and a long page can fill much of the model's context.
+
 ## Embeddings
 
 Every online embedding model in the cached catalog is registered for `llm`'s embedding commands as `venice/<model>`; `llm embed-models list` shows them.

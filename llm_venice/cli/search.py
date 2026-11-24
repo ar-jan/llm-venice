@@ -2,7 +2,6 @@
 
 import json
 import textwrap
-import unicodedata
 from typing import get_args
 
 import click
@@ -11,20 +10,10 @@ from pydantic import ValidationError
 from llm_venice.client import VeniceClient
 from llm_venice.errors import VeniceError
 from llm_venice.cli.errors import handle_cli_error
+from llm_venice.cli.output import clean_text
 from llm_venice.types import AugmentSearchProvider, AugmentSearchResponse
 
 _OPTION_FLAGS = {"query": "QUERY", "limit": "--limit", "provider": "--provider"}
-
-
-def _clean(value: object, *, single_line: bool = False) -> str:
-    """Drop terminal control characters from untrusted result text."""
-    if not isinstance(value, str):
-        return ""
-    if single_line:
-        value = " ".join(value.split())
-    return "".join(
-        char for char in value if char in "\n\t" or unicodedata.category(char) != "Cc"
-    ).strip()
 
 
 def _echo_results(response: AugmentSearchResponse) -> None:
@@ -35,13 +24,13 @@ def _echo_results(response: AugmentSearchResponse) -> None:
     for index, result in enumerate(results, 1):
         if index > 1:
             click.echo()
-        title = _clean(result.get("title"), single_line=True) or "(untitled)"
+        title = clean_text(result.get("title"), single_line=True) or "(untitled)"
         click.echo(click.style(f"{index}. {title}", bold=True))
-        click.echo(f"   {_clean(result.get('url'), single_line=True)}")
-        content = _clean(result.get("content"))
+        click.echo(f"   {clean_text(result.get('url'), single_line=True)}")
+        content = clean_text(result.get("content"))
         if content:
             click.echo(textwrap.indent(content, "   "))
-        date = _clean(result.get("date"), single_line=True)
+        date = clean_text(result.get("date"), single_line=True)
         if date:
             click.echo(click.style(f"   {date}", dim=True))
 

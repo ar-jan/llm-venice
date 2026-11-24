@@ -29,6 +29,7 @@ from .types import (
     ApiKeyChanges,
     ApiKeyLimitPeriod,
     ApiKeyModelPrivacy,
+    AugmentScrapeResponse,
     AugmentSearchProvider,
     CharacterSortBy,
     CharacterSortOrder,
@@ -288,6 +289,14 @@ class VeniceClient(_Configuration):
             AugmentSearchResponse,
             self._json_operation("augment_search", query=query, limit=limit, provider=provider),
         )
+
+    def augment_scrape(self, url: str) -> AugmentScrapeResponse:
+        """Fetch a web page through Venice and return its content as markdown.
+
+        Pages Venice cannot fetch fail with a VeniceAPIError: 400 for sites that block
+        automated access, 502 when the page could not be scraped.
+        """
+        return cast(AugmentScrapeResponse, self._json_operation("augment_scrape", url=url))
 
     def create_embeddings(
         self,
@@ -601,6 +610,14 @@ class AsyncVeniceClient(_Configuration):
                 "augment_search", query=query, limit=limit, provider=provider
             ),
         )
+
+    async def augment_scrape(self, url: str) -> AugmentScrapeResponse:
+        """Fetch a web page through Venice and return its content as markdown.
+
+        Pages Venice cannot fetch fail with a VeniceAPIError: 400 for sites that block
+        automated access, 502 when the page could not be scraped.
+        """
+        return cast(AugmentScrapeResponse, await self._json_operation("augment_scrape", url=url))
 
     async def create_embeddings(
         self,

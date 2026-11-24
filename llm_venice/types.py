@@ -312,6 +312,14 @@ class EmbeddingResponse(TypedDict, total=False):
     usage: EmbeddingUsage
 
 
+class AugmentScrapeResponse(TypedDict, total=False):
+    """A scraped page: the URL and the page content, in ``format`` (markdown)."""
+
+    url: Required[str]
+    content: Required[str]
+    format: str
+
+
 class RateLimitLogEntry(TypedDict, total=False):
     """A rate-limit event with its key ID, type and wire timestamp."""
 
