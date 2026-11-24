@@ -808,9 +808,15 @@ def _venice_attachment(attachment: Any, item: Dict[str, Any]) -> Dict[str, Any]:
             url = f"data:{VIDEO_TYPES[type_]};base64,{data}"
         return {"type": "video_url", "video_url": {"url": url}}
     if type_ in AUDIO_FORMATS and item.get("type") == "input_audio":
+        audio = item["input_audio"]
+        # llm loads remote audio/* but leaves data empty for application/ogg.
         return {
             "type": "input_audio",
-            "input_audio": {**item["input_audio"], "format": AUDIO_FORMATS[type_]},
+            "input_audio": {
+                **audio,
+                "format": AUDIO_FORMATS[type_],
+                "data": audio["data"] or attachment.base64_content(),
+            },
         }
     return item
 

@@ -115,6 +115,22 @@ def test_audio_is_sent_in_its_format(
 
 
 @pytest.mark.parametrize("is_async", [False, True])
+def test_remote_ogg_loads_audio_bytes(is_async, httpx2_mock, mock_venice_api_key, request_json):
+    url = "https://example.com/tone.ogg"
+    httpx2_mock.add_response(method="GET", url=url, content=OGG)
+    httpx2_mock.add_response(method="POST", url=CHAT_URL, json=completion())
+    run(make(is_async, audio=True), llm.Attachment(url=url, type="application/ogg"))
+    assert sent_content(request_json)[-1]["input_audio"] == {"format": "ogg", "data": b64(OGG)}
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_video_is_rejected_on_responses_route(is_async, httpx2_mock, mock_venice_api_key):
+    with pytest.raises(llm.ModelError, match="video/mp4.*use Chat Completions"):
+        run(make(is_async, video=True), llm.Attachment(content=MP4), responses_api="compat")
+    assert not httpx2_mock.get_requests()
+
+
+@pytest.mark.parametrize("is_async", [False, True])
 def test_video_is_sent_as_video_url(is_async, httpx2_mock, mock_venice_api_key, request_json):
     httpx2_mock.add_response(method="POST", url=CHAT_URL, json=completion())
     url = "https://example.com/clip.webm"
