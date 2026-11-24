@@ -201,6 +201,14 @@ llm venice upscale /path/to/image.jpg
 
 By default this saves `image_upscaled.<ext>` alongside the original without overwriting existing files.
 
+### Background removal
+
+Remove the background of a local image or an image URL, saving a transparent PNG (`image_nobg.png`):
+
+```bash
+llm venice background-remove /path/to/image.jpg
+```
+
 ### Direct web search, scraping, and document parsing
 
 Search the web through Venice without invoking a model (`-p brave|google|exa`, `-n 1..20`, `--json`), fetch a page as markdown, or extract the text of a document (PDF, DOCX, PPTX, XLSX, EPUB, text, and source code):

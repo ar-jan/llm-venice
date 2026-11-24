@@ -5,6 +5,7 @@ import click
 from llm_venice.catalog import refresh_catalog, catalog_path
 from llm_venice.errors import VeniceError
 from llm_venice.cli.api_keys import create_api_keys_group
+from llm_venice.cli.background_remove import create_background_remove_command
 from llm_venice.cli.characters import create_characters_command
 from llm_venice.cli.errors import handle_cli_error
 from llm_venice.cli.image_styles import create_image_styles_command
@@ -39,6 +40,7 @@ def create_venice_group():
         click.echo(f"{len(models)} models saved to {path}", err=True)
 
     venice.add_command(create_api_keys_group())
+    venice.add_command(create_background_remove_command())
     venice.add_command(create_characters_command())
     venice.add_command(create_image_styles_command())
     venice.add_command(create_parse_command())

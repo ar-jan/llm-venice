@@ -436,6 +436,26 @@ class VeniceClient(_Configuration):
             )
         )
 
+    def remove_image_background(
+        self, image: ImageInput, *, anon_user_id: str | None = None
+    ) -> GeneratedImage:
+        """Return the image as a PNG with its background removed (made transparent).
+
+        ``image`` is a path, bytes or borrowed binary file, uploaded as a file, or a
+        str starting with http:// or https://, which Venice fetches. Pass a Path for
+        a local file whose name starts that way.
+        """
+        self._ensure_open()
+        url = image if ep.is_image_url(image) else None
+        body = ep.BackgroundRemoveInput(image_url=url, anon_user_id=anon_user_id)
+        fields = body.model_dump(exclude_none=True)
+        # A URL goes as JSON; a local image as a multipart upload.
+        request: dict[str, Any] = (
+            {"json": fields} if url else {"data": fields, "files": {"image": _image_file(image)}}
+        )
+        response = self._send("POST", "image/background-remove", ep.BACKGROUND_ACTION, **request)
+        return ep.parse_binary_image(response, ep.BACKGROUND_ACTION)
+
     def generate_speech(
         self,
         model: str,
@@ -811,6 +831,29 @@ class AsyncVeniceClient(_Configuration):
                 files={"image": file},
             )
         )
+
+    async def remove_image_background(
+        self, image: ImageInput, *, anon_user_id: str | None = None
+    ) -> GeneratedImage:
+        """Return the image as a PNG with its background removed (made transparent).
+
+        ``image`` is a path, bytes or borrowed binary file, uploaded as a file, or a
+        str starting with http:// or https://, which Venice fetches. Pass a Path for
+        a local file whose name starts that way.
+        """
+        self._ensure_open()
+        url = image if ep.is_image_url(image) else None
+        body = ep.BackgroundRemoveInput(image_url=url, anon_user_id=anon_user_id)
+        fields = body.model_dump(exclude_none=True)
+        # A URL goes as JSON; a local image as a multipart upload.
+        request: dict[str, Any] = {"json": fields}
+        if not url:
+            file = await async_file_call(_image_file, image)
+            request = {"data": fields, "files": {"image": file}}
+        response = await self._send(
+            "POST", "image/background-remove", ep.BACKGROUND_ACTION, **request
+        )
+        return ep.parse_binary_image(response, ep.BACKGROUND_ACTION)
 
     async def generate_speech(
         self,

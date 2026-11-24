@@ -190,8 +190,9 @@ print(chain.text())
 
 Buffered media results expose raw bytes on `.data` and report the actual format returned by Venice on `.format` — saving never transcodes bytes to match a filename extension.
 
-- `ImageResult.images` is a `tuple[GeneratedImage, ...]`. `upscale_image()` returns a single `GeneratedImage`.
-- `upscale_image()` accepts a file path, `bytes`, or an open binary file object; caller-supplied file objects are read from their current position and remain open.
+- `ImageResult.images` is a `tuple[GeneratedImage, ...]`. `upscale_image()` and `remove_image_background()` return a single `GeneratedImage`.
+- `upscale_image()` and `remove_image_background()` accept a file path, `bytes`, or an open binary file object; caller-supplied file objects are read from their current position and remain open.
+- `remove_image_background(image, anon_user_id=None)` returns a PNG with a transparent background. It also accepts a `str` starting with `http://` or `https://`, which Venice fetches instead of the image being uploaded; pass a `Path` for a local file whose name starts that way.
 - **Moderation flags**: `ImageResult.content_violation`, `content_policy_violation_count`, and `blurred` are independent facts. The library preserves every returned image, including moderated ones. (Plugin adapters suppress whole-response content violations, while still saving partial outputs when only some variants were omitted.)
 - **Response headers**: `ImageResult.enhanced_prompt` is the rewritten prompt, decoded from `x-venice-enhanced-prompt`, when `enhance_prompt` produced one. `ImageResult.deprecation` is a `llm_venice.results.ModelDeprecation` (`deprecated`, `warning`, `date`, `replacement`) when Venice sent model deprecation headers, otherwise `None`. Clients only report these; the image model adapters print the deprecation warning. Unexpected values in these headers never fail a generation.
 

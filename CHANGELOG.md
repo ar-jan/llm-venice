@@ -4,6 +4,10 @@
 
 ### New features
 
+- `remove_image_background()` client methods and the `llm venice background-remove`
+  command remove an image's background, returning a transparent PNG. The image is a
+  path, bytes or binary file, uploaded, or an `http(s)` URL that Venice fetches, with
+  an optional `anon_user_id`.
 - `list_image_styles()` client methods and the `llm venice image-styles` command list
   the style presets for `style_preset` (`-o style_preset`).
 - `augment_parse_text()` client methods and the `llm venice parse FILE` command for

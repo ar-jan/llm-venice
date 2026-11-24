@@ -249,6 +249,17 @@ llm venice image-styles
 llm -m venice/qwen-image-3 -o style_preset "Watercolor" "A Dutch windmill"
 ```
 
+### Background removal (`llm venice background-remove`)
+
+```text
+llm venice background-remove IMAGE [-o/--output-path PATH] [--overwrite] [--anon-user-id ID]
+```
+
+- `IMAGE` is a local file, uploaded to Venice, or an `http`/`https` URL, which Venice fetches.
+- Saves a PNG with a transparent background as `<name>_nobg.png` next to a local image, or in the current directory for a URL. `-o` takes a file name, or a directory for the default name.
+- Existing files are not overwritten unless `--overwrite` is given; a timestamped filename is used instead.
+- Each request is billed.
+
 ### Image upscaling (`llm venice upscale`)
 
 ```text

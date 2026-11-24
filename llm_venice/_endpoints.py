@@ -22,10 +22,10 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from typing_extensions import Self, get_type_hints
+from typing_extensions import Self, TypeGuard, get_type_hints
 
 from .errors import VeniceResponseError
-from .params import ImageParams, SpeechParams, copy_params, parameter_body
+from .params import AnonUserId, ImageParams, SpeechParams, copy_params, parameter_body
 from .results import NO_AUDIO, GeneratedImage, ImageResult, ModelDeprecation, SpeechResult
 from .types import (
     AugmentSearchProvider,
@@ -251,10 +251,18 @@ def _web_url(value: str) -> str:
     return value
 
 
+def is_image_url(image: object) -> TypeGuard[str]:
+    """A str starting with http:// or https:// names an image for Venice to fetch."""
+    return isinstance(image, str) and image[:8].lower().startswith(("http://", "https://"))
+
+
+# Sent as given; Venice fetches the URL, so only its form is checked here.
+WebUrl = Annotated[str, Field(strict=True), AfterValidator(_web_url)]
+
+
 class AugmentScrapeInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    # Sent as given; Venice fetches the page, so only the form is checked here.
-    url: Annotated[str, Field(strict=True), AfterValidator(_web_url)]
+    url: WebUrl
 
 
 TEXT_PARSER_ACTION = "Parsing document"
@@ -597,15 +605,29 @@ def parse_image(response: httpx2.Response, model: str, requested: str | None) ->
     )
 
 
-def parse_upscale(response: httpx2.Response) -> GeneratedImage:
+def parse_binary_image(response: httpx2.Response, action: str) -> GeneratedImage:
+    """Read an image returned as the response body, identified by its type or bytes."""
     content_type = response.headers.get("content-type")
     if not response.content:
-        raise VeniceResponseError("Upscaling image", "response did not include an image")
+        raise VeniceResponseError(action, "response did not include an image")
     return GeneratedImage(
         response.content,
         media_format(content_type, response.content, None, image=True),
         content_type,
     )
+
+
+def parse_upscale(response: httpx2.Response) -> GeneratedImage:
+    return parse_binary_image(response, "Upscaling image")
+
+
+BACKGROUND_ACTION = "Removing image background"
+
+
+class BackgroundRemoveInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    image_url: WebUrl | None = None
+    anon_user_id: AnonUserId | None = None
 
 
 SPEECH_ACTION = "Generating speech"
