@@ -168,11 +168,13 @@ def test_cli_prints_the_text(
     path = tmp_path / "report.pdf"
     path.write_bytes(PDF)
     httpx2_mock.add_response(
-        url=URL, text="Page one\x0c\nPage two\x1b[31m\n", headers={"content-type": "text/plain"}
+        url=URL,
+        text="    Page one\x0c\n\tPage two\x1b[31m  ",
+        headers={"content-type": "text/plain"},
     )
     result = cli_runner.invoke(cli, ["venice", "parse", str(path)])
     assert result.exit_code == 0, result.output
-    assert result.stdout == "Page one\nPage two[31m\n"
+    assert result.stdout == "    Page one\n\tPage two[31m  "
     assert multipart_parts()["response_format"][0][2] == b"text"
 
 

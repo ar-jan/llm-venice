@@ -3,12 +3,13 @@
 import unicodedata
 
 
-def clean_text(value: object, *, single_line: bool = False) -> str:
-    """Drop terminal control characters, keeping newlines and tabs, and trim the ends."""
+def clean_text(value: object, *, single_line: bool = False, strip: bool = True) -> str:
+    """Drop terminal control characters, keeping newlines and tabs, and optionally trim the ends."""
     if not isinstance(value, str):
         return ""
     if single_line:
         value = " ".join(value.split())
-    return "".join(
+    cleaned = "".join(
         char for char in value if char in "\n\t" or unicodedata.category(char) != "Cc"
-    ).strip()
+    )
+    return cleaned.strip() if strip else cleaned

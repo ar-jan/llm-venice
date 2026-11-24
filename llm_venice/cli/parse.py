@@ -51,7 +51,7 @@ def create_parse_command():
         except (VeniceError, ValueError, OSError) as e:
             handle_cli_error(e)
         if isinstance(result, str):
-            click.echo(clean_text(result))
+            click.echo(clean_text(result, strip=False), nl=False)
         else:
             click.echo(json.dumps(result, indent=2))
 
