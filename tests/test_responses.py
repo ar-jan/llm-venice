@@ -1,14 +1,22 @@
-"""Venice /responses models: request shaping, routing headers, sync/async parity."""
+"""Venice /responses models: requests, routing headers, compat-lane streams, final statuses."""
 
 import asyncio
 import json
+import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import llm
 import pytest
+from llm.parts import ReasoningPart
 
 from llm_venice import AsyncVeniceResponses, VeniceResponses, VeniceWebSearch, VeniceXSearch
-from llm_venice.models.responses import _CHAT_ONLY_OPTIONS, _VENICE_PARAMETERS
+from llm_venice.models.responses import (
+    _CHAT_ONLY_OPTIONS,
+    _VENICE_PARAMETERS,
+    _events,
+    _translate,
+)
 
 URL = "https://api.venice.ai/api/v1/responses"
 FIXTURE = Path(__file__).parent / "fixtures/openapi-2026-11-22.json"
@@ -261,3 +269,176 @@ def test_options_are_the_chat_options_plus_the_mode(is_async):
     assert options.model_validate({"responses_api": "native"}).model_dump()["responses_api"] == (
         "native"
     )
+
+
+# Venice's compat lane and final statuses.
+
+REASONING_ITEM = {
+    "type": "reasoning",
+    "id": "rs_1",
+    "status": "completed",
+    "summary": ["Thinking about it."],
+}
+
+
+def messages_of(response):
+    if isinstance(response, llm.AsyncResponse):
+        return asyncio.run(response.messages())
+    return response.messages()
+
+
+def compat_stream(*, final="response.completed", status="completed", output=None):
+    item = message("Hi")
+    output = output if output is not None else [REASONING_ITEM, item]
+    extra = (
+        {"incomplete_details": {"reason": "max_output_tokens"}} if status == "incomplete" else {}
+    )
+    return sse(
+        {"type": "response.created", "response": payload(status="in_progress")},
+        {
+            "type": "response.output_item.added",
+            "output_index": 0,
+            "item": {"type": "reasoning", "id": "rs_1", "status": "in_progress"},
+        },
+        {"type": "response.reasoning.delta", "item_id": "rs_1", "delta": "Thinking "},
+        {"type": "response.reasoning.delta", "item_id": "rs_1", "delta": "about it."},
+        {"type": "response.output_item.done", "output_index": 0, "item": REASONING_ITEM},
+        {"type": "response.output_item.added", "output_index": 1, "item": {**item, "content": []}},
+        {"type": "response.output_text.delta", "item_id": "msg_1", "delta": "Hi"},
+        {"type": "response.output_item.done", "output_index": 1, "item": item},
+        {"type": final, "response": payload(*output, status=status, **extra)},
+    )
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_compat_stream_reasoning_and_text(is_async, httpx2_mock, mock_venice_api_key):
+    add_response(httpx2_mock, stream=True, body=compat_stream())
+    text, response = run(make(is_async, model_spec=REASONING_SPEC))
+    assert text == "Hi"
+    reasoning = [
+        part
+        for message_ in messages_of(response)
+        for part in message_.parts
+        if isinstance(part, ReasoningPart)
+    ]
+    # The streamed text, then the item's metadata; the text is not repeated.
+    assert "".join(part.text for part in reasoning) == "Thinking about it."
+    meta = [part.provider_metadata for part in reasoning if part.provider_metadata]
+    assert meta == [
+        {
+            "openai": {
+                "id": "rs_1",
+                "summary": [{"text": "Thinking about it.", "type": "summary_text"}],
+            }
+        }
+    ]
+    data = json_of(response)
+    assert data["output"][0]["summary"] == [{"text": "Thinking about it.", "type": "summary_text"}]
+    assert (response.input_tokens, response.output_tokens) == (5, 3)
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_compat_summaries_in_a_full_response(is_async, httpx2_mock, mock_venice_api_key):
+    add_response(httpx2_mock, stream=False, body=payload(REASONING_ITEM, message("Hi")))
+    text, response = run(make(is_async, model_spec=REASONING_SPEC), stream=False)
+    assert text == "Hi"
+    reasoning = [
+        part
+        for message_ in messages_of(response)
+        for part in message_.parts
+        if isinstance(part, ReasoningPart)
+    ]
+    assert [part.text for part in reasoning] == ["Thinking about it."]
+    assert not reasoning[0].redacted
+
+
+def test_compat_reasoning_is_replayed_on_the_next_turn(httpx2_mock, mock_venice_api_key, sent):
+    add_response(httpx2_mock, stream=True, body=compat_stream())
+    add_response(httpx2_mock, stream=False)
+    model = make(False, model_spec=REASONING_SPEC)
+    conversation = model.conversation()
+    conversation.prompt("first").text()
+    conversation.prompt("second").text()
+    replayed = sent()["input"]
+    assert replayed[0] == {"role": "user", "content": "first"}
+    assert {
+        "type": "reasoning",
+        "id": "rs_1",
+        "summary": [{"text": "Thinking about it.", "type": "summary_text"}],
+    } in replayed
+    assert replayed[-2:] == [
+        {"role": "assistant", "content": "Hi"},
+        {"role": "user", "content": "second"},
+    ]
+    assert "previous_response_id" not in sent()
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize("stream", [False, True])
+def test_incomplete_responses_keep_their_status_output_and_usage(
+    is_async, stream, httpx2_mock, mock_venice_api_key
+):
+    if stream:
+        body = compat_stream(final="response.incomplete", status="incomplete")
+    else:
+        body = payload(
+            message("Hi"), status="incomplete", incomplete_details={"reason": "content_filter"}
+        )
+    add_response(httpx2_mock, stream=stream, body=body)
+    text, response = run(make(is_async), stream=stream)
+    assert text == "Hi"
+    data = json_of(response)
+    assert data["status"] == "incomplete"
+    assert data["incomplete_details"]["reason"] in ("max_output_tokens", "content_filter")
+    assert response.output_tokens == 3
+    assert data["venice_headers"] == {"x-venice-responses-lane": "compat"}
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize(
+    "event,message",
+    [
+        (
+            {
+                "type": "response.failed",
+                "response": payload(
+                    status="failed", error={"code": "server_error", "message": "Upstream failed"}
+                ),
+            },
+            "Venice response failed: Upstream failed (server_error)",
+        ),
+        (
+            {"type": "error", "code": "rate_limited", "message": "Slow down", "param": None},
+            "Venice response failed: Slow down (rate_limited)",
+        ),
+    ],
+)
+def test_failed_streams_raise(is_async, event, message, httpx2_mock, mock_venice_api_key):
+    body = sse({"type": "response.created", "response": payload(status="in_progress")}, event)
+    add_response(httpx2_mock, stream=True, body=body)
+    with pytest.raises(llm.ModelError, match=re.escape(message)):
+        run(make(is_async))
+
+
+def test_events_close_the_stream_when_abandoned():
+    closed = []
+
+    class Stream:
+        def __iter__(self):
+            yield SimpleNamespace(type="response.created")
+            yield SimpleNamespace(type="response.output_text.delta", delta="x")
+
+        def close(self):
+            closed.append(True)
+
+    events = _events(Stream())
+    next(events)
+    events.close()
+    assert closed == [True]
+
+
+def test_translation_leaves_other_events_alone():
+    event = SimpleNamespace(type="response.web_search.done", item_id="ws_1")
+    assert _translate(event) is event
+    delta = _translate(SimpleNamespace(type="response.reasoning.delta", delta=None))
+    assert (delta.type, delta.delta, delta.item_id) == ("response.reasoning_text.delta", "", None)

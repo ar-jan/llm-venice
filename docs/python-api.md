@@ -233,6 +233,8 @@ print(response.response_json["venice_headers"])  # {'x-venice-responses-lane': '
 ```
 
 - Venice stores no responses, so each request sends the whole conversation and never a `previous_response_id`. A reasoning model's `model_spec` (`supportsReasoning`) makes requests ask for reasoning summaries and encrypted reasoning, which `llm` replays on later turns.
+- Venice's compat lane streams reasoning as `response.reasoning.delta` events and sends reasoning summaries as plain strings. Both are adapted to the forms `llm` reads, so compat reasoning appears as reasoning text, streamed or not, and summaries are replayed on later turns.
+- A response cut short (`max_output_tokens` or `content_filter`) keeps its partial output and usage, with `status: "incomplete"` and `incomplete_details` in `response_json`. A failed response or stream error raises `llm.ModelError` with Venice's message.
 - `response_json["venice_headers"]` records `x-venice-responses-lane` (the lane that served the request) and, when Venice sends it, `x-venice-responses-compat-reason`.
 - `anon_user_id`, `fallbacks`, `prompt_cache_retention` and the Venice parameters (`character_slug`, `include_venice_system_prompt`, `enable_web_search`, `enable_web_scraping`, `enable_web_citations`, `include_search_results_in_stream`, and the `VeniceWebSearch` tool) are sent as Venice's Responses fields.
 - Chat options without a `/responses` equivalent (`seed`, `stop`, `logit_bias`, `frequency_penalty`, `presence_penalty`, `min_p`, `top_k`, `repetition_penalty`, `stop_token_ids`, `prompt_cache_key`, `verbosity`, `enable_x_search`, `strip_thinking_response` and `disable_thinking`) raise `llm.ModelError` before any request, as does an E2EE model, which Venice does not serve here.

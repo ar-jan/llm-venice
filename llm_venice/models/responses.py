@@ -2,12 +2,15 @@
 
 Venice stores no responses, so every request carries the full conversation, as
 llm's Responses classes already build it from the prompt's messages; they never
-send ``previous_response_id``.
+send ``previous_response_id``. Venice's compat lane, which serves models through
+Chat Completions, streams some events in its own form; the client adapts them.
 """
 
 from contextvars import ContextVar
 import copy
+from collections.abc import AsyncGenerator, Generator
 from itertools import islice
+from types import SimpleNamespace
 from typing import Any, Dict, List, Literal, Optional
 
 import llm
@@ -182,8 +185,83 @@ def _capture_headers(raw: Any, sink: Optional[Dict[str, str]]) -> None:
             sink[name] = value
 
 
+def _summary_parts(item: Any) -> None:
+    """Make a reasoning item's summary the parts llm reads.
+
+    Venice's compat lane sends each summary as a plain string, where OpenAI sends
+    ``{"type": "summary_text", "text": ...}``; llm would drop the strings.
+    """
+    summary: Any = getattr(item, "summary", None)
+    if getattr(item, "type", None) != "reasoning" or not isinstance(summary, list):
+        return
+    if any(isinstance(part, str) for part in summary):
+        from openai.types.responses.response_reasoning_item import Summary
+
+        item.summary = [
+            Summary(type="summary_text", text=part) if isinstance(part, str) else part
+            for part in summary
+        ]
+
+
+def _normalize_response(response: Any) -> Any:
+    for item in getattr(response, "output", None) or []:
+        _summary_parts(item)
+    return response
+
+
+def _failure(event: Any) -> str:
+    error: Any = getattr(getattr(event, "response", None), "error", None) or event
+    message = getattr(error, "message", None) or "no reason given"
+    code = getattr(error, "code", None)
+    return f"Venice response failed: {message}" + (f" ({code})" if code else "")
+
+
+def _translate(event: Any) -> Any:
+    """Turn a Venice stream event into the one llm's Responses loop handles."""
+    kind = getattr(event, "type", None)
+    if kind == "response.reasoning.delta":
+        # The compat lane's reasoning text; OpenAI's event for it is reasoning_text.delta.
+        return SimpleNamespace(
+            type="response.reasoning_text.delta",
+            delta=getattr(event, "delta", None) or "",
+            item_id=getattr(event, "item_id", None),
+        )
+    if kind in ("response.output_item.added", "response.output_item.done"):
+        _summary_parts(getattr(event, "item", None))
+    elif kind in ("response.completed", "response.incomplete"):
+        _normalize_response(event.response)
+        if kind == "response.incomplete":
+            # llm reads the final payload only from response.completed. An incomplete
+            # response (max_output_tokens, content_filter) has the same payload, with
+            # its status and incomplete_details, and the partial output and usage.
+            return SimpleNamespace(type="response.completed", response=event.response)
+    elif kind in ("response.failed", "error"):
+        raise llm.ModelError(_failure(event))
+    return event
+
+
+def _events(stream: Any) -> Generator[Any, None, None]:
+    try:
+        for event in stream:
+            yield _translate(event)
+    finally:
+        stream.close()
+
+
+async def _aevents(stream: Any) -> AsyncGenerator[Any, None]:
+    try:
+        async for event in stream:
+            yield _translate(event)
+    finally:
+        await stream.close()
+
+
 def _adapt_client(client: Any, *, async_: bool) -> Any:
-    """Have this client's responses.create() record Venice's routing headers."""
+    """Have this client's responses.create() read Venice's replies as llm expects.
+
+    It records the routing headers, adapts compat-lane stream events and
+    reasoning summaries, and finishes on an incomplete response too.
+    """
     sink = _captured_headers.get()
     responses = client.responses
     raw_create = responses.with_raw_response.create
@@ -191,12 +269,14 @@ def _adapt_client(client: Any, *, async_: bool) -> Any:
     def create(*args: Any, **kwargs: Any) -> Any:
         raw = raw_create(*args, **kwargs)
         _capture_headers(raw, sink)
-        return raw.parse()
+        parsed = raw.parse()
+        return _events(parsed) if kwargs.get("stream") else _normalize_response(parsed)
 
     async def acreate(*args: Any, **kwargs: Any) -> Any:
         raw = await raw_create(*args, **kwargs)
         _capture_headers(raw, sink)
-        return raw.parse()
+        parsed = raw.parse()
+        return _aevents(parsed) if kwargs.get("stream") else _normalize_response(parsed)
 
     # The client is new for this call, so patching it affects nothing else.
     responses.create = acreate if async_ else create

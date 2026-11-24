@@ -4,6 +4,12 @@
 
 ### New features
 
+- The Responses models read Venice's compat lane, which serves non-OpenAI models through
+  Chat Completions: its `response.reasoning.delta` events and plain-string reasoning
+  summaries become `llm` reasoning, streamed or not, and summaries are replayed on later
+  turns. An incomplete response (`max_output_tokens`, `content_filter`) keeps its partial
+  text, usage, `status` and `incomplete_details`, where `llm` alone recorded nothing, and
+  a failed response or stream error raises `llm.ModelError`.
 - `VeniceResponses` and `AsyncVeniceResponses` models for Venice's `/responses` endpoint,
   built on `llm`'s Responses support. They take the chat options plus `responses_api`
   (`auto`, `native` or `compat`, sent as `x-venice-responses-mode`), send
