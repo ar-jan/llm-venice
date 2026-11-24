@@ -1,6 +1,6 @@
 # Python API
 
-`llm-venice` provides typed synchronous and asynchronous clients (`VeniceClient` and `AsyncVeniceClient`) for Venice's catalogs, characters, image generation, upscaling, speech, web search, and API key management. Chat continues to use `llm`'s model API (`llm.get_model("venice/...")` or `VeniceChat` / `AsyncVeniceChat`).
+`llm-venice` provides typed synchronous and asynchronous clients (`VeniceClient` and `AsyncVeniceClient`) for Venice's catalogs, characters, image generation, upscaling, speech, web search, embeddings, and API key management. Chat continues to use `llm`'s model API (`llm.get_model("venice/...")` or `VeniceChat` / `AsyncVeniceChat`), and embedding models are also available through `llm.get_embedding_model("venice/...")`.
 
 Python 3.11+ is supported and the installed package ships inline type information (`py.typed`).
 
@@ -87,6 +87,7 @@ JSON methods unwrap Venice's `data` envelope and return ordinary typed dictionar
 | `get_rate_limits()` | `RateLimits` | Current access status, balances, and rate limits. |
 | `get_rate_limits_log()` | `list[RateLimitLogEntry]` | Recent rate-limit events. |
 | `augment_search(query, limit=None, provider=None)` | `AugmentSearchResponse` | Returns `{"query": ..., "results": [...]}`. |
+| `create_embeddings(model, input, dimensions=None, encoding_format=None)` | `EmbeddingResponse` | Embeds a string, or each string of a list (up to 2048), and returns one embedding per input in `data`, in input order. Not unwrapped, so `usage` is kept. See [Embeddings](#embeddings). |
 
 ### Web search via `augment_search()`
 
@@ -99,6 +100,41 @@ with VeniceClient() as client:
 
 - `provider` is `"brave"`, `"google"`, or `"exa"`. Omitted options use Venice's defaults (Brave, up to 10 results).
 - Each result has `title` and `url`, plus optional `content` (snippet) and `date` which may be missing, `None`, or empty.
+
+### Embeddings
+
+```python
+with VeniceClient() as client:
+    response = client.create_embeddings(
+        "text-embedding-qwen3-0-6b", ["first text", "second text"], dimensions=256
+    )
+    vectors = [item["embedding"] for item in response["data"]]
+```
+
+- `input` is a string or a list of strings; Venice rejects token-ID arrays, so they raise `ValidationError` before any request. A lone empty string is rejected, but a list may contain empty strings.
+- `dimensions` shortens the vectors on models whose catalog entry has `supportsCustomDimensions`; omitted, each model returns its native size (`embeddingDimensions`).
+- `encoding_format="base64"` returns each embedding as base64 text of little-endian 32-bit floats instead of a list of floats.
+- The response is checked to hold exactly one embedding per input, and `data` is sorted by `index`.
+
+The same models are registered for `llm`'s embedding API, which batches inputs and stores them in collections:
+
+```python
+import llm
+from llm_venice import VeniceEmbeddingModel
+
+model = llm.get_embedding_model("venice/text-embedding-qwen3-0-6b")
+vector = model.embed("hello")  # list[float], 1024 values
+
+small = VeniceEmbeddingModel(
+    "text-embedding-qwen3-0-6b", model_spec=model.model_spec, dimensions=256
+)
+small.model_id  # 'venice/text-embedding-qwen3-0-6b-256'
+notes = llm.Collection("notes", model=small)
+```
+
+- `VeniceEmbeddingModel(model_id, model_name=None, model_spec=None, *, dimensions=None)` sends 100 texts per request (its `batch_size`). Failed requests raise `llm.ModelError`, with the Venice exception as its cause.
+- With `dimensions`, the model ID gains a `-<dimensions>` suffix, so a collection never mixes vector sizes under one ID. Given a catalog `model_spec`, the size is checked against `supportsCustomDimensions` and the native `embeddingDimensions`; without one, Venice decides. Each returned vector must have the requested size, because Venice answers a size larger than the native one with the native size.
+- Dimension variants are not registered with `llm`, so pass the model object (`model=small`) when reopening a collection.
 
 ## Chat and search tools via `llm`
 

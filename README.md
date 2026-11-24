@@ -5,7 +5,7 @@
 [![Tests](https://github.com/ar-jan/llm-venice/actions/workflows/test.yml/badge.svg)](https://github.com/ar-jan/llm-venice/actions/workflows/test.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/ar-jan/llm-venice/blob/develop/LICENSE)
 
-[LLM](https://llm.datasette.io/) plugin for the [Venice AI](https://venice.ai/chat?ref=Oeo9ku) API — chat, vision, audio input, web & X search, image generation, upscaling, and text-to-speech.
+[LLM](https://llm.datasette.io/) plugin for the [Venice AI](https://venice.ai/chat?ref=Oeo9ku) API — chat, vision, audio input, web & X search, image generation, upscaling, text-to-speech, and embeddings.
 
 ## Installation
 
@@ -165,6 +165,18 @@ llm venice tts "Hello." -o - | tee out.mp3 | mpv -
 ```
 
 See [CLI reference — Text-to-speech](https://github.com/ar-jan/llm-venice/blob/develop/docs/cli.md#text-to-speech) for file safety, atomic writes, and options.
+
+### Embeddings
+
+Venice embedding models work with `llm`'s embedding commands (list them with `llm embed-models list`):
+
+```bash
+llm embed -m venice/text-embedding-bge-m3 -c "Hello world"
+llm embed-multi notes --files docs '*.md' -m venice/text-embedding-qwen3-8b --store
+llm similar notes -c "private inference"
+```
+
+See [CLI reference — Embeddings](https://github.com/ar-jan/llm-venice/blob/develop/docs/cli.md#embeddings) for batching, input limits, and shorter vectors.
 
 ### Image generation
 

@@ -116,6 +116,9 @@ class ModelSpec(TypedDict, total=False):
     supported_formats: list[str]
     default_format: str
     supportsWebSearch: bool
+    embeddingDimensions: int
+    maxInputTokens: int
+    supportsCustomDimensions: bool
 
 
 class ModelInfo(TypedDict, total=False):
@@ -275,6 +278,38 @@ class AugmentSearchResponse(TypedDict, total=False):
 
     query: Required[str]
     results: Required[list[AugmentSearchResult]]
+
+
+EmbeddingEncodingFormat = Literal["float", "base64"]
+"""How ``/embeddings`` returns vectors: lists of floats (Venice's default) or base64 text."""
+
+
+class EmbeddingData(TypedDict, total=False):
+    """One input's embedding and its position among the inputs.
+
+    The embedding is a list of floats, or base64 text of little-endian 32-bit floats
+    when ``encoding_format="base64"`` was requested.
+    """
+
+    embedding: Required[list[float] | str]
+    index: Required[int]
+    object: str
+
+
+class EmbeddingUsage(TypedDict, total=False):
+    """Tokens counted for an embeddings request."""
+
+    prompt_tokens: int
+    total_tokens: int
+
+
+class EmbeddingResponse(TypedDict, total=False):
+    """One embedding per input in ``data``, in input order, with the model and usage."""
+
+    data: Required[list[EmbeddingData]]
+    model: str
+    object: str
+    usage: EmbeddingUsage
 
 
 class RateLimitLogEntry(TypedDict, total=False):

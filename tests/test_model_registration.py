@@ -3,9 +3,16 @@ import json
 import httpx2
 import llm
 import pytest
-from llm_venice import AsyncVeniceImage, AsyncVeniceSpeech, VeniceImage, VeniceSpeech, VeniceXSearch
+from llm_venice import (
+    AsyncVeniceImage,
+    AsyncVeniceSpeech,
+    VeniceEmbeddingModel,
+    VeniceImage,
+    VeniceSpeech,
+    VeniceXSearch,
+)
 from llm_venice.client import VeniceClient
-from llm_venice.models import register_venice_models
+from llm_venice.models import register_venice_embedding_models, register_venice_models
 
 
 def test_registers_from_cache_without_key(monkeypatch, tmp_path):
@@ -427,3 +434,29 @@ def test_persist_failure_still_registers(
 
     assert [m.model_id for m in registered] == ["venice/m"]
     assert "could not write Venice model cache" in capsys.readouterr().err
+
+
+def test_embedding_models_register_only_through_their_hook(monkeypatch, tmp_path):
+    """Embedding models get their own llm hook and never register as chat models."""
+    monkeypatch.setenv("LLM_USER_PATH", str(tmp_path))
+    spec = {"embeddingDimensions": 1024, "supportsCustomDimensions": True}
+    (tmp_path / "venice_models.json").write_text(
+        json.dumps(
+            [
+                {"id": "text-embedding-bge-m3", "type": "embedding", "model_spec": spec},
+                {"id": "retired", "type": "embedding", "model_spec": {"offline": True}},
+                {"id": "chat", "type": "text", "model_spec": {}},
+            ]
+        )
+    )
+    monkeypatch.setattr(llm, "get_key", lambda *_, **__: None)
+
+    models = []
+    register_venice_models(lambda model, async_model=None, aliases=None: models.append(model))
+    embedding_models = []
+    register_venice_embedding_models(lambda model, aliases=None: embedding_models.append(model))
+
+    assert [model.model_id for model in models] == ["venice/chat"]
+    assert [model.model_id for model in embedding_models] == ["venice/text-embedding-bge-m3"]
+    assert isinstance(embedding_models[0], VeniceEmbeddingModel)
+    assert embedding_models[0].model_spec == spec

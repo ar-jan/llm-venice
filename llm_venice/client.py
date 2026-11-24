@@ -36,6 +36,8 @@ from .types import (
     Character,
     CharacterReviewPage,
     CreatedApiKey,
+    EmbeddingEncodingFormat,
+    EmbeddingResponse,
     ModelInfo,
     RateLimitLogEntry,
     RateLimits,
@@ -286,6 +288,31 @@ class VeniceClient(_Configuration):
             AugmentSearchResponse,
             self._json_operation("augment_search", query=query, limit=limit, provider=provider),
         )
+
+    def create_embeddings(
+        self,
+        model: str,
+        input: str | Sequence[str],
+        *,
+        dimensions: int | None = None,
+        encoding_format: EmbeddingEncodingFormat | None = None,
+    ) -> EmbeddingResponse:
+        """Embed a string, or each string of a list, and return the embeddings in input order.
+
+        A list takes up to 2048 strings; token-ID arrays are rejected. Omitted options
+        use Venice's defaults: the model's native size and lists of floats.
+        ``dimensions`` shortens the vectors on models that support it.
+        """
+        inputs = ep.EmbeddingInput.model_validate(
+            {
+                "model": model,
+                "input": input,
+                "dimensions": dimensions,
+                "encoding_format": encoding_format,
+            }
+        )
+        response = self._send("POST", "embeddings", ep.EMBEDDINGS_ACTION, json=inputs.body())
+        return ep.parse_embeddings(response, inputs.count())
 
     def generate_image(
         self,
@@ -574,6 +601,31 @@ class AsyncVeniceClient(_Configuration):
                 "augment_search", query=query, limit=limit, provider=provider
             ),
         )
+
+    async def create_embeddings(
+        self,
+        model: str,
+        input: str | Sequence[str],
+        *,
+        dimensions: int | None = None,
+        encoding_format: EmbeddingEncodingFormat | None = None,
+    ) -> EmbeddingResponse:
+        """Embed a string, or each string of a list, and return the embeddings in input order.
+
+        A list takes up to 2048 strings; token-ID arrays are rejected. Omitted options
+        use Venice's defaults: the model's native size and lists of floats.
+        ``dimensions`` shortens the vectors on models that support it.
+        """
+        inputs = ep.EmbeddingInput.model_validate(
+            {
+                "model": model,
+                "input": input,
+                "dimensions": dimensions,
+                "encoding_format": encoding_format,
+            }
+        )
+        response = await self._send("POST", "embeddings", ep.EMBEDDINGS_ACTION, json=inputs.body())
+        return ep.parse_embeddings(response, inputs.count())
 
     async def generate_image(
         self,

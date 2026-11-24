@@ -4,6 +4,15 @@
 
 ### New features
 
+- Venice embedding models are registered with `llm` as `venice/<model>`, so
+  `llm embed`, `llm embed-multi` and `llm similar` work with them, 100 texts per request
+  by default. `VeniceEmbeddingModel(..., dimensions=N)` returns shorter vectors on models
+  whose catalog entry has `supportsCustomDimensions`, under its own model ID
+  (`venice/<model>-<N>`) so collections never mix vector sizes.
+- `create_embeddings()` client methods for `/embeddings`, embedding a string or a list of
+  up to 2048 strings with optional `dimensions` and `encoding_format` (`float` or
+  `base64`). The result holds one embedding per input, in input order. Token-ID arrays,
+  which Venice does not accept, are rejected before the request.
 - `get_character()` and `list_character_reviews()` client methods, with
   `llm venice characters get SLUG` and `llm venice characters reviews SLUG` commands,
   for one character's details and a page of its public reviews with paging totals and

@@ -31,6 +31,8 @@ from .types import (
     ApiKeyModelPrivacy,
     CharacterSortBy,
     CharacterSortOrder,
+    EmbeddingEncodingFormat,
+    EmbeddingResponse,
     ModelInfo,
 )
 
@@ -177,6 +179,65 @@ class AugmentSearchInput(BaseModel):
         if self.provider is not None:
             body["search_provider"] = self.provider
         return body
+
+
+EMBEDDINGS_ACTION = "Creating embeddings"
+EMBEDDING_INPUT_LIMIT = 2048
+
+_EmbeddingText = Annotated[str, Field(strict=True)]
+
+
+def _is_token_ids(value: Any) -> bool:
+    """Whether ``value`` looks like token IDs (ints, or lists of ints) rather than text."""
+    if not isinstance(value, (list, tuple)) or not value:
+        return False
+    items = cast(list[Any] | tuple[Any, ...], value)
+    return all(type(item) is int or isinstance(item, (list, tuple)) for item in items)
+
+
+class EmbeddingInput(_Input):
+    # Venice embeds a nonempty string, or each string of a list in one request.
+    input: (
+        Annotated[str, Field(strict=True, min_length=1)]
+        | Annotated[list[_EmbeddingText], Field(min_length=1, max_length=EMBEDDING_INPUT_LIMIT)]
+    )
+    dimensions: int | None = Field(default=None, ge=1, strict=True)
+    encoding_format: EmbeddingEncodingFormat | None = None
+
+    @field_validator("input", mode="before")
+    @classmethod
+    def _text_only(cls, value: Any) -> Any:
+        # Venice answers token arrays with a 400; say so instead of a union error.
+        if _is_token_ids(value):
+            raise ValueError("token arrays are not supported; pass a string or a list of strings")
+        return value
+
+    def body(self) -> dict[str, Any]:
+        """Omit unset options so Venice applies its defaults (native size, floats)."""
+        body: dict[str, Any] = {"model": self.model, "input": self.input}
+        if self.dimensions is not None:
+            body["dimensions"] = self.dimensions
+        if self.encoding_format is not None:
+            body["encoding_format"] = self.encoding_format
+        return body
+
+    def count(self) -> int:
+        return 1 if isinstance(self.input, str) else len(self.input)
+
+
+def parse_embeddings(response: httpx2.Response, count: int) -> EmbeddingResponse:
+    """Check for exactly one embedding per input, and return them in input order."""
+    action = EMBEDDINGS_ACTION
+    obj = resource(json_object(response, action), EmbeddingResponse, action)
+    data = obj["data"]
+    if len(data) != count:
+        raise VeniceResponseError(
+            action, f"expected {count} embedding(s), one per input, but received {len(data)}"
+        )
+    if sorted(item["index"] for item in data) != list(range(count)):
+        raise VeniceResponseError(action, "embedding indexes do not match the inputs")
+    # Venice lists them in input order already; sorting makes that a guarantee.
+    return {**obj, "data": sorted(data, key=lambda item: item["index"])}
 
 
 CHARACTER_PAGE_LIMIT = 100
