@@ -1,22 +1,25 @@
 """Venice chat model implementation."""
 
+from contextvars import ContextVar
 import copy
+from itertools import islice
 import json
-from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Union
+from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Literal, Optional, Union
 
 import llm
+from llm.utils import remove_dict_none_values
 from llm_venice import _logging
 from llm_venice._options import CatalogOptionsMixin, normalize_policy, parse_json_object
 from ._common import model_error_boundary
-from ._common import initialize_model, warn_deprecated
-from llm.default_plugins.openai_models import AsyncChat, Chat
+from ._common import initialize_model, normalize_model_id, warn_deprecated
+from llm.default_plugins.openai_models import AsyncChat, Chat, ImageDetailWithOriginalEnum
 from llm_venice.constants import (
     NON_OPENAI_COMPATIBLE_PARAMS,
     VENICE_API_BASE,
     VENICE_PARAMETERS,
 )
 from llm_venice.params import ANON_USER_ID_DESCRIPTION, AnonUserId
-from pydantic import Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from typing_extensions import Self
 
 # Request keys set by llm or this plugin outside of Options; extra_body must not
@@ -32,8 +35,26 @@ _RESERVED_REQUEST_KEYS = {
 }
 
 
+class _Reasoning(BaseModel):
+    """The request's `reasoning` object; unset fields keep the model's defaults."""
+
+    model_config = ConfigDict(extra="forbid")
+    # An open string like reasoning_effort, narrowed by the same catalog choices.
+    effort: Optional[str] = None
+    summary: Optional[Literal["auto", "concise", "detailed"]] = None
+    enabled: Optional[bool] = None
+
+
 class _ChatOptions(Chat.Options):
     """Options for Venice chat models."""
+
+    def __iter__(self):
+        # llm persists dict(prompt.options). BaseModel's iterator leaves nested
+        # models intact, so convert reasoning to its JSON-compatible fields.
+        for name, value in super().__iter__():
+            if isinstance(value, _Reasoning):
+                value = value.model_dump(exclude_none=True)
+            yield name, value
 
     if TYPE_CHECKING:
         # llm assembles Chat.Options dynamically, so type checkers cannot see
@@ -83,16 +104,43 @@ class _ChatOptions(Chat.Options):
         ),
         default=None,
     )
+    reasoning: Optional[_Reasoning] = Field(
+        description=(
+            "Reasoning settings as a JSON object: effort, summary ('auto', 'concise' "
+            "or 'detailed') and enabled. reasoning_effort takes precedence over effort."
+        ),
+        default=None,
+    )
+    verbosity: Optional[Literal["low", "medium", "high", "auto"]] = Field(
+        description="Response verbosity: 'low', 'medium', 'high' or 'auto'.",
+        default=None,
+    )
     prompt_cache_key: Optional[str] = Field(
         description="Key used to group related requests for prompt caching.",
         default=None,
     )
-    prompt_cache_retention: Optional[str] = Field(
+    prompt_cache_retention: Optional[Literal["default", "extended", "24h"]] = Field(
         description="Prompt cache retention: 'default', 'extended' or '24h'.",
         default=None,
     )
     anon_user_id: Optional[AnonUserId] = Field(
         description=ANON_USER_ID_DESCRIPTION,
+        default=None,
+    )
+    fallbacks: Optional[List[Annotated[str, Field(min_length=1)]]] = Field(
+        description=(
+            "Up to 10 model IDs to try if an Anthropic model refuses the request; "
+            "forwarded on direct Anthropic routes only. On the CLI, pass a JSON "
+            """array: '["claude-opus-4-8"]'."""
+        ),
+        default=None,
+        max_length=10,
+    )
+    image_detail: Optional[ImageDetailWithOriginalEnum] = Field(
+        description=(
+            "Detail level for image attachments: 'auto', 'low', 'high' or 'original'. "
+            "Venice sends 'original' to OpenAI models and treats it as 'high' elsewhere."
+        ),
         default=None,
     )
 
@@ -155,6 +203,44 @@ class _ChatOptions(Chat.Options):
     @classmethod
     def _parse_extra_body(cls, value: Any) -> Any:
         return parse_json_object(value, "extra_body")
+
+    @field_validator("reasoning", mode="before")
+    @classmethod
+    def _parse_reasoning(cls, value: Any) -> Any:
+        return parse_json_object(value, "reasoning")
+
+    @field_validator("fallbacks", mode="before")
+    @classmethod
+    def _parse_fallbacks(cls, value: Any) -> Any:
+        """Accept a JSON array, of model IDs or of the API's {"model": ID} objects."""
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                raise ValueError("fallbacks must be a JSON array of model IDs") from None
+        if isinstance(value, list):
+            return [
+                item["model"] if isinstance(item, dict) and list(item) == ["model"] else item
+                for item in value
+            ]
+        return value
+
+    @field_validator("fallbacks")
+    @classmethod
+    def _bare_fallback_ids(cls, value: Optional[List[str]]) -> Optional[List[str]]:
+        # llm names Venice models venice/<id>; the API takes the bare ID.
+        return [normalize_model_id(model) for model in value] if value is not None else None
+
+    @model_validator(mode="after")
+    def _check_reasoning_effort(self) -> Self:
+        """Apply the model's reasoning_effort choices to reasoning.effort too."""
+        effort = self.reasoning.effort if self.reasoning else None
+        if effort is not None:
+            try:
+                type(self).model_validate({"reasoning_effort": effort})
+            except ValidationError as exc:
+                raise ValueError(f"reasoning.effort: {exc.errors()[0]['msg']}") from None
+        return self
 
     @model_validator(mode="after")
     def _check_extra_body(self) -> Self:
@@ -374,6 +460,15 @@ def _make_json_schema_strict(schema: Dict, path: str = "$") -> Dict:
     return schema
 
 
+def _wire_value(name: str, value: Any) -> Any:
+    """The request-body form of an option value."""
+    if name == "fallbacks":
+        return [{"model": model} for model in value]
+    if isinstance(value, BaseModel):
+        return value.model_dump(exclude_none=True)
+    return value
+
+
 def _build_venice_kwargs(
     model_id: str, supports_web_search: bool, supports_x_search: bool, kwargs: Dict
 ) -> Dict:
@@ -391,7 +486,7 @@ def _build_venice_kwargs(
 
     for param in NON_OPENAI_COMPATIBLE_PARAMS:
         if param in kwargs:
-            non_openai_compatible_params[param] = kwargs.pop(param)
+            non_openai_compatible_params[param] = _wire_value(param, kwargs.pop(param))
 
     venice_parameters = {}
     for key in VENICE_PARAMETERS:
@@ -439,6 +534,114 @@ def _build_venice_kwargs(
     return kwargs
 
 
+# Chunk list for the streaming execute() call that is creating its client. It is
+# set only for the first step of llm's execute(), which builds the client, so
+# concurrent or interleaved calls never share a list.
+_stream_chunks: ContextVar[Optional[List[Any]]] = ContextVar("venice_stream_chunks", default=None)
+
+# Venice fields that llm's combine_chunks() leaves out of streamed response_json.
+_CHUNK_FIELDS = ("venice_parameters", "cost", "prompt_logprobs")
+_CHOICE_FIELDS = ("stop_reason",)
+_DELTA_TEXT = ("reasoning_content",)
+_DELTA_LISTS = ("reasoning_details",)
+_DELTA_FIELDS = ("thought_signature", "extra_content", "cache_control")
+
+
+def _record(stream, chunks: List[Any]):
+    for chunk in stream:
+        chunks.append(chunk)
+        yield chunk
+
+
+async def _arecord(stream, chunks: List[Any]):
+    async for chunk in stream:
+        chunks.append(chunk)
+        yield chunk
+
+
+def _record_streams(client, *, async_: bool):
+    """Have this client's streamed completions record their chunks for execute()."""
+    chunks = _stream_chunks.get()
+    if chunks is None:
+        return client
+    completions = client.chat.completions
+    create = completions.create
+
+    def create_and_record(*args, **kwargs):
+        return _record(create(*args, **kwargs), chunks)
+
+    async def acreate_and_record(*args, **kwargs):
+        return _arecord(await create(*args, **kwargs), chunks)
+
+    # The client is new for this call, so patching it affects nothing else.
+    completions.create = acreate_and_record if async_ else create_and_record
+    return client
+
+
+def _plain(value: Any) -> Any:
+    """JSON data for a chunk field, whether the SDK declares it or keeps it as extra."""
+    dump = getattr(value, "model_dump", None)
+    if dump is not None:
+        return dump()
+    if isinstance(value, list):
+        return [_plain(item) for item in value]
+    return value
+
+
+def _merged(old: Any, new: Any) -> Any:
+    """Later chunks win, but objects merge so fields sent earlier are kept."""
+    if not (isinstance(old, dict) and isinstance(new, dict)):
+        return new
+    result = dict(old)
+    for key, value in new.items():
+        if value is not None:
+            result[key] = _merged(result.get(key), value)
+    return result
+
+
+def _stream_metadata(chunks: List[Any]) -> Dict[str, Any]:
+    metadata: Dict[str, Any] = {}
+
+    def keep(key: str, value: Any) -> None:
+        value = _plain(value)
+        if value is not None:
+            metadata[key] = _merged(metadata.get(key), value)
+
+    for chunk in chunks:
+        for key in _CHUNK_FIELDS:
+            keep(key, getattr(chunk, key, None))
+        for choice in getattr(chunk, "choices", None) or []:
+            # llm's text comes from the first choice.
+            if getattr(choice, "index", 0) != 0:
+                continue
+            for key in _CHOICE_FIELDS:
+                keep(key, getattr(choice, key, None))
+            delta = getattr(choice, "delta", None)
+            for key in _DELTA_TEXT:
+                text = getattr(delta, key, None)
+                if isinstance(text, str) and text:
+                    metadata[key] = metadata.get(key, "") + text
+            for key in _DELTA_LISTS:
+                items = _plain(getattr(delta, key, None))
+                if isinstance(items, list):
+                    metadata.setdefault(key, []).extend(items)
+            for key in _DELTA_FIELDS:
+                keep(key, getattr(delta, key, None))
+    return remove_dict_none_values(metadata)
+
+
+def _add_stream_metadata(response, chunks: List[Any]) -> None:
+    """Add Venice fields to llm's flattened streaming response_json, keeping its keys."""
+    if not chunks or not isinstance(response.response_json, dict):
+        return
+    combined = response.response_json
+    metadata = _stream_metadata(chunks)
+    response.response_json = {
+        **combined,
+        **{key: value for key, value in metadata.items() if key not in combined},
+    }
+
+
 def _openai_client(model: Union[Chat, AsyncChat], key, *, async_: bool):
     """Build the SDK client, using Venice's logging setting instead of llm's."""
     # Deferred like in llm (0.38+): importing openai at plugin load would slow
@@ -475,6 +678,11 @@ class VeniceChat(CatalogOptionsMixin, Chat):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        # llm's reasoning, verbosity, image_detail_original and service_tier flags
+        # make _Shared.__init__ assign its OpenAI Options class to the instance,
+        # hiding the Venice options, which declare their own reasoning, verbosity
+        # and image_detail.
+        vars(self).pop("Options", None)
         # The llm model ID carries the plugin prefix; the API needs the bare ID.
         initialize_model(self, self.model_id, self.model_name, model_spec)
         # Without a base URL the OpenAI SDK would send the Venice key to OpenAI.
@@ -500,7 +708,27 @@ class VeniceChat(CatalogOptionsMixin, Chat):
         return tuple(tools)
 
     def get_client(self, key, *, async_=False):
-        return _openai_client(self, key, async_=async_)
+        return _record_streams(_openai_client(self, key, async_=async_), async_=async_)
+
+    def execute(self, prompt, stream, response, conversation=None, key=None):
+        """Run llm's chat execution, then keep the Venice fields of a streamed reply."""
+        events: Any = super().execute(prompt, stream, response, conversation, key)
+        if not stream:
+            # Non-streaming response_json is the full JSON response already.
+            yield from events
+            return
+        chunks: List[Any] = []
+        try:
+            token = _stream_chunks.set(chunks)
+            try:
+                first = list(islice(events, 1))
+            finally:
+                _stream_chunks.reset(token)
+            yield from first
+            yield from events
+        finally:
+            events.close()
+        _add_stream_metadata(response, chunks)
 
     def build_kwargs(self, prompt, stream):
         warn_deprecated(self)
@@ -532,6 +760,11 @@ class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        # llm's reasoning, verbosity, image_detail_original and service_tier flags
+        # make _Shared.__init__ assign its OpenAI Options class to the instance,
+        # hiding the Venice options, which declare their own reasoning, verbosity
+        # and image_detail.
+        vars(self).pop("Options", None)
         # The llm model ID carries the plugin prefix; the API needs the bare ID.
         initialize_model(self, self.model_id, self.model_name, model_spec)
         # Without a base URL the OpenAI SDK would send the Venice key to OpenAI.
@@ -556,7 +789,33 @@ class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
         return tuple(tools)
 
     def get_client(self, key, *, async_=False):
-        return _openai_client(self, key, async_=async_)
+        return _record_streams(_openai_client(self, key, async_=async_), async_=async_)
+
+    async def execute(self, prompt, stream, response, conversation=None, key=None):
+        """Run llm's chat execution, then keep the Venice fields of a streamed reply."""
+        events: Any = super().execute(prompt, stream, response, conversation, key)
+        try:
+            if not stream:
+                # Non-streaming response_json is the full JSON response already.
+                async for event in events:
+                    yield event
+                return
+            chunks: List[Any] = []
+            first: List[Any] = []
+            token = _stream_chunks.set(chunks)
+            try:
+                async for event in events:
+                    first.append(event)
+                    break
+            finally:
+                _stream_chunks.reset(token)
+            for event in first:
+                yield event
+            async for event in events:
+                yield event
+        finally:
+            await events.aclose()
+        _add_stream_metadata(response, chunks)
 
     def build_kwargs(self, prompt, stream):
         warn_deprecated(self)

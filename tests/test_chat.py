@@ -1,14 +1,19 @@
 """Tests for VeniceChat model functionality"""
 
 import asyncio
+from itertools import zip_longest
+import json
 
 import llm
 import pytest
 from pydantic import BaseModel, ValidationError
 from llm import Prompt, Response
+from llm.default_plugins.openai_models import AsyncChat, Chat
 from llm_venice import AsyncVeniceChat, VeniceChat
 
 VeniceChatOptions = VeniceChat.Options
+API_BASE = "https://api.venice.ai/api/v1"
+CHAT_URL = f"{API_BASE}/chat/completions"
 
 
 def test_venice_chat_options_fields():
@@ -492,6 +497,10 @@ def test_models_list_options_includes_chat_request_options(cli_runner, hermetic_
     assert "Key used to group related requests for prompt caching." in result.output
     assert "prompt_cache_retention: str" in result.output
     assert "Prompt cache retention: 'default', 'extended' or '24h'." in result.output
+    for line in ("reasoning: str", "verbosity: str", "fallbacks: array", "anon_user_id: str"):
+        assert line in result.output
+    assert "Detail level for image attachments" in result.output
+    assert "'original'" in result.output
     assert "enable_x_search: bool" in result.output
     assert "Enable xAI native web and X/Twitter search" in result.output
 
@@ -1549,3 +1558,362 @@ def test_cli_venice_o_options_web_search_citations(cli_runner, monkeypatch, herm
         assert venice_params["enable_web_search"] == "on"
         assert venice_params["enable_web_citations"] is True
         assert venice_params["include_search_results_in_stream"] is True
+
+
+def stream_chunk(choices=(), **fields):
+    return {
+        "id": "chatcmpl-1",
+        "object": "chat.completion.chunk",
+        "created": 1,
+        "model": "venice-model",
+        "choices": list(choices),
+        **fields,
+    }
+
+
+def delta(index=0, finish_reason=None, **fields):
+    return {"index": index, "delta": fields, "finish_reason": finish_reason}
+
+
+VENICE_STREAM = [
+    stream_chunk(
+        [delta(role="assistant", content="", reasoning_content="Think")],
+        venice_parameters={
+            "enable_web_search": "on",
+            "web_search_citations": [{"title": "Venice", "url": "https://venice.ai"}],
+        },
+    ),
+    stream_chunk(
+        [
+            delta(
+                reasoning_content="ing.",
+                reasoning_details=[{"type": "reasoning.text", "text": "Thinking.", "index": 0}],
+                thought_signature="sig-1",
+                extra_content={"google": {"thought_signature": "sig-1"}},
+            )
+        ]
+    ),
+    stream_chunk(
+        [
+            delta(
+                content="Hello",
+                reasoning_details=[{"type": "reasoning.encrypted", "data": "abc", "index": 1}],
+            )
+        ]
+    ),
+    stream_chunk(
+        [
+            {
+                **delta(
+                    finish_reason="stop",
+                    content=" world",
+                    cache_control={"type": "ephemeral", "ttl": "1h"},
+                ),
+                "stop_reason": "end_turn",
+            }
+        ]
+    ),
+    stream_chunk(
+        usage={
+            "prompt_tokens": 10,
+            "completion_tokens": 5,
+            "total_tokens": 15,
+            "prompt_tokens_details": {
+                "cached_tokens": 2,
+                "cache_creation_input_tokens": 6,
+                "cache_write_tokens": 6,
+                "cache_creation_5m_input_tokens": 4,
+                "cache_creation_1h_input_tokens": 2,
+            },
+        },
+        cost={"usd": 0.0012, "diem": 0.5},
+        prompt_logprobs={"1": {"logprob": -0.5, "decoded_token": "hi"}},
+        venice_parameters={"enable_web_search": "on", "include_venice_system_prompt": True},
+    ),
+]
+
+VENICE_METADATA = {
+    "venice_parameters": {
+        "enable_web_search": "on",
+        "web_search_citations": [{"title": "Venice", "url": "https://venice.ai"}],
+        "include_venice_system_prompt": True,
+    },
+    "cost": {"usd": 0.0012, "diem": 0.5},
+    "prompt_logprobs": {"1": {"logprob": -0.5, "decoded_token": "hi"}},
+    "stop_reason": "end_turn",
+    "reasoning_content": "Thinking.",
+    "reasoning_details": [
+        {"type": "reasoning.text", "text": "Thinking.", "index": 0},
+        {"type": "reasoning.encrypted", "data": "abc", "index": 1},
+    ],
+    "thought_signature": "sig-1",
+    "extra_content": {"google": {"thought_signature": "sig-1"}},
+    "cache_control": {"type": "ephemeral", "ttl": "1h"},
+}
+
+
+def add_stream(httpx2_mock, chunks):
+    body = "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in chunks) + "data: [DONE]\n\n"
+    httpx2_mock.add_response(
+        method="POST",
+        url=CHAT_URL,
+        content=body.encode(),
+        headers={"content-type": "text/event-stream"},
+    )
+
+
+def stream_text(model, **kwargs):
+    """Stream a prompt to completion; return its text and response."""
+    if isinstance(model, AsyncChat):
+
+        async def run():
+            response = model.prompt("hi", stream=True, **kwargs)
+            return await response.text(), response
+
+        return asyncio.run(run())
+    response = model.prompt("hi", stream=True, **kwargs)
+    return response.text(), response
+
+
+def json_of(response) -> dict:
+    data = response.response_json
+    assert isinstance(data, dict)
+    return data
+
+
+def llm_response_json(httpx2_mock, chunks):
+    """What llm's own Chat model records for the same stream."""
+    add_stream(httpx2_mock, chunks)
+    _, response = stream_text(Chat("venice-model", api_base=API_BASE), key="test")
+    return json_of(response)
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_streaming_keeps_venice_metadata_beside_llm_fields(
+    is_async, httpx2_mock, mock_venice_api_key
+):
+    baseline = llm_response_json(httpx2_mock, VENICE_STREAM)
+    add_stream(httpx2_mock, VENICE_STREAM)
+    model = (AsyncVeniceChat if is_async else VeniceChat)("venice-model")
+
+    text, response = stream_text(model)
+
+    assert text == "Hello world"
+    data = json_of(response)
+    # llm's flattened keys and values are unchanged.
+    assert {key: data[key] for key in baseline} == baseline
+    assert baseline["content"] == "Hello world" and baseline["finish_reason"] == "stop"
+    assert {key: value for key, value in data.items() if key not in baseline} == VENICE_METADATA
+    # TTL-split cache writes survive in usage.
+    assert data["usage"]["prompt_tokens_details"] == {
+        "cached_tokens": 2,
+        "cache_creation_input_tokens": 6,
+        "cache_write_tokens": 6,
+        "cache_creation_5m_input_tokens": 4,
+        "cache_creation_1h_input_tokens": 2,
+    }
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_streaming_without_venice_fields_matches_llm(is_async, httpx2_mock, mock_venice_api_key):
+    plain = [
+        stream_chunk([delta(role="assistant", content="Hi")]),
+        stream_chunk([delta(finish_reason="stop", content="!")]),
+        stream_chunk(usage={"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}),
+    ]
+    baseline = llm_response_json(httpx2_mock, plain)
+    add_stream(httpx2_mock, plain)
+    model = (AsyncVeniceChat if is_async else VeniceChat)("venice-model")
+
+    text, response = stream_text(model)
+
+    assert text == "Hi!"
+    assert json_of(response) == baseline
+
+
+def test_streaming_ignores_metadata_of_other_choices(httpx2_mock, mock_venice_api_key):
+    chunks = [
+        stream_chunk(
+            [
+                delta(content="A", reasoning_content="first"),
+                delta(1, content="B", reasoning_content="second", thought_signature="other"),
+            ]
+        ),
+    ]
+    add_stream(httpx2_mock, chunks)
+
+    _, response = stream_text(VeniceChat("venice-model"))
+
+    assert json_of(response)["reasoning_content"] == "first"
+    assert "thought_signature" not in json_of(response)
+
+
+def cost_stream(text, usd):
+    return [
+        stream_chunk([delta(role="assistant", content=text)]),
+        stream_chunk([delta(finish_reason="stop")], cost={"usd": usd}),
+    ]
+
+
+def test_interleaved_sync_streams_keep_their_own_metadata(httpx2_mock, mock_venice_api_key):
+    add_stream(httpx2_mock, cost_stream("A", 1))
+    add_stream(httpx2_mock, cost_stream("B", 2))
+    model = VeniceChat("venice-model")
+    first = model.prompt("one", stream=True)
+    second = model.prompt("two", stream=True)
+
+    pieces = [piece for pair in zip_longest(first, second) for piece in pair if piece]
+
+    assert pieces == ["A", "B"]
+    assert json_of(first)["cost"] == {"usd": 1}
+    assert json_of(second)["cost"] == {"usd": 2}
+
+
+def test_concurrent_async_streams_keep_their_own_metadata(httpx2_mock, mock_venice_api_key):
+    add_stream(httpx2_mock, cost_stream("A", 1))
+    add_stream(httpx2_mock, cost_stream("B", 2))
+    model = AsyncVeniceChat("venice-model")
+
+    async def run():
+        responses = [model.prompt(text, stream=True) for text in ("one", "two")]
+        texts = await asyncio.gather(*(response.text() for response in responses))
+        return list(zip(texts, responses))
+
+    results = asyncio.run(run())
+
+    assert sorted((text, json_of(response)["cost"]["usd"]) for text, response in results) == [
+        ("A", 1),
+        ("B", 2),
+    ]
+
+
+COMPLETION = {
+    "id": "x",
+    "object": "chat.completion",
+    "created": 0,
+    "model": "venice-model",
+    "choices": [
+        {"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}
+    ],
+    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+}
+
+
+@pytest.mark.parametrize("cls", [VeniceChat, AsyncVeniceChat])
+def test_request_options_reach_the_request_body(
+    cls, httpx2_mock, request_json, mock_venice_api_key
+):
+    httpx2_mock.add_response(method="POST", url=CHAT_URL, json=COMPLETION)
+    model = cls("venice-model")
+    options = {
+        "reasoning": '{"effort": "high", "summary": "auto"}',
+        "verbosity": "auto",
+        "prompt_cache_retention": "extended",
+        "fallbacks": '["venice/claude-opus-4-8", {"model": "claude-sonnet-5"}]',
+        "anon_user_id": "end-user-123",
+    }
+
+    async def run_async():
+        return await model.prompt("hi", stream=False, **options).text()
+
+    text = asyncio.run(run_async()) if cls is AsyncVeniceChat else None
+    if text is None:
+        text = model.prompt("hi", stream=False, **options).text()
+
+    assert text == "ok"
+    payload = request_json()
+    assert payload["reasoning"] == {"effort": "high", "summary": "auto"}
+    assert payload["verbosity"] == "auto"
+    assert payload["prompt_cache_retention"] == "extended"
+    assert payload["fallbacks"] == [{"model": "claude-opus-4-8"}, {"model": "claude-sonnet-5"}]
+    assert payload["anon_user_id"] == "end-user-123"
+
+
+def test_cli_logs_reasoning_options(
+    cli_runner, hermetic_venice_model, httpx2_mock, mock_venice_api_key
+):
+    from llm.cli import cli
+
+    model = hermetic_venice_model()
+    httpx2_mock.add_response(method="POST", url=CHAT_URL, json=COMPLETION)
+    result = cli_runner.invoke(
+        cli, ["-m", model, "--no-stream", "-o", "reasoning", '{"enabled":false}', "hi"]
+    )
+    assert result.exit_code == 0, result.exception
+    logs = cli_runner.invoke(cli, ["logs", "--json"])
+    assert logs.exit_code == 0, logs.exception
+    assert json.loads(logs.stdout)[0]["options_json"]["reasoning"] == {"enabled": False}
+
+
+def test_reasoning_enabled_alone_is_sent():
+    chat = VeniceChat("venice-model")
+    options = VeniceChatOptions.model_validate({"reasoning": {"enabled": False}})
+    kwargs = chat.build_kwargs(Prompt(prompt="Test", model=chat, options=options), stream=False)
+    assert kwargs["extra_body"] == {"reasoning": {"enabled": False}}
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"prompt_cache_retention": "1h"},
+        {"verbosity": "loud"},
+        {"reasoning": {"summary": "long"}},
+        {"reasoning": {"effort": "high", "budget": 100}},
+        {"reasoning": "[1]"},
+        {"reasoning": "{not json"},
+        {"fallbacks": ["model"] * 11},
+        {"fallbacks": [""]},
+        {"fallbacks": '{"model": "x"}'},
+        {"fallbacks": "[not json"},
+        {"fallbacks": [{"model": "x", "provider": "y"}]},
+        {"image_detail": "max"},
+    ],
+)
+def test_request_options_are_validated(options):
+    with pytest.raises(ValidationError):
+        VeniceChatOptions.model_validate(options)
+
+
+def test_new_request_options_are_reserved_in_extra_body():
+    for field in ("reasoning", "verbosity", "fallbacks", "anon_user_id", "image_detail"):
+        with pytest.raises(ValidationError, match=f"reserved fields: {field}"):
+            VeniceChatOptions(extra_body={field: None})
+
+
+@pytest.mark.parametrize("cls", [VeniceChat, AsyncVeniceChat])
+def test_image_detail_original_reaches_image_attachments(
+    cls, httpx2_mock, request_json, mock_venice_api_key
+):
+    httpx2_mock.add_response(method="POST", url=CHAT_URL, json=COMPLETION)
+    model = cls("venice-model", vision=True)
+    image = llm.Attachment(content=b"\x89PNG\r\n\x1a\nimage", type="image/png")
+
+    response = model.prompt("Describe", attachments=[image], stream=False, image_detail="original")
+    if cls is AsyncVeniceChat:
+
+        async def run():
+            return await response.text()  # type: ignore[union-attr]
+
+        asyncio.run(run())
+    else:
+        response.text()
+
+    (part,) = [
+        part for part in request_json()["messages"][-1]["content"] if part["type"] == "image_url"
+    ]
+    assert part["image_url"]["detail"] == "original"
+
+
+@pytest.mark.parametrize("cls", [VeniceChat, AsyncVeniceChat])
+def test_llm_option_flags_do_not_replace_venice_options(cls):
+    """llm's _Shared.__init__ would assign a generic OpenAI Options class."""
+    model = cls(
+        "venice-model",
+        reasoning=True,
+        verbosity=True,
+        image_detail_original=True,
+        service_tier=True,
+    )
+    assert issubclass(model.Options, VeniceChat.Options)
+    assert {"min_p", "fallbacks", "reasoning"} <= set(model.Options.model_fields)
+    assert model.Options.model_validate({"image_detail": "original"}).image_detail == "original"

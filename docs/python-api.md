@@ -128,6 +128,7 @@ print(chain.text())
   ```
 
 - See [CLI reference — Venice options](cli.md#venice-options) for how `enable_x_search`, `VeniceXSearch`, and `VeniceWebSearch` interact.
+- `response.response_json` keeps Venice's response fields (such as `venice_parameters.web_search_citations`, `cost` and `reasoning_content`) for streamed responses too; see [CLI reference — Response metadata](cli.md#response-metadata).
 
 ## Media values and saving files
 
