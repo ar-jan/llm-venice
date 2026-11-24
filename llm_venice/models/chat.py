@@ -191,6 +191,14 @@ class _ChatOptions(Chat.Options):
         default=None,
     )
 
+    cache_control: Optional[Literal["5m", "1h"]] = Field(
+        description=(
+            "Mark the system prompt and the newest message as prompt-cache breakpoints "
+            "(cache_control, type ephemeral) with this lifetime: '5m' or '1h', which costs "
+            "more to write. For providers that cache explicitly, such as Anthropic."
+        ),
+        default=None,
+    )
     responses_api: Optional[Literal["auto", "native", "compat"]] = Field(
         description=(
             "Send this prompt to Venice's Responses API instead of Chat Completions: "
@@ -651,6 +659,94 @@ def _add_stream_metadata(response, chunks: List[Any]) -> None:
     }
 
 
+# Assistant-message fields that Venice asks to be sent back exactly as received,
+# such as Gemini thought signatures, so later turns keep the model's reasoning state.
+_REPLAY_FIELDS = ("thought_signature", "extra_content", "reasoning_details")
+
+
+def _stream_tool_signatures(chunks: List[Any]) -> Dict[str, str]:
+    """Thought signatures that streamed tool calls carry, by tool call ID.
+
+    Venice sends a call's ID and signature in its first delta; later deltas
+    give only the index.
+    """
+    signatures: Dict[str, str] = {}
+    for chunk in chunks:
+        for choice in getattr(chunk, "choices", None) or []:
+            if getattr(choice, "index", 0) != 0:
+                continue
+            for call in getattr(getattr(choice, "delta", None), "tool_calls", None) or []:
+                call_id = getattr(call, "id", None)
+                signature = getattr(call, "thought_signature", None)
+                if isinstance(call_id, str) and isinstance(signature, str) and signature:
+                    signatures[call_id] = signature
+    return signatures
+
+
+def _replay_metadata(response_json: Any, chunks: Optional[List[Any]]) -> Dict[str, Any]:
+    """What a response asks to be replayed: message fields and tool call signatures."""
+    if not isinstance(response_json, dict):
+        return {}
+    if chunks is None:
+        choices = response_json.get("choices") or [{}]
+        first: Any = choices[0] if isinstance(choices[0], dict) else {}
+        found: Any = first.get("message")
+        message: Dict[str, Any] = found if isinstance(found, dict) else {}
+        calls = message.get("tool_calls") or []
+        signatures = {
+            call["id"]: call["thought_signature"]
+            for call in calls
+            if isinstance(call, dict) and call.get("id") and call.get("thought_signature")
+        }
+    else:
+        # A stream's fields are in llm's flattened response_json (see _stream_metadata).
+        message = response_json
+        signatures = _stream_tool_signatures(chunks)
+    fields = {key: message[key] for key in _REPLAY_FIELDS if message.get(key) is not None}
+    metadata: Dict[str, Any] = {}
+    if fields:
+        metadata["message"] = fields
+    if signatures:
+        metadata["tool_calls"] = signatures
+    return metadata
+
+
+def _replay_events(model: Any, response: Any, chunks: Optional[List[Any]]) -> List[Any]:
+    """A metadata-only reasoning event that stores the replay fields on the message.
+
+    llm keeps provider_metadata on the message's parts, in memory and in its logs,
+    so the fields are there when a later turn rebuilds the conversation.
+    """
+    from llm.parts import StreamEvent
+
+    metadata = _replay_metadata(response.response_json, chunks)
+    if not metadata:
+        return []
+    venice = {"model": model.model_name, **metadata}
+    return [StreamEvent(type="reasoning", chunk="", provider_metadata={"venice": venice})]
+
+
+def _add_replay_fields(entry: Dict[str, Any], message: Any, model_name: str) -> None:
+    """Send an assistant message's recorded fields back, to the model that sent them."""
+    from llm.parts import ReasoningPart
+
+    recorded = [
+        (part.provider_metadata or {}).get("venice")
+        for part in message.parts
+        if isinstance(part, ReasoningPart)
+    ]
+    metadata = next((item for item in reversed(recorded) if isinstance(item, dict)), None)
+    # Another model would not know what to do with these fields.
+    if metadata is None or metadata.get("model") != model_name:
+        return
+    entry.update(metadata.get("message") or {})
+    signatures = metadata.get("tool_calls") or {}
+    for call in entry.get("tool_calls") or []:
+        signature = signatures.get(call.get("id"))
+        if signature:
+            call["thought_signature"] = signature
+
+
 def _openai_client(model: Union[Chat, AsyncChat], key, *, async_: bool):
     """Build the SDK client, using Venice's logging setting instead of llm's."""
     # Deferred like in llm (0.38+): importing openai at plugin load would slow
@@ -667,6 +763,134 @@ def _openai_client(model: Union[Chat, AsyncChat], key, *, async_: bool):
             _logging.async_chat_http_client() if async_ else _logging.chat_http_client()
         )
     return openai.AsyncOpenAI(**kwargs) if async_ else openai.OpenAI(**kwargs)
+
+
+# Swagger's input_audio formats, keyed by the MIME types llm detects for them.
+# PCM has no MIME type to detect, so it is not offered.
+AUDIO_FORMATS = {
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "audio/mpeg": "mp3",
+    "audio/aac": "aac",
+    "audio/x-aac": "aac",
+    "audio/ogg": "ogg",
+    # Ogg detected from bytes rather than a .ogg name.
+    "application/ogg": "ogg",
+    "audio/flac": "flac",
+    "audio/x-flac": "flac",
+    "audio/mp4": "m4a",
+    "audio/x-m4a": "m4a",
+    "audio/aiff": "aiff",
+    "audio/x-aiff": "aiff",
+}
+# Video types Venice accepts (mp4, mpeg, mov, webm), and the type to send.
+VIDEO_TYPES = {
+    "video/mp4": "video/mp4",
+    "video/mpeg": "video/mpeg",
+    # What llm detects for an MPEG program stream, the usual .mpeg file.
+    "video/dvd": "video/mpeg",
+    "video/quicktime": "video/quicktime",
+    "video/webm": "video/webm",
+}
+
+
+def _venice_attachment(attachment: Any, item: Dict[str, Any]) -> Dict[str, Any]:
+    """Correct llm's content part for audio and video, which it labels mp3 audio.
+
+    llm sends every non-image, non-PDF attachment as input_audio, with format
+    wav or mp3, after encoding it when it has no URL.
+    """
+    type_ = attachment.resolve_type()
+    if type_ in VIDEO_TYPES:
+        url = attachment.url
+        if not url:
+            data = (item.get("input_audio") or {}).get("data") or attachment.base64_content()
+            url = f"data:{VIDEO_TYPES[type_]};base64,{data}"
+        return {"type": "video_url", "video_url": {"url": url}}
+    if type_ in AUDIO_FORMATS and item.get("type") == "input_audio":
+        audio = item["input_audio"]
+        # llm loads remote audio/* but leaves data empty for application/ogg.
+        return {
+            "type": "input_audio",
+            "input_audio": {
+                **audio,
+                "format": AUDIO_FORMATS[type_],
+                "data": audio["data"] or attachment.base64_content(),
+            },
+        }
+    return item
+
+
+def _mark_cache_breakpoints(messages: List[Dict[str, Any]], ttl: str) -> None:
+    """Add cache_control to the last system message and to the newest message.
+
+    A text or attachment block carries it on user and system messages; assistant
+    and tool messages with plain text carry it on the message itself, as Venice
+    documents for those roles.
+    """
+    control = {"type": "ephemeral", "ttl": ttl}
+    systems = [entry for entry in messages if entry.get("role") in ("system", "developer")]
+    targets = [entry for entry in (systems[-1:] + messages[-1:])]
+    for entry in {id(entry): entry for entry in targets}.values():
+        content = entry.get("content")
+        if isinstance(content, list) and content:
+            content[-1] = {**content[-1], "cache_control": control}
+        elif (
+            isinstance(content, str)
+            and content
+            and entry.get("role")
+            not in (
+                "assistant",
+                "tool",
+            )
+        ):
+            entry["content"] = [{"type": "text", "text": content, "cache_control": control}]
+        else:
+            entry["cache_control"] = control
+
+
+class _VeniceMessages:
+    """Chat message serialization shared by the sync and async chat models."""
+
+    def build_messages(self, prompt, conversation, image_detail=None):
+        messages = super().build_messages(  # type: ignore[misc]
+            prompt, conversation, image_detail=image_detail
+        )
+        ttl = getattr(prompt.options, "cache_control", None)
+        if ttl is not None:
+            _mark_cache_breakpoints(messages, ttl)
+        return messages
+
+    def _append_llm_message(self, out, message, current_system, image_detail=None):
+        from llm.parts import AttachmentPart
+
+        attachments = [
+            part.attachment
+            for part in message.parts
+            if isinstance(part, AttachmentPart) and part.attachment
+        ]
+        start = len(out)
+        current_system = super()._append_llm_message(  # type: ignore[misc]
+            out, message, current_system, image_detail=image_detail
+        )
+        content = out[start].get("content") if attachments and len(out) > start else None
+        if isinstance(content, list):
+            # llm puts the attachments, in order, after the message's text block.
+            first = len(content) - len(attachments)
+            for index, attachment in enumerate(attachments, first):
+                content[index] = _venice_attachment(attachment, content[index])
+        if message.role == "assistant" and len(out) > start:
+            model: Any = self
+            _add_replay_fields(out[start], message, model.model_name)
+        return current_system
+
+
+def _add_media_types(model: Any, video: bool) -> None:
+    # llm enables WAV and MP3 for audio models; Venice also takes these formats.
+    if "audio/wav" in model.attachment_types:
+        model.attachment_types.update(AUDIO_FORMATS)
+    if video:
+        model.attachment_types.update(VIDEO_TYPES)
 
 
 def _responses_kwargs(model: Union[Chat, AsyncChat]) -> Dict[str, Any]:
@@ -687,7 +911,7 @@ def _responses_kwargs(model: Union[Chat, AsyncChat]) -> Dict[str, Any]:
     }
 
 
-class VeniceChat(CatalogOptionsMixin, Chat):
+class VeniceChat(_VeniceMessages, CatalogOptionsMixin, Chat):
     """Venice AI chat model."""
 
     needs_key = "venice"
@@ -701,6 +925,7 @@ class VeniceChat(CatalogOptionsMixin, Chat):
         *args,
         supports_web_search: bool = False,
         supports_x_search: bool = False,
+        video: bool = False,
         model_spec=None,
         **kwargs,
     ):
@@ -717,6 +942,7 @@ class VeniceChat(CatalogOptionsMixin, Chat):
         self.catalog_policy = normalize_policy("text", self.model_spec)
         self.supports_web_search = supports_web_search
         self.supports_x_search = supports_x_search
+        _add_media_types(self, video)
 
     def __str__(self):  # type: ignore[invalid-argument-type]
         return f"Venice Chat: {self.model_id}"
@@ -752,6 +978,7 @@ class VeniceChat(CatalogOptionsMixin, Chat):
         if not stream:
             # Non-streaming response_json is the full JSON response already.
             yield from events
+            yield from _replay_events(self, response, None)
             return
         chunks: List[Any] = []
         try:
@@ -765,6 +992,7 @@ class VeniceChat(CatalogOptionsMixin, Chat):
         finally:
             events.close()
         _add_stream_metadata(response, chunks)
+        yield from _replay_events(self, response, chunks)
 
     def build_kwargs(self, prompt, stream):
         warn_deprecated(self)
@@ -772,13 +1000,15 @@ class VeniceChat(CatalogOptionsMixin, Chat):
             self.Options.model_validate(prompt.options.model_dump())
         prompt, server_side_tools = _split_server_side_tools(prompt)
         base_kwargs = super().build_kwargs(prompt, stream)
+        # Applied to the messages by build_messages(), not a request field.
+        base_kwargs.pop("cache_control", None)
         base_kwargs = _apply_server_side_tools(base_kwargs, server_side_tools)
         return _build_venice_kwargs(
             self.model_id, self.supports_web_search, self.supports_x_search, base_kwargs
         )
 
 
-class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
+class AsyncVeniceChat(_VeniceMessages, CatalogOptionsMixin, AsyncChat):
     """Venice AI async chat model."""
 
     needs_key = "venice"
@@ -792,6 +1022,7 @@ class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
         *args,
         supports_web_search: bool = False,
         supports_x_search: bool = False,
+        video: bool = False,
         model_spec=None,
         **kwargs,
     ):
@@ -808,6 +1039,7 @@ class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
         self.catalog_policy = normalize_policy("text", self.model_spec)
         self.supports_web_search = supports_web_search
         self.supports_x_search = supports_x_search
+        _add_media_types(self, video)
 
     def __str__(self):  # type: ignore[invalid-argument-type]
         return f"Venice Chat: {self.model_id}"
@@ -845,6 +1077,8 @@ class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
                 # Non-streaming response_json is the full JSON response already.
                 async for event in events:
                     yield event
+                for event in _replay_events(self, response, None):
+                    yield event
                 return
             chunks: List[Any] = []
             first: List[Any] = []
@@ -862,6 +1096,8 @@ class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
         finally:
             await events.aclose()
         _add_stream_metadata(response, chunks)
+        for event in _replay_events(self, response, chunks):
+            yield event
 
     def build_kwargs(self, prompt, stream):
         warn_deprecated(self)
@@ -869,6 +1105,8 @@ class AsyncVeniceChat(CatalogOptionsMixin, AsyncChat):
             self.Options.model_validate(prompt.options.model_dump())
         prompt, server_side_tools = _split_server_side_tools(prompt)
         base_kwargs = super().build_kwargs(prompt, stream)
+        # Applied to the messages by build_messages(), not a request field.
+        base_kwargs.pop("cache_control", None)
         base_kwargs = _apply_server_side_tools(base_kwargs, server_side_tools)
         return _build_venice_kwargs(
             self.model_id, self.supports_web_search, self.supports_x_search, base_kwargs

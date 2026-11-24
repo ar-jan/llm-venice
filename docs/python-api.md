@@ -217,6 +217,8 @@ print(chain.text())
 
 - See [CLI reference — Venice options](cli.md#venice-options) for how `enable_x_search`, `VeniceXSearch`, and `VeniceWebSearch` interact.
 - `response.response_json` keeps Venice's response fields (such as `venice_parameters.web_search_citations`, `cost` and `reasoning_content`) for streamed responses too; see [CLI reference — Response metadata](cli.md#response-metadata).
+- On later turns, Gemini thought signatures (`thought_signature`, `extra_content`, `reasoning_details`, and tool calls' `thought_signature`) go back to the model that sent them. They are kept on the assistant message as a reasoning part with empty text whose `provider_metadata["venice"]` holds them.
+- `cache_control="5m"` or `"1h"` marks the system prompt and newest message as prompt-cache breakpoints.
 
 ### Responses API models
 
