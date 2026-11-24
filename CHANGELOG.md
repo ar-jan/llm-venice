@@ -4,6 +4,10 @@
 
 ### New features
 
+- `list_model_traits()` and `get_model_compatibility_mapping()` client methods, with
+  `llm venice traits` and `llm venice compatibility-mapping`, show which model each trait
+  selects and which Venice model serves another provider's model name, optionally for
+  one model type (`type=`, `--type`).
 - `multi_edit_image()` client methods and the `llm venice multi-edit IMAGE... -p PROMPT`
   command for `/image/multi-edit`, editing a base image with layers or masks. Local
   images are uploaded as files, or sent inline when any image is a URL. It takes the

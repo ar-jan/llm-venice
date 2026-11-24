@@ -916,6 +916,27 @@
         "images"
       ],
       "description": "Edit an image by compositing multiple layered input image files (up to the per-model maximum) with a single prompt. Only file uploads are supported with multipart/form-data."
+    },
+    "ModelTraitSchema": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "List of available models",
+      "example": {
+        "default": "zai-org-glm-5-1",
+        "fastest": "kimi-k2-6"
+      }
+    },
+    "ModelCompatibilitySchema": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "List of available models",
+      "example": {
+        "gpt-4o": "openai-gpt-4o-2024-11-20"
+      }
     }
   },
   "resources": {
@@ -4101,6 +4122,170 @@
           }
         }
       }
+    },
+    "GET /models/traits": {
+      "requestBody": null,
+      "response": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/ModelTraitSchema"
+                },
+                "object": {
+                  "type": "string",
+                  "enum": [
+                    "list"
+                  ]
+                },
+                "type": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "asr",
+                        "decision",
+                        "embedding",
+                        "image",
+                        "music",
+                        "text",
+                        "tts",
+                        "upscale",
+                        "inpaint",
+                        "video"
+                      ]
+                    },
+                    {
+                      "type": "string",
+                      "enum": [
+                        "all",
+                        "code"
+                      ]
+                    }
+                  ],
+                  "description": "Type of models returned.",
+                  "example": "text"
+                }
+              },
+              "required": [
+                "data",
+                "object",
+                "type"
+              ]
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "asr",
+              "decision",
+              "embedding",
+              "image",
+              "music",
+              "text",
+              "tts",
+              "upscale",
+              "inpaint",
+              "video"
+            ],
+            "default": "text",
+            "description": "Filter models by type.",
+            "example": "text"
+          },
+          "required": false,
+          "name": "type",
+          "in": "query"
+        }
+      ]
+    },
+    "GET /models/compatibility_mapping": {
+      "requestBody": null,
+      "response": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/ModelCompatibilitySchema"
+                },
+                "object": {
+                  "type": "string",
+                  "enum": [
+                    "list"
+                  ]
+                },
+                "type": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "asr",
+                        "decision",
+                        "embedding",
+                        "image",
+                        "music",
+                        "text",
+                        "tts",
+                        "upscale",
+                        "inpaint",
+                        "video"
+                      ]
+                    },
+                    {
+                      "type": "string",
+                      "enum": [
+                        "all",
+                        "code"
+                      ]
+                    }
+                  ],
+                  "description": "Type of models returned.",
+                  "example": "text"
+                }
+              },
+              "required": [
+                "data",
+                "object",
+                "type"
+              ]
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "asr",
+              "decision",
+              "embedding",
+              "image",
+              "music",
+              "text",
+              "tts",
+              "upscale",
+              "inpaint",
+              "video"
+            ],
+            "default": "text",
+            "description": "Filter models by type.",
+            "example": "text"
+          },
+          "required": false,
+          "name": "type",
+          "in": "query"
+        }
+      ]
     }
   }
 }

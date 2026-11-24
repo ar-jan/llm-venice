@@ -23,6 +23,17 @@ Re-run it whenever:
 - Deprecated models have been removed.
 - Model capabilities, voices, or parameter limits have changed.
 
+### Model traits and compatibility mappings
+
+```bash
+llm venice traits                         # trait -> model ID, such as default or most_uncensored
+llm venice traits --type image
+llm venice compatibility-mapping          # other providers' model names -> Venice model IDs
+llm venice compatibility-mapping --type embedding
+```
+
+Both print Venice's JSON response. `-t/--type` picks the model type (`text` when omitted); `traits` also accepts `all` and `code`.
+
 ## Venice options
 
 Venice-specific parameters are passed with `llm`'s standard `-o/--option KEY VALUE` flag. Run `llm models --query <model> --options` to see every option and limit accepted by a given model.

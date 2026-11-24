@@ -324,6 +324,24 @@ def parse_text_parser(
     return resource(json_object(response, action), AugmentTextParserResponse, action)
 
 
+class ModelTypeFilter(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Free-form like list_models(): Venice adds model types over time.
+    type: str | None = Field(default=None, min_length=1, strict=True)
+
+    def query(self) -> dict[str, str]:
+        """Omitted, Venice returns text models."""
+        return {"type": self.type} if self.type is not None else {}
+
+
+def _string_map(obj: dict[str, Any], action: str) -> None:
+    data: Any = obj.get("data")
+    if not isinstance(data, dict) or not all(
+        isinstance(value, str) for value in cast(dict[str, Any], data).values()
+    ):
+        raise VeniceResponseError(action, "expected data mapping names to model IDs")
+
+
 CHARACTER_PAGE_LIMIT = 100
 
 
@@ -809,6 +827,17 @@ def json_operation(name: str, inputs: dict[str, Any]) -> tuple[str, str, str, di
             "Listing character reviews",
             {"params": reviews.query()},
         )
+    if name == "model_traits":
+        params = ModelTypeFilter.model_validate(inputs).query()
+        return "GET", "models/traits", "Fetching model traits", {"params": params}
+    if name == "model_compatibility":
+        params = ModelTypeFilter.model_validate(inputs).query()
+        return (
+            "GET",
+            "models/compatibility_mapping",
+            "Fetching model compatibility mapping",
+            {"params": params},
+        )
     if name == "image_styles":
         return "GET", "image/styles", "Listing image styles", {}
     if name == "keys":
@@ -886,6 +915,8 @@ def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[st
         if items and not valid:
             raise VeniceResponseError(action, "no usable models returned")
         obj = {**obj, "data": valid}
+    elif name in ("model_traits", "model_compatibility"):
+        _string_map(obj, action)
     elif name == "image_styles":
         if not all(isinstance(item, str) for item in list_data(obj, action)):
             raise VeniceResponseError(action, "image styles must be strings")

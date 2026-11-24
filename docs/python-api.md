@@ -76,6 +76,8 @@ JSON methods unwrap Venice's `data` envelope and return ordinary typed dictionar
 | Method | Returns | Notes |
 |---|---|---|
 | `list_models(type="all")` | `list[ModelInfo]` | Filters by model type (e.g. `"text"`, `"image"`, `"tts"`). Skips malformed entries. |
+| `list_model_traits(type=None)` | `dict[str, str]` | Maps each trait (such as `default` or `most_uncensored`) to a model ID. `type` picks the model type; Venice uses `text` when omitted, and also accepts `all` and `code`. |
+| `get_model_compatibility_mapping(type=None)` | `dict[str, str]` | Maps other providers' model names (such as `gpt-4o`) to the Venice model that serves them; `type` as above. |
 | `list_characters(web_enabled=None, adult=None, pro=None, categories=None, tags=None, model_ids=None, search=None, sort_by=None, sort_order=None, limit=None, offset=None)` | `list[Character]` | Returns one page (Venice default 50, max 100). Stop when a page is shorter than `limit`. Unset filters are not sent; `categories`, `tags` and `model_ids` take up to 20 values each, and `sort_by` takes the `CharacterSortBy` values. (`llm venice characters` fetches all pages.) |
 | `get_character(slug)` | `Character` | One public character, with the same fields as a listed one. |
 | `list_character_reviews(slug, page=None, page_size=None)` | `CharacterReviewPage` | One page of public reviews (Venice default 20, max 100, pages from 1). Returns the page, not just the reviews: `data`, `pagination` (`page`, `pageSize`, `total`, `totalPages`) and `summary` (`averageRating`, `totalReviews`). |

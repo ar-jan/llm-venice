@@ -201,6 +201,21 @@ class VeniceClient(_Configuration):
         """Fetch catalog resources, skipping malformed entries; empty filtered results are valid."""
         return cast(list[ModelInfo], self._json_operation("models", type=type)["data"])
 
+    def list_model_traits(self, *, type: str | None = None) -> dict[str, str]:
+        """Map each trait, such as ``default`` or ``most_uncensored``, to its model ID.
+
+        ``type`` picks a model type (Venice's default: ``text``); ``all`` and ``code``
+        also work.
+        """
+        return cast(dict[str, str], self._json_operation("model_traits", type=type)["data"])
+
+    def get_model_compatibility_mapping(self, *, type: str | None = None) -> dict[str, str]:
+        """Map other providers' model names, such as ``gpt-4o``, to Venice model IDs.
+
+        ``type`` picks a model type (Venice's default: ``text``).
+        """
+        return cast(dict[str, str], self._json_operation("model_compatibility", type=type)["data"])
+
     def list_characters(
         self,
         *,
@@ -642,6 +657,23 @@ class AsyncVeniceClient(_Configuration):
     async def list_models(self, *, type: str = "all") -> list[ModelInfo]:
         """Fetch catalog resources, skipping malformed entries; empty filtered results are valid."""
         return cast(list[ModelInfo], (await self._json_operation("models", type=type))["data"])
+
+    async def list_model_traits(self, *, type: str | None = None) -> dict[str, str]:
+        """Map each trait, such as ``default`` or ``most_uncensored``, to its model ID.
+
+        ``type`` picks a model type (Venice's default: ``text``); ``all`` and ``code``
+        also work.
+        """
+        return cast(dict[str, str], (await self._json_operation("model_traits", type=type))["data"])
+
+    async def get_model_compatibility_mapping(self, *, type: str | None = None) -> dict[str, str]:
+        """Map other providers' model names, such as ``gpt-4o``, to Venice model IDs.
+
+        ``type`` picks a model type (Venice's default: ``text``).
+        """
+        return cast(
+            dict[str, str], (await self._json_operation("model_compatibility", type=type))["data"]
+        )
 
     async def list_characters(
         self,
