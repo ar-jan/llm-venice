@@ -196,6 +196,26 @@ Buffered media results expose raw bytes on `.data` and report the actual format 
 - **Moderation flags**: `ImageResult.content_violation`, `content_policy_violation_count`, and `blurred` are independent facts. The library preserves every returned image, including moderated ones. (Plugin adapters suppress whole-response content violations, while still saving partial outputs when only some variants were omitted.)
 - **Response headers**: `ImageResult.enhanced_prompt` is the rewritten prompt, decoded from `x-venice-enhanced-prompt`, when `enhance_prompt` produced one. `ImageResult.deprecation` is a `llm_venice.results.ModelDeprecation` (`deprecated`, `warning`, `date`, `replacement`) when Venice sent model deprecation headers, otherwise `None`. Clients only report these; the image model adapters print the deprecation warning. Unexpected values in these headers never fail a generation.
 
+### Image editing
+
+```python
+from llm_venice import VeniceClient
+
+with VeniceClient() as client:
+    result = client.edit_image(
+        "photo.jpg",
+        "change the sky to sunrise",
+        model="qwen-image-2-1-turbo-edit",
+        aspect_ratio="16:9",
+        safe_mode=False,
+    )
+    result.save(f"photo_edited.{result.image.format}")
+```
+
+- `edit_image(image, prompt, *, model=None, **options)` returns an `ImageEditResult`. `image` is a path, `bytes` or binary file object, uploaded, or a `str` starting with `http://` or `https://`, which Venice fetches (a `Path` is always a local file). `model` is an edit model ID (catalog type `inpaint`); omitted, Venice uses its default edit model.
+- The options, typed by `llm_venice.types.ImageEditOptions`, are `aspect_ratio` (`auto` or a ratio such as `16:9` or `19.5:9`), `resolution` (such as `2K`), `output_format` (`png`, `jpeg` or `webp`), `safe_mode`, `transparent_background` (PNG or WebP only), `enhance_prompt`, `disable_prompt_optimization_thinking` and `anon_user_id`. Options left out use Venice's defaults; note that Venice's `safe_mode` default is `True`. The client does not check them against the catalog; `llm venice edit` does.
+- `ImageEditResult` holds the `image` (a `GeneratedImage`) and the facts from Venice's response headers: `model_id` and `model_name` of the model that made the edit, `content_violation` and `blurred`, `enhanced_prompt` (decoded), and `deprecation` (a `ModelDeprecation`, or `None`). The image is kept even when it is flagged. `result.save(path)` saves it to an exact path.
+
 ### Save semantics
 
 - **Exact file path**: `GeneratedImage.save(path)`, `SpeechResult.save(path)`, `SpeechStream.save(path)`, and `AsyncSpeechStream.save(path)` write to the exact `path` given.

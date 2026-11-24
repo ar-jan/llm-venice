@@ -4,6 +4,16 @@
 
 ### New features
 
+- `edit_image()` client methods and the `llm venice edit IMAGE PROMPT` command for
+  `/image/edit`. The image is a path, bytes or binary file, uploaded, or an `http(s)`
+  URL that Venice fetches. Options cover the model (Venice's default edit model when
+  omitted), aspect ratio (`auto` or any ratio such as `19.5:9`), resolution, output
+  format, safe mode, transparent background, prompt enhancement, skipping
+  prompt-optimization thinking and `anon_user_id`. The result, an `ImageEditResult`,
+  reports the model ID and name, moderation flags, the enhanced prompt and deprecation
+  headers. The command checks options against the model's cached catalog entry, keeps
+  safe mode off unless `--safe-mode` is given, and does not save an image flagged as a
+  content violation.
 - `remove_image_background()` client methods and the `llm venice background-remove`
   command remove an image's background, returning a transparent PNG. The image is a
   path, bytes or binary file, uploaded, or an `http(s)` URL that Venice fetches, with

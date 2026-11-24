@@ -26,7 +26,14 @@ from typing_extensions import Self, TypeGuard, get_type_hints
 
 from .errors import VeniceResponseError
 from .params import AnonUserId, ImageParams, SpeechParams, copy_params, parameter_body
-from .results import NO_AUDIO, GeneratedImage, ImageResult, ModelDeprecation, SpeechResult
+from .results import (
+    NO_AUDIO,
+    GeneratedImage,
+    ImageEditResult,
+    ImageResult,
+    ModelDeprecation,
+    SpeechResult,
+)
 from .types import (
     AugmentSearchProvider,
     AugmentTextFormat,
@@ -37,6 +44,7 @@ from .types import (
     CharacterSortOrder,
     EmbeddingEncodingFormat,
     EmbeddingResponse,
+    ImageOutputFormat,
     ModelInfo,
 )
 
@@ -526,10 +534,10 @@ def media_format(
     raise VeniceResponseError("Reading media", "unknown output format")
 
 
-def _header_bool(response: httpx2.Response, name: str) -> bool:
+def _header_bool(response: httpx2.Response, name: str, action: str = "Generating image") -> bool:
     value = response.headers.get(name, "false").lower()
     if value not in {"true", "false"}:
-        raise VeniceResponseError("Generating image", f"invalid {name} header")
+        raise VeniceResponseError(action, f"invalid {name} header")
     return value == "true"
 
 
@@ -619,6 +627,77 @@ def parse_binary_image(response: httpx2.Response, action: str) -> GeneratedImage
 
 def parse_upscale(response: httpx2.Response) -> GeneratedImage:
     return parse_binary_image(response, "Upscaling image")
+
+
+IMAGE_EDIT_ACTION = "Editing image"
+# "auto", or a ratio of two decimal numbers such as 16:9 or 19.5:9.
+ASPECT_RATIO_PATTERN = r"^(?:auto|\d+(?:\.\d+)?:\d+(?:\.\d+)?)$"
+
+
+class ImageEditInput(BaseModel):
+    """Settings shared by single and multi-image edits; None leaves a field out."""
+
+    model_config = ConfigDict(extra="forbid")
+    prompt: str = Field(min_length=1, max_length=32768)
+    # Free-form: the edit model list changes too often to keep an enum.
+    model: str | None = Field(default=None, min_length=1)
+    aspect_ratio: str | None = Field(default=None, max_length=32, pattern=ASPECT_RATIO_PATTERN)
+    resolution: str | None = Field(default=None, min_length=1, max_length=10)
+    output_format: ImageOutputFormat | None = None
+    safe_mode: bool | None = Field(default=None, strict=True)
+    transparent_background: bool | None = Field(default=None, strict=True)
+    enhance_prompt: bool | None = Field(default=None, strict=True)
+    disable_prompt_optimization_thinking: bool | None = Field(default=None, strict=True)
+    anon_user_id: AnonUserId | None = None
+
+    @model_validator(mode="after")
+    def _transparent_format(self) -> Self:
+        if self.transparent_background and self.output_format == "jpeg":
+            raise ValueError("transparent_background requires output_format png or webp")
+        return self
+
+    def body(self, model_key: str = "model") -> dict[str, Any]:
+        """The JSON fields, naming the model with ``model_key`` (multi-edit uses modelId)."""
+        body = self.model_dump(exclude_none=True, exclude={"model"})
+        if self.model is not None:
+            body = {model_key: self.model, **body}
+        return body
+
+
+class SingleImageEditInput(ImageEditInput):
+    image_url: WebUrl | None = None
+
+    def body(self, model_key: str = "model") -> dict[str, Any]:
+        body = super().body(model_key)
+        url = body.pop("image_url", None)
+        return {"image": url, **body} if url is not None else body
+
+
+def form_fields(body: dict[str, Any]) -> dict[str, str]:
+    """Encode JSON fields as multipart form values, with booleans as true/false."""
+    return {
+        key: ("true" if value else "false") if isinstance(value, bool) else str(value)
+        for key, value in body.items()
+    }
+
+
+def parse_image_edit(response: httpx2.Response, action: str) -> ImageEditResult:
+    """Read an edited image and the model, moderation and prompt facts in its headers."""
+    violation = _header_bool(response, "x-venice-is-content-violation", action)
+    blurred = _header_bool(response, "x-venice-is-blurred", action)
+    if not response.content and violation:
+        raise VeniceResponseError(action, "Venice flagged a content violation and sent no image")
+    image = parse_binary_image(response, action)
+    enhanced = _header_text(response, "x-venice-enhanced-prompt")
+    return ImageEditResult(
+        image,
+        model_id=_header_text(response, "x-venice-model-id"),
+        model_name=_header_text(response, "x-venice-model-name"),
+        content_violation=violation,
+        blurred=blurred,
+        enhanced_prompt=unquote(enhanced) if enhanced else None,
+        deprecation=_deprecation(response),
+    )
 
 
 BACKGROUND_ACTION = "Removing image background"

@@ -4,7 +4,14 @@ import llm
 
 from .client import VeniceClient, AsyncVeniceClient
 from .params import ImageParams, SpeechParams
-from .results import GeneratedImage, ImageResult, SpeechResult, SpeechStream, AsyncSpeechStream
+from .results import (
+    GeneratedImage,
+    ImageEditResult,
+    ImageResult,
+    SpeechResult,
+    SpeechStream,
+    AsyncSpeechStream,
+)
 from .errors import (
     VeniceError,
     VeniceAPIError,
@@ -65,6 +72,7 @@ __all__ = [
     "SpeechParams",
     "GeneratedImage",
     "ImageResult",
+    "ImageEditResult",
     "SpeechResult",
     "SpeechStream",
     "AsyncSpeechStream",

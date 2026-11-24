@@ -84,6 +84,30 @@ class ImageResult:
 
 
 @dataclass(frozen=True)
+class ImageEditResult:
+    """An edited image and what Venice's response headers reported about it.
+
+    ``model_id`` and ``model_name`` name the model that made the edit, when Venice
+    says. ``content_violation`` and ``blurred`` are independent moderation facts; the
+    image is kept either way. ``enhanced_prompt`` is the rewritten prompt when
+    ``enhance_prompt`` applied a rewrite, and ``deprecation`` is set when Venice
+    reported one for the model.
+    """
+
+    image: GeneratedImage
+    model_id: str | None = None
+    model_name: str | None = None
+    content_violation: bool = False
+    blurred: bool = False
+    enhanced_prompt: str | None = None
+    deprecation: ModelDeprecation | None = None
+
+    def save(self, path: str | os.PathLike[str], *, overwrite: bool = False) -> Path:
+        """Save the image to an exact path; collisions raise unless overwrite is requested."""
+        return self.image.save(path, overwrite=overwrite)
+
+
+@dataclass(frozen=True)
 class SpeechResult:
     """Buffered speech with its actual output format; no implicit file writes."""
 

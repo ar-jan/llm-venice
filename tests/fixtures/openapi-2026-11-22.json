@@ -619,6 +619,106 @@
       ],
       "additionalProperties": false,
       "description": "Remove the background from an uploaded image file."
+    },
+    "EditImageRequest": {
+      "type": "object",
+      "properties": {
+        "anon_user_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[\\x20-\\x7E]+$",
+          "description": "Optional identifier for the API customer's end user. Combined with the Venice user id when attributing the request to upstream providers. Distinct from the discarded OpenAI `user` field. Must be printable ASCII and must not contain `||`.",
+          "example": "end-user-123"
+        },
+        "aspect_ratio": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^(?:auto|\\d+(?:\\.\\d+)?:\\d+(?:\\.\\d+)?)$",
+          "description": "The aspect ratio for the output image. Use 'auto' or omit this parameter to infer the closest supported aspect ratio from the input image when explicit sizing is required by the model. Supported values vary by model - check GET /api/v1/models for model-specific options.",
+          "example": 969
+        },
+        "disable_prompt_optimization_thinking": {
+          "type": "boolean",
+          "description": "Skip the model's prompt-optimization thinking step for faster generation. Only supported by models with `supportsOptimizePromptThinking`; ignored by others. Omit to use the model default.",
+          "example": false
+        },
+        "enhance_prompt": {
+          "type": "boolean",
+          "description": "Rewrite the edit prompt using the input image before editing to add clarifying detail. Additional credits are charged when a rewrite is generated. Adds up to ~30 seconds. When enhancement is applied, the final prompt is returned URL-encoded in the `x-venice-enhanced-prompt` response header. Defaults to false.",
+          "example": false
+        },
+        "resolution": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10,
+          "description": "Resolution tier for the output image (e.g. \"1K\", \"2K\", \"4K\"). Supported values vary by model - check GET /api/v1/models for model-specific options. Defaults to \"1K\" when not specified.",
+          "example": "1K"
+        },
+        "image": {
+          "anyOf": [
+            {},
+            {
+              "type": "string"
+            },
+            {
+              "type": "string",
+              "format": "uri"
+            }
+          ],
+          "description": "The image to edit. Can be either a file upload, a base64-encoded string, or a URL starting with http:// or https://. Image dimensions must be at least 65536 pixels and must not exceed 33177600 pixels. File size must be less than 25MB."
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "default": "firered-image-edit",
+          "description": "The model ID to use for image editing."
+        },
+        "modelId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Deprecated: Use \"model\" instead. The model ID to use for image editing.",
+          "deprecated": true
+        },
+        "output_format": {
+          "type": "string",
+          "enum": [
+            "jpeg",
+            "png",
+            "webp"
+          ],
+          "description": "Output format for the edited image. Accepts jpeg, jpg, png, or webp. When omitted, the format is inferred from resolution: PNG for 1K edits and JPEG for 2K/4K edits, or PNG at any resolution when transparent_background is true.",
+          "example": "png"
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768,
+          "description": "The text directions to edit or modify the image. Short, descriptive prompts work best (e.g., \"remove the tree\", \"change the sky to sunrise\"). Character limit is model specific and is listed in the promptCharacterLimit setting in the model list endpoint.",
+          "example": "Change the color of the sky to a sunrise"
+        },
+        "safe_mode": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to blur images classified as adult content. Defaults to true. Set to false to receive unblurred output. No Pro subscription is required, and the mature filter setting in the Venice app does not affect this. The x-venice-is-blurred response header reports whether the returned image was blurred.",
+          "example": false
+        },
+        "transparent_background": {
+          "type": "boolean",
+          "description": "Return the edited image with a transparent background (alpha channel). Only supported by models with `supportsTransparentBackground: true` in their constraints (see GET /api/v1/models), and requires `output_format` png or webp when set; otherwise the request is rejected. Omit or set to false to keep the model default background.",
+          "example": false
+        }
+      },
+      "required": [
+        "image",
+        "prompt"
+      ],
+      "additionalProperties": false,
+      "description": "Edit an image based on the supplied prompt.",
+      "example": {
+        "prompt": "Colorize",
+        "image": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAAIGNIUk0A..."
+      }
     }
   },
   "resources": {
@@ -3411,6 +3511,208 @@
         },
         "content": {
           "image/png": {
+            "schema": {
+              "format": "binary",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "POST /image/edit": {
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/EditImageRequest"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "modelId": {
+                      "type": "string",
+                      "enum": [
+                        "firered-image-edit",
+                        "seedream-v5-5-edit",
+                        "qwen-edit-uncensored",
+                        "grok-imagine-edit",
+                        "grok-imagine-image-2-0-edit",
+                        "krea-3-edit",
+                        "qwen-image-2-edit",
+                        "qwen-image-2-pro-edit",
+                        "wan-2-7-pro-edit",
+                        "flux-2-max-edit",
+                        "flux-3-image-edit",
+                        "gpt-image-2-5-flare-edit",
+                        "gpt-image-2-5-sunburst-edit",
+                        "gpt-image-2-6-sunburst-edit",
+                        "gpt-image-2-6-flare-edit",
+                        "gpt-image-2-edit",
+                        "gpt-image-1-5-edit",
+                        "ideogram-v4-5-edit",
+                        "nano-banana-2-edit",
+                        "nano-banana-2-1-edit",
+                        "nano-banana-pro-edit",
+                        "nano-banana-2-lite-edit",
+                        "luma-uni-1-edit",
+                        "luma-uni-1-max-edit",
+                        "minimax-h3-image-edit",
+                        "muse-image-edit",
+                        "seedream-v5-lite-edit",
+                        "seedream-v5-pro-edit",
+                        "seedream-v4-edit",
+                        "qwen-image-3-edit",
+                        "qwen-image-3-pro-edit",
+                        "qwen-image-2-1-turbo-edit",
+                        "qwen-image-2-1-pro-edit",
+                        "kling-v4-image-edit",
+                        "mai-image-2-7-edit",
+                        "mai-image-2-7-flash-edit"
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "multipart/form-data": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/EditImageRequest"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "modelId": {
+                      "type": "string",
+                      "enum": [
+                        "firered-image-edit",
+                        "seedream-v5-5-edit",
+                        "qwen-edit-uncensored",
+                        "grok-imagine-edit",
+                        "grok-imagine-image-2-0-edit",
+                        "krea-3-edit",
+                        "qwen-image-2-edit",
+                        "qwen-image-2-pro-edit",
+                        "wan-2-7-pro-edit",
+                        "flux-2-max-edit",
+                        "flux-3-image-edit",
+                        "gpt-image-2-5-flare-edit",
+                        "gpt-image-2-5-sunburst-edit",
+                        "gpt-image-2-6-sunburst-edit",
+                        "gpt-image-2-6-flare-edit",
+                        "gpt-image-2-edit",
+                        "gpt-image-1-5-edit",
+                        "ideogram-v4-5-edit",
+                        "nano-banana-2-edit",
+                        "nano-banana-2-1-edit",
+                        "nano-banana-pro-edit",
+                        "nano-banana-2-lite-edit",
+                        "luma-uni-1-edit",
+                        "luma-uni-1-max-edit",
+                        "minimax-h3-image-edit",
+                        "muse-image-edit",
+                        "seedream-v5-lite-edit",
+                        "seedream-v5-pro-edit",
+                        "seedream-v4-edit",
+                        "qwen-image-3-edit",
+                        "qwen-image-3-pro-edit",
+                        "qwen-image-2-1-turbo-edit",
+                        "qwen-image-2-1-pro-edit",
+                        "kling-v4-image-edit",
+                        "mai-image-2-7-edit",
+                        "mai-image-2-7-flash-edit"
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "response": {
+        "description": "OK",
+        "headers": {
+          "X-Balance-Remaining": {
+            "description": "Remaining x402 credit balance in USD after this request (only present for x402 auth).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "4.230000"
+            }
+          },
+          "x-venice-is-content-violation": {
+            "description": "Indicates if the generated image does not meet Venice terms of service.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          "x-venice-model-id": {
+            "description": "The ID of the model used for the edit.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          "x-venice-model-name": {
+            "description": "The friendly name of the model used for the edit.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          "x-venice-model-deprecation-warning": {
+            "description": "A warning that the model is scheduled for deprecation",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          "x-venice-model-deprecation-date": {
+            "description": "The date the model is scheduled for deprecation",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "x-venice-deprecated": {
+            "description": "Present and set to \"true\" when the model is deprecated. Absent otherwise.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
+            }
+          },
+          "x-venice-deprecated-replacement": {
+            "description": "Public API model ID clients should migrate to. Only present when a replacement is published.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "image/png": {
+            "schema": {
+              "format": "binary",
+              "type": "string"
+            }
+          },
+          "image/jpeg": {
+            "schema": {
+              "format": "binary",
+              "type": "string"
+            }
+          },
+          "image/webp": {
             "schema": {
               "format": "binary",
               "type": "string"

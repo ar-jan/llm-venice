@@ -201,6 +201,16 @@ llm venice upscale /path/to/image.jpg
 
 By default this saves `image_upscaled.<ext>` alongside the original without overwriting existing files.
 
+### Image editing
+
+Edit a local image or an image URL with a prompt, using one of the edit models (type `inpaint` in the catalog):
+
+```bash
+llm venice edit photo.jpg "change the sky to sunrise" -m qwen-image-2-1-turbo-edit
+```
+
+The result is saved as `photo_edited.<ext>`. See [CLI reference — Image editing](https://github.com/ar-jan/llm-venice/blob/develop/docs/cli.md#image-editing-llm-venice-edit) for aspect ratios, resolutions, transparency, and catalog checks.
+
 ### Background removal
 
 Remove the background of a local image or an image URL, saving a transparent PNG (`image_nobg.png`):

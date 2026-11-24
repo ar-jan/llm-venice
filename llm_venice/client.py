@@ -20,6 +20,7 @@ from .params import ImageParams, SpeechParams
 from .results import (
     AsyncSpeechStream,
     GeneratedImage,
+    ImageEditResult,
     ImageResult,
     SpeechResult,
     SpeechStream,
@@ -41,6 +42,7 @@ from .types import (
     CreatedApiKey,
     EmbeddingEncodingFormat,
     EmbeddingResponse,
+    ImageEditOptions,
     ModelInfo,
     RateLimitLogEntry,
     RateLimits,
@@ -456,6 +458,35 @@ class VeniceClient(_Configuration):
         response = self._send("POST", "image/background-remove", ep.BACKGROUND_ACTION, **request)
         return ep.parse_binary_image(response, ep.BACKGROUND_ACTION)
 
+    def edit_image(
+        self,
+        image: ImageInput,
+        prompt: str,
+        *,
+        model: str | None = None,
+        **options: Unpack[ImageEditOptions],
+    ) -> ImageEditResult:
+        """Edit an image as ``prompt`` directs, returning the image and response facts.
+
+        ``image`` is a path, bytes or borrowed binary file, uploaded as a file, or a
+        str starting with http:// or https://, which Venice fetches. ``model`` is an
+        edit model ID; omitted, Venice uses its default edit model. Options left out
+        use Venice's defaults (see ``ImageEditOptions``). No catalog checks are made.
+        """
+        self._ensure_open()
+        url = image if ep.is_image_url(image) else None
+        inputs = ep.SingleImageEditInput.model_validate(
+            {**options, "prompt": prompt, "model": model, "image_url": url}
+        )
+        # A URL goes as JSON; a local image as a multipart upload.
+        request: dict[str, Any] = (
+            {"json": inputs.body()}
+            if url
+            else {"data": ep.form_fields(inputs.body()), "files": {"image": _image_file(image)}}
+        )
+        response = self._send("POST", "image/edit", ep.IMAGE_EDIT_ACTION, **request)
+        return ep.parse_image_edit(response, ep.IMAGE_EDIT_ACTION)
+
     def generate_speech(
         self,
         model: str,
@@ -854,6 +885,34 @@ class AsyncVeniceClient(_Configuration):
             "POST", "image/background-remove", ep.BACKGROUND_ACTION, **request
         )
         return ep.parse_binary_image(response, ep.BACKGROUND_ACTION)
+
+    async def edit_image(
+        self,
+        image: ImageInput,
+        prompt: str,
+        *,
+        model: str | None = None,
+        **options: Unpack[ImageEditOptions],
+    ) -> ImageEditResult:
+        """Edit an image as ``prompt`` directs, returning the image and response facts.
+
+        ``image`` is a path, bytes or borrowed binary file, uploaded as a file, or a
+        str starting with http:// or https://, which Venice fetches. ``model`` is an
+        edit model ID; omitted, Venice uses its default edit model. Options left out
+        use Venice's defaults (see ``ImageEditOptions``). No catalog checks are made.
+        """
+        self._ensure_open()
+        url = image if ep.is_image_url(image) else None
+        inputs = ep.SingleImageEditInput.model_validate(
+            {**options, "prompt": prompt, "model": model, "image_url": url}
+        )
+        # A URL goes as JSON; a local image as a multipart upload.
+        request: dict[str, Any] = {"json": inputs.body()}
+        if not url:
+            file = await async_file_call(_image_file, image)
+            request = {"data": ep.form_fields(inputs.body()), "files": {"image": file}}
+        response = await self._send("POST", "image/edit", ep.IMAGE_EDIT_ACTION, **request)
+        return ep.parse_image_edit(response, ep.IMAGE_EDIT_ACTION)
 
     async def generate_speech(
         self,

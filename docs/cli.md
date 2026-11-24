@@ -249,6 +249,33 @@ llm venice image-styles
 llm -m venice/qwen-image-3 -o style_preset "Watercolor" "A Dutch windmill"
 ```
 
+### Image editing (`llm venice edit`)
+
+Edit an image as a prompt directs:
+
+```bash
+llm venice edit photo.jpg "change the sky to sunrise" -m qwen-image-2-1-turbo-edit
+llm venice edit https://example.com/logo.png "remove the text" --format png --transparent-background -m mai-image-2-7-flash-edit
+```
+
+```text
+llm venice edit IMAGE PROMPT... [-m MODEL] [--aspect-ratio RATIO] [--resolution TIER]
+                [--format png|jpeg|webp] [--safe-mode] [--transparent-background]
+                [--enhance-prompt] [--disable-prompt-optimization-thinking]
+                [--anon-user-id ID] [-o/--output-path PATH] [--overwrite]
+```
+
+- `IMAGE` is a local file, uploaded to Venice, or an `http`/`https` URL, which Venice fetches. Multiple `PROMPT` words are joined with spaces.
+- `-m/--model` takes an edit model ID, with or without the `venice/` prefix; Venice uses its default edit model when it is omitted. Edit models are listed as type `inpaint` in the catalog (`llm venice refresh`), and are not `llm` models.
+- When the model is in the cached catalog, its prompt length limit and its aspect ratios, resolutions and transparent-background support are checked before anything is sent. Otherwise Venice checks them.
+- `--aspect-ratio` is `auto` or a ratio such as `16:9`; `auto`, or no ratio, follows the input image. `--resolution` picks a tier such as `1K`, `2K` or `4K`.
+- Without `--format`, Venice returns PNG at 1K and JPEG at higher resolutions, or PNG for a transparent background, which needs PNG or WebP.
+- Safe Venice blurring of adult content is off unless `--safe-mode` is given, as for image models. A blurred result prints a warning.
+- `--enhance-prompt` has Venice rewrite the prompt first, at extra cost, and prints the rewritten prompt to stderr.
+- Saves `<name>_edited.<ext>` next to a local image, or in the current directory for a URL, where `<ext>` matches the returned format. `-o` takes a file name, or a directory for the default name; existing files are kept unless `--overwrite` is given.
+- An image that Venice marks as a content violation is not saved, and the command fails. Model deprecation warnings from Venice are printed to stderr.
+- Each edit is billed, by model and resolution.
+
 ### Background removal (`llm venice background-remove`)
 
 ```text
