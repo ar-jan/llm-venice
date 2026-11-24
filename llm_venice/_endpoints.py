@@ -22,11 +22,18 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from typing_extensions import Self, get_type_hints
+from typing_extensions import Self, TypeGuard, get_type_hints
 
 from .errors import VeniceResponseError
-from .params import ImageParams, SpeechParams, copy_params, parameter_body
-from .results import NO_AUDIO, GeneratedImage, ImageResult, ModelDeprecation, SpeechResult
+from .params import AnonUserId, ImageParams, SpeechParams, copy_params, parameter_body
+from .results import (
+    NO_AUDIO,
+    GeneratedImage,
+    ImageEditResult,
+    ImageResult,
+    ModelDeprecation,
+    SpeechResult,
+)
 from .types import (
     AugmentSearchProvider,
     AugmentTextFormat,
@@ -37,6 +44,8 @@ from .types import (
     CharacterSortOrder,
     EmbeddingEncodingFormat,
     EmbeddingResponse,
+    ImageOutputFormat,
+    ImageQuality,
     ModelInfo,
 )
 
@@ -251,10 +260,18 @@ def _web_url(value: str) -> str:
     return value
 
 
+def is_image_url(image: object) -> TypeGuard[str]:
+    """A str starting with http:// or https:// names an image for Venice to fetch."""
+    return isinstance(image, str) and image[:8].lower().startswith(("http://", "https://"))
+
+
+# Sent as given; Venice fetches the URL, so only its form is checked here.
+WebUrl = Annotated[str, Field(strict=True), AfterValidator(_web_url)]
+
+
 class AugmentScrapeInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    # Sent as given; Venice fetches the page, so only the form is checked here.
-    url: Annotated[str, Field(strict=True), AfterValidator(_web_url)]
+    url: WebUrl
 
 
 TEXT_PARSER_ACTION = "Parsing document"
@@ -518,10 +535,10 @@ def media_format(
     raise VeniceResponseError("Reading media", "unknown output format")
 
 
-def _header_bool(response: httpx2.Response, name: str) -> bool:
+def _header_bool(response: httpx2.Response, name: str, action: str = "Generating image") -> bool:
     value = response.headers.get(name, "false").lower()
     if value not in {"true", "false"}:
-        raise VeniceResponseError("Generating image", f"invalid {name} header")
+        raise VeniceResponseError(action, f"invalid {name} header")
     return value == "true"
 
 
@@ -597,15 +614,120 @@ def parse_image(response: httpx2.Response, model: str, requested: str | None) ->
     )
 
 
-def parse_upscale(response: httpx2.Response) -> GeneratedImage:
+def parse_binary_image(response: httpx2.Response, action: str) -> GeneratedImage:
+    """Read an image returned as the response body, identified by its type or bytes."""
     content_type = response.headers.get("content-type")
     if not response.content:
-        raise VeniceResponseError("Upscaling image", "response did not include an image")
+        raise VeniceResponseError(action, "response did not include an image")
     return GeneratedImage(
         response.content,
         media_format(content_type, response.content, None, image=True),
         content_type,
     )
+
+
+def parse_upscale(response: httpx2.Response) -> GeneratedImage:
+    return parse_binary_image(response, "Upscaling image")
+
+
+IMAGE_EDIT_ACTION = "Editing image"
+# "auto", or a ratio of two decimal numbers such as 16:9 or 19.5:9.
+ASPECT_RATIO_PATTERN = r"^(?:auto|\d+(?:\.\d+)?:\d+(?:\.\d+)?)$"
+
+
+class ImageEditInput(BaseModel):
+    """Settings shared by single and multi-image edits; None leaves a field out."""
+
+    model_config = ConfigDict(extra="forbid")
+    prompt: str = Field(min_length=1, max_length=32768)
+    # Free-form: the edit model list changes too often to keep an enum.
+    model: str | None = Field(default=None, min_length=1)
+    aspect_ratio: str | None = Field(default=None, max_length=32, pattern=ASPECT_RATIO_PATTERN)
+    resolution: str | None = Field(default=None, min_length=1, max_length=10)
+    output_format: ImageOutputFormat | None = None
+    safe_mode: bool | None = Field(default=None, strict=True)
+    transparent_background: bool | None = Field(default=None, strict=True)
+    enhance_prompt: bool | None = Field(default=None, strict=True)
+    disable_prompt_optimization_thinking: bool | None = Field(default=None, strict=True)
+    anon_user_id: AnonUserId | None = None
+
+    @model_validator(mode="after")
+    def _transparent_format(self) -> Self:
+        if self.transparent_background and self.output_format == "jpeg":
+            raise ValueError("transparent_background requires output_format png or webp")
+        return self
+
+    def body(self, model_key: str = "model") -> dict[str, Any]:
+        """The JSON fields, naming the model with ``model_key`` (multi-edit uses modelId)."""
+        body = self.model_dump(exclude_none=True, exclude={"model"})
+        if self.model is not None:
+            body = {model_key: self.model, **body}
+        return body
+
+
+class SingleImageEditInput(ImageEditInput):
+    image_url: WebUrl | None = None
+
+    def body(self, model_key: str = "model") -> dict[str, Any]:
+        body = super().body(model_key)
+        url = body.pop("image_url", None)
+        return {"image": url, **body} if url is not None else body
+
+
+MULTI_EDIT_ACTION = "Editing images"
+
+
+class MultiImageEditInput(ImageEditInput):
+    quality: ImageQuality | None = None
+    # One entry per image, base image first: its URL, or None for a local image.
+    image_urls: list[WebUrl | None] = Field(min_length=1)
+
+    def body(self, model_key: str = "modelId") -> dict[str, Any]:
+        body = super().body(model_key)
+        body.pop("image_urls")
+        return body
+
+
+def data_url(file: tuple[str, bytes] | tuple[str, bytes, str]) -> str:
+    """A local image for a JSON body: a data URL when its type is known, else base64."""
+    encoded = base64.b64encode(file[1]).decode("ascii")
+    return f"data:{file[2]};base64,{encoded}" if len(file) == 3 else encoded
+
+
+def form_fields(body: dict[str, Any]) -> dict[str, str]:
+    """Encode JSON fields as multipart form values, with booleans as true/false."""
+    return {
+        key: ("true" if value else "false") if isinstance(value, bool) else str(value)
+        for key, value in body.items()
+    }
+
+
+def parse_image_edit(response: httpx2.Response, action: str) -> ImageEditResult:
+    """Read an edited image and the model, moderation and prompt facts in its headers."""
+    violation = _header_bool(response, "x-venice-is-content-violation", action)
+    blurred = _header_bool(response, "x-venice-is-blurred", action)
+    if not response.content and violation:
+        raise VeniceResponseError(action, "Venice flagged a content violation and sent no image")
+    image = parse_binary_image(response, action)
+    enhanced = _header_text(response, "x-venice-enhanced-prompt")
+    return ImageEditResult(
+        image,
+        model_id=_header_text(response, "x-venice-model-id"),
+        model_name=_header_text(response, "x-venice-model-name"),
+        content_violation=violation,
+        blurred=blurred,
+        enhanced_prompt=unquote(enhanced) if enhanced else None,
+        deprecation=_deprecation(response),
+    )
+
+
+BACKGROUND_ACTION = "Removing image background"
+
+
+class BackgroundRemoveInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    image_url: WebUrl | None = None
+    anon_user_id: AnonUserId | None = None
 
 
 SPEECH_ACTION = "Generating speech"
@@ -687,6 +809,8 @@ def json_operation(name: str, inputs: dict[str, Any]) -> tuple[str, str, str, di
             "Listing character reviews",
             {"params": reviews.query()},
         )
+    if name == "image_styles":
+        return "GET", "image/styles", "Listing image styles", {}
     if name == "keys":
         return "GET", "api_keys", "Listing API keys", {}
     if name == "rate_limits":
@@ -762,6 +886,9 @@ def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[st
         if items and not valid:
             raise VeniceResponseError(action, "no usable models returned")
         obj = {**obj, "data": valid}
+    elif name == "image_styles":
+        if not all(isinstance(item, str) for item in list_data(obj, action)):
+            raise VeniceResponseError(action, "image styles must be strings")
     elif name == "characters":
         for item in list_data(obj, action):
             resource(item, Character, action)

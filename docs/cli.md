@@ -9,7 +9,7 @@ Detailed behaviour, flags, and edge cases for `llm-venice` on the command line. 
 - [Search and tools](#search-and-tools)
 - [Embeddings](#embeddings)
 - [Text-to-speech](#text-to-speech)
-- [Image generation and upscaling](#image-generation-and-upscaling)
+- [Image generation and editing](#image-generation-and-editing)
 - [Characters and API keys](#characters-and-api-keys)
 - [Debugging HTTP requests](#debugging-http-requests)
 
@@ -226,7 +226,7 @@ The `-o stdout true` option on `llm -m venice/tts-...` was removed in 0.10:
 | `llm -m venice/tts-kokoro "Hello." -o stdout true -o response_format mp3 > out.mp3` | `llm venice tts "Hello." --format mp3 -o - > out.mp3` |
 | `llm -m venice/tts-kokoro "Hello." -o stdout true -o output_dir . -o output_filename out.mp3` | `llm venice tts "Hello." -o - \| tee out.mp3`, or `-o out.mp3` |
 
-## Image generation and upscaling
+## Image generation and editing
 
 ### Image generation
 
@@ -239,6 +239,67 @@ The `-o stdout true` option on `llm -m venice/tts-...` was removed in 0.10:
 - `-o anon_user_id ID` identifies your end user to upstream providers, on image and chat models. It takes 1 to 128 printable ASCII characters, without `||`.
 - When Venice reports that an image model is deprecated or scheduled for deprecation, a warning is printed to stderr once per model, naming the replacement model when there is one.
 - When Venice refuses a prompt under a content policy, the error keeps its usual first line and exit code, followed by Venice's suggested prompt, its recommended model (as `venice/<id>`), and whether retrying may succeed, when Venice sends them. Other 422 errors, such as an oversized style reference image, are reported as before.
+
+### Image styles (`llm venice image-styles`)
+
+List the style presets that image models accept with `-o style_preset`, one per line (`--json` for the raw response):
+
+```bash
+llm venice image-styles
+llm -m venice/qwen-image-3 -o style_preset "Watercolor" "A Dutch windmill"
+```
+
+### Image editing (`llm venice edit`)
+
+Edit an image as a prompt directs:
+
+```bash
+llm venice edit photo.jpg "change the sky to sunrise" -m qwen-image-2-1-turbo-edit
+llm venice edit https://example.com/logo.png "remove the text" --format png --transparent-background -m mai-image-2-7-flash-edit
+```
+
+```text
+llm venice edit IMAGE PROMPT... [-m MODEL] [--aspect-ratio RATIO] [--resolution TIER]
+                [--format png|jpeg|webp] [--safe-mode] [--transparent-background]
+                [--enhance-prompt] [--disable-prompt-optimization-thinking]
+                [--anon-user-id ID] [-o/--output-path PATH] [--overwrite]
+```
+
+- `IMAGE` is a local file, uploaded to Venice, or an `http`/`https` URL, which Venice fetches. Multiple `PROMPT` words are joined with spaces.
+- `-m/--model` takes an edit model ID, with or without the `venice/` prefix; Venice uses its default edit model when it is omitted. Edit models are listed as type `inpaint` in the catalog (`llm venice refresh`), and are not `llm` models.
+- When the model is in the cached catalog, its prompt length limit and its aspect ratios, resolutions and transparent-background support are checked before anything is sent. Otherwise Venice checks them.
+- `--aspect-ratio` is `auto` or a ratio such as `16:9`; `auto`, or no ratio, follows the input image. `--resolution` picks a tier such as `1K`, `2K` or `4K`.
+- Without `--format`, Venice returns PNG at 1K and JPEG at higher resolutions, or PNG for a transparent background, which needs PNG or WebP.
+- Safe Venice blurring of adult content is off unless `--safe-mode` is given, as for image models. A blurred result prints a warning.
+- `--enhance-prompt` has Venice rewrite the prompt first, at extra cost, and prints the rewritten prompt to stderr.
+- Saves `<name>_edited.<ext>` next to a local image, or in the current directory for a URL, where `<ext>` matches the returned format. `-o` takes a file name, or a directory for the default name; existing files are kept unless `--overwrite` is given.
+- An image that Venice marks as a content violation is not saved, and the command fails. Model deprecation warnings from Venice are printed to stderr.
+- Each edit is billed, by model and resolution.
+
+### Multi-image editing (`llm venice multi-edit`)
+
+Edit layered images with one prompt. The first image is the base; the others are layers or masks:
+
+```bash
+llm venice multi-edit room.jpg sofa.png -p "place the sofa in the room" -m qwen-image-2-1-turbo-edit
+```
+
+- Each `IMAGE` is a local file or an `http`/`https` URL. When every image is local they are uploaded as files; when any is a URL, local images are sent inline (base64) alongside it.
+- `-p/--prompt` is required. `--quality` (`low`, `medium` or `high`) applies on models that offer it; the other options are those of `llm venice edit`.
+- How many images a model takes is `maxInputImages` in its catalog constraints. When the model is in the cached catalog, the count, quality and the `edit` checks are applied before anything is sent.
+- The result is saved as `<name>_edited.<ext>` after the first image.
+- Each edit is billed; some models charge per additional input image.
+
+### Background removal (`llm venice background-remove`)
+
+```text
+llm venice background-remove IMAGE [-o/--output-path PATH] [--overwrite] [--anon-user-id ID]
+```
+
+- `IMAGE` is a local file, uploaded to Venice, or an `http`/`https` URL, which Venice fetches.
+- Saves a PNG with a transparent background as `<name>_nobg.png` next to a local image, or in the current directory for a URL. `-o` takes a file name, or a directory for the default name.
+- Existing files are not overwritten unless `--overwrite` is given; a timestamped filename is used instead.
+- Each request is billed.
 
 ### Image upscaling (`llm venice upscale`)
 

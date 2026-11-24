@@ -79,6 +79,7 @@ JSON methods unwrap Venice's `data` envelope and return ordinary typed dictionar
 | `list_characters(web_enabled=None, adult=None, pro=None, categories=None, tags=None, model_ids=None, search=None, sort_by=None, sort_order=None, limit=None, offset=None)` | `list[Character]` | Returns one page (Venice default 50, max 100). Stop when a page is shorter than `limit`. Unset filters are not sent; `categories`, `tags` and `model_ids` take up to 20 values each, and `sort_by` takes the `CharacterSortBy` values. (`llm venice characters` fetches all pages.) |
 | `get_character(slug)` | `Character` | One public character, with the same fields as a listed one. |
 | `list_character_reviews(slug, page=None, page_size=None)` | `CharacterReviewPage` | One page of public reviews (Venice default 20, max 100, pages from 1). Returns the page, not just the reviews: `data`, `pagination` (`page`, `pageSize`, `total`, `totalPages`) and `summary` (`averageRating`, `totalReviews`). |
+| `list_image_styles()` | `list[str]` | The style names that `ImageParams.style_preset` accepts. |
 | `list_api_keys()` | `list[ApiKey]` | Requires an `ADMIN` key. |
 | `create_api_key(key_type=..., description="", expires_at=None, limit_usd=None, limit_diem=None, limit_vcu=None, limit_period=None, model_privacy=None, ip_allowlist=None)` | `CreatedApiKey` | Requires an `ADMIN` key. Unset options are not sent. `expires_at`, if given, must be timezone-aware (sent in UTC). `limit_period` is `"EPOCH"`, `"MONTH"` or `"LIFETIME"`; `model_privacy` is `"ALL"`, `"PRIVATE_TEXT"` or `"PRIVATE_ONLY"`; `ip_allowlist` takes up to 100 IP addresses or CIDR subnets. `limit_vcu` is deprecated by Venice in favour of `limit_diem`. |
 | `get_api_key(key_id)` | `ApiKey` | Requires an `ADMIN` key. Returns the same fields as a listed key. |
@@ -189,10 +190,32 @@ print(chain.text())
 
 Buffered media results expose raw bytes on `.data` and report the actual format returned by Venice on `.format` — saving never transcodes bytes to match a filename extension.
 
-- `ImageResult.images` is a `tuple[GeneratedImage, ...]`. `upscale_image()` returns a single `GeneratedImage`.
-- `upscale_image()` accepts a file path, `bytes`, or an open binary file object; caller-supplied file objects are read from their current position and remain open.
+- `ImageResult.images` is a `tuple[GeneratedImage, ...]`. `upscale_image()` and `remove_image_background()` return a single `GeneratedImage`.
+- `upscale_image()` and `remove_image_background()` accept a file path, `bytes`, or an open binary file object; caller-supplied file objects are read from their current position and remain open.
+- `remove_image_background(image, anon_user_id=None)` returns a PNG with a transparent background. It also accepts a `str` starting with `http://` or `https://`, which Venice fetches instead of the image being uploaded; pass a `Path` for a local file whose name starts that way.
 - **Moderation flags**: `ImageResult.content_violation`, `content_policy_violation_count`, and `blurred` are independent facts. The library preserves every returned image, including moderated ones. (Plugin adapters suppress whole-response content violations, while still saving partial outputs when only some variants were omitted.)
 - **Response headers**: `ImageResult.enhanced_prompt` is the rewritten prompt, decoded from `x-venice-enhanced-prompt`, when `enhance_prompt` produced one. `ImageResult.deprecation` is a `llm_venice.results.ModelDeprecation` (`deprecated`, `warning`, `date`, `replacement`) when Venice sent model deprecation headers, otherwise `None`. Clients only report these; the image model adapters print the deprecation warning. Unexpected values in these headers never fail a generation.
+
+### Image editing
+
+```python
+from llm_venice import VeniceClient
+
+with VeniceClient() as client:
+    result = client.edit_image(
+        "photo.jpg",
+        "change the sky to sunrise",
+        model="qwen-image-2-1-turbo-edit",
+        aspect_ratio="16:9",
+        safe_mode=False,
+    )
+    result.save(f"photo_edited.{result.image.format}")
+```
+
+- `edit_image(image, prompt, *, model=None, **options)` returns an `ImageEditResult`. `image` is a path, `bytes` or binary file object, uploaded, or a `str` starting with `http://` or `https://`, which Venice fetches (a `Path` is always a local file). `model` is an edit model ID (catalog type `inpaint`); omitted, Venice uses its default edit model.
+- The options, typed by `llm_venice.types.ImageEditOptions`, are `aspect_ratio` (`auto` or a ratio such as `16:9` or `19.5:9`), `resolution` (such as `2K`), `output_format` (`png`, `jpeg` or `webp`), `safe_mode`, `transparent_background` (PNG or WebP only), `enhance_prompt`, `disable_prompt_optimization_thinking` and `anon_user_id`. Options left out use Venice's defaults; note that Venice's `safe_mode` default is `True`. The client does not check them against the catalog; `llm venice edit` does.
+- `multi_edit_image(images, prompt, *, model=None, **options)` edits layered images, the first being the base, and returns an `ImageEditResult`. `images` is a list (or other sequence) of the same inputs, never a single image. When all are local they are uploaded as files; when any is a URL, the request is JSON and local images are sent as base64 data URLs. Its options add `quality` (`low`, `medium` or `high`; `llm_venice.types.MultiEditOptions`). A model's image limit is `maxInputImages` in its catalog constraints, which the client does not check.
+- `ImageEditResult` holds the `image` (a `GeneratedImage`) and the facts from Venice's response headers: `model_id` and `model_name` of the model that made the edit, `content_violation` and `blurred`, `enhanced_prompt` (decoded), and `deprecation` (a `ModelDeprecation`, or `None`). The image is kept even when it is flagged. `result.save(path)` saves it to an exact path.
 
 ### Save semantics
 

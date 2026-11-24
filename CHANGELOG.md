@@ -4,6 +4,27 @@
 
 ### New features
 
+- `multi_edit_image()` client methods and the `llm venice multi-edit IMAGE... -p PROMPT`
+  command for `/image/multi-edit`, editing a base image with layers or masks. Local
+  images are uploaded as files, or sent inline when any image is a URL. It takes the
+  edit options plus `quality`, and the command checks the image count against the
+  model's `maxInputImages` in the cached catalog.
+- `edit_image()` client methods and the `llm venice edit IMAGE PROMPT` command for
+  `/image/edit`. The image is a path, bytes or binary file, uploaded, or an `http(s)`
+  URL that Venice fetches. Options cover the model (Venice's default edit model when
+  omitted), aspect ratio (`auto` or any ratio such as `19.5:9`), resolution, output
+  format, safe mode, transparent background, prompt enhancement, skipping
+  prompt-optimization thinking and `anon_user_id`. The result, an `ImageEditResult`,
+  reports the model ID and name, moderation flags, the enhanced prompt and deprecation
+  headers. The command checks options against the model's cached catalog entry, keeps
+  safe mode off unless `--safe-mode` is given, and does not save an image flagged as a
+  content violation.
+- `remove_image_background()` client methods and the `llm venice background-remove`
+  command remove an image's background, returning a transparent PNG. The image is a
+  path, bytes or binary file, uploaded, or an `http(s)` URL that Venice fetches, with
+  an optional `anon_user_id`.
+- `list_image_styles()` client methods and the `llm venice image-styles` command list
+  the style presets for `style_preset` (`-o style_preset`).
 - `augment_parse_text()` client methods and the `llm venice parse FILE` command for
   `/augment/text-parser`, extracting the text of PDF, DOCX, PPTX, XLSX, EPUB, text and
   source-code files. A path, bytes or binary file is uploaded under a filename whose

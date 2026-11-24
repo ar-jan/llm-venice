@@ -189,6 +189,8 @@ llm -m venice/nano-banana-2-1 "Current spring fashion street photography" -o ena
 llm -m venice/qwen-image-3 "Dutch windmill" -o variants 4 -o output_dir ./out -o output_filename windmill.png
 ```
 
+List the style presets for `-o style_preset` with `llm venice image-styles`.
+
 ### Image upscaling
 
 Upscale an image (`--scale` from `2` to `4`, optional `--creativity` from `0` to `0.02`, `--output-path`, `--overwrite`):
@@ -198,6 +200,25 @@ llm venice upscale /path/to/image.jpg
 ```
 
 By default this saves `image_upscaled.<ext>` alongside the original without overwriting existing files.
+
+### Image editing
+
+Edit a local image or an image URL with a prompt, using one of the edit models (type `inpaint` in the catalog):
+
+```bash
+llm venice edit photo.jpg "change the sky to sunrise" -m qwen-image-2-1-turbo-edit
+llm venice multi-edit room.jpg sofa.png -p "place the sofa in the room"
+```
+
+The result is saved as `photo_edited.<ext>`. See [CLI reference — Image editing](https://github.com/ar-jan/llm-venice/blob/develop/docs/cli.md#image-editing-llm-venice-edit) for aspect ratios, resolutions, transparency, and catalog checks.
+
+### Background removal
+
+Remove the background of a local image or an image URL, saving a transparent PNG (`image_nobg.png`):
+
+```bash
+llm venice background-remove /path/to/image.jpg
+```
 
 ### Direct web search, scraping, and document parsing
 

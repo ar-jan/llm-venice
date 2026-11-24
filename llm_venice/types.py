@@ -29,6 +29,40 @@ ApiKeyModelPrivacy = Literal["ALL", "PRIVATE_TEXT", "PRIVATE_ONLY"]
 """Which models a key may call by privacy tier: all, private text models, or private only."""
 
 
+ImageOutputFormat = Literal["jpeg", "png", "webp"]
+"""Edited image formats. Omitted, Venice returns PNG at 1K and JPEG at 2K and 4K, or PNG
+for a transparent background."""
+
+
+class ImageEditOptions(TypedDict, total=False):
+    """Optional settings for ``edit_image()``; Venice applies its defaults to the rest.
+
+    ``aspect_ratio`` is ``auto`` or a ratio such as ``16:9``, and ``resolution`` a tier
+    such as ``2K``; which ones a model supports is in its catalog constraints.
+    ``safe_mode`` defaults to true at Venice, blurring adult content.
+    ``transparent_background`` needs a supporting model and PNG or WebP output.
+    """
+
+    aspect_ratio: str
+    resolution: str
+    output_format: ImageOutputFormat
+    safe_mode: bool
+    transparent_background: bool
+    enhance_prompt: bool
+    disable_prompt_optimization_thinking: bool
+    anon_user_id: str
+
+
+ImageQuality = Literal["low", "medium", "high"]
+"""Output quality on models that offer it; higher can cost more."""
+
+
+class MultiEditOptions(ImageEditOptions, total=False):
+    """Optional settings for ``multi_edit_image()``: the edit settings and ``quality``."""
+
+    quality: ImageQuality
+
+
 class ModelCapabilities(TypedDict, total=False):
     """Optional capability metadata supplied by the catalog."""
 
