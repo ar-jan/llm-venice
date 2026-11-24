@@ -220,7 +220,7 @@ print(chain.text())
 
 ### Responses API models
 
-`VeniceResponses` and `AsyncVeniceResponses` send prompts to Venice's `/responses` endpoint, using `llm`'s Responses support (tools, structured output, attachments and reasoning items). They take the chat options, plus `responses_api`, which sets the `x-venice-responses-mode` header: `native` forwards to OpenAI's Responses API (most OpenAI models), `compat` translates through Chat Completions, and `auto` lets Venice choose.
+A chat model sends a prompt to Venice's `/responses` endpoint instead of Chat Completions when the prompt has the `responses_api` option: `native` forwards to OpenAI's Responses API (most OpenAI models), `compat` translates through Chat Completions, and `auto` lets Venice choose (sent as the `x-venice-responses-mode` header). See [CLI reference — Responses API](cli.md#responses-api--o-responses_api). The chat model hands the prompt to `VeniceResponses` or `AsyncVeniceResponses`, which use `llm`'s Responses support (tools, structured output, attachments and reasoning items) and take the same options; they can also be used directly.
 
 ```python
 from llm_venice import VeniceResponses, load_catalog

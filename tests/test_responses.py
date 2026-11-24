@@ -1,4 +1,4 @@
-"""Venice /responses models: requests, routing headers, compat-lane streams, final statuses."""
+"""Venice /responses: requests, routing headers, compat-lane streams, chat delegation."""
 
 import asyncio
 import json
@@ -10,7 +10,16 @@ import llm
 import pytest
 from llm.parts import ReasoningPart
 
-from llm_venice import AsyncVeniceResponses, VeniceResponses, VeniceWebSearch, VeniceXSearch
+from llm.cli import cli
+
+from llm_venice import (
+    AsyncVeniceChat,
+    AsyncVeniceResponses,
+    VeniceChat,
+    VeniceResponses,
+    VeniceWebSearch,
+    VeniceXSearch,
+)
 from llm_venice.models.responses import (
     _CHAT_ONLY_OPTIONS,
     _VENICE_PARAMETERS,
@@ -79,7 +88,7 @@ def add_response(httpx2_mock, *, stream, body=None, headers=None):
 
 def run(model, *, stream=True, prompt="hi", **options):
     """Run a prompt to completion; return its text and response."""
-    if isinstance(model, AsyncVeniceResponses):
+    if isinstance(model, (AsyncVeniceResponses, AsyncVeniceChat)):
 
         async def go():
             response = model.prompt(prompt, stream=stream, **options)
@@ -442,3 +451,113 @@ def test_translation_leaves_other_events_alone():
     assert _translate(event) is event
     delta = _translate(SimpleNamespace(type="response.reasoning.delta", delta=None))
     assert (delta.type, delta.delta, delta.item_id) == ("response.reasoning_text.delta", "", None)
+
+
+# Chat models hand a prompt to /responses with the responses_api option.
+
+CHAT_URL = "https://api.venice.ai/api/v1/chat/completions"
+
+
+def chat_completion(text):
+    return {
+        "id": "x",
+        "object": "chat.completion",
+        "created": 0,
+        "model": "test-model",
+        "choices": [
+            {"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}
+        ],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+    }
+
+
+def chat_model(is_async, **kwargs):
+    return (AsyncVeniceChat if is_async else VeniceChat)("venice/test-model", **kwargs)
+
+
+def test_responses_models_take_the_chat_options():
+    assert VeniceResponses.Options is VeniceChat.Options
+    assert AsyncVeniceResponses.Options is VeniceChat.Options
+    assert "responses_api" in VeniceChat.Options.model_fields
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.parametrize("stream", [False, True])
+def test_chat_models_delegate_with_responses_api(
+    is_async, stream, httpx2_mock, mock_venice_api_key, sent
+):
+    add_response(httpx2_mock, stream=stream, headers={"x-venice-responses-lane": "native"})
+    model = chat_model(is_async, model_spec=REASONING_SPEC)
+    text, response = run(model, stream=stream, responses_api="native", reasoning_effort="low")
+    assert text == "Hello"
+    request = httpx2_mock.get_request()
+    assert str(request.url) == URL
+    assert request.headers["x-venice-responses-mode"] == "native"
+    assert sent()["model"] == "test-model"
+    assert sent()["reasoning"] == {"summary": "auto", "effort": "low"}
+    assert json_of(response)["venice_headers"] == {"x-venice-responses-lane": "native"}
+    assert response.model is model
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_chat_models_keep_chat_completions_by_default(is_async, httpx2_mock, mock_venice_api_key):
+    httpx2_mock.add_response(
+        method="POST",
+        url=CHAT_URL,
+        json=chat_completion("Chat"),
+    )
+    text, _ = run(chat_model(is_async), stream=False)
+    assert text == "Chat"
+    assert str(httpx2_mock.get_request().url) == CHAT_URL
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_delegated_prompts_are_checked_for_the_responses_api(
+    is_async, httpx2_mock, mock_venice_api_key
+):
+    with pytest.raises(llm.ModelError, match="does not take min_p"):
+        run(chat_model(is_async), stream=False, responses_api="auto", min_p=0.2)
+    model = chat_model(is_async, supports_x_search=True)
+    with pytest.raises(llm.ModelError, match="venice_x_search is not available"):
+        run(model, stream=False, responses_api="auto", tools=[VeniceXSearch()])
+    assert not httpx2_mock.get_requests()
+
+
+def test_delegated_web_search_tool(httpx2_mock, mock_venice_api_key, sent):
+    add_response(httpx2_mock, stream=False)
+    model = chat_model(False, supports_web_search=True)
+    run(model, stream=False, responses_api="compat", tools=[VeniceWebSearch()])
+    assert sent()["venice_parameters"]["enable_web_search"] == "auto"
+
+
+def test_a_conversation_can_switch_to_responses(httpx2_mock, mock_venice_api_key, sent):
+    httpx2_mock.add_response(
+        method="POST",
+        url=CHAT_URL,
+        json=chat_completion("One"),
+    )
+    add_response(httpx2_mock, stream=False)
+    conversation = chat_model(False).conversation()
+    conversation.prompt("first", stream=False).text()
+    conversation.prompt("second", stream=False, responses_api="auto").text()
+    assert sent()["input"] == [
+        {"role": "user", "content": "first"},
+        {"role": "assistant", "content": "One"},
+        {"role": "user", "content": "second"},
+    ]
+
+
+def test_cli_option(cli_runner, httpx2_mock, mock_venice_api_key, hermetic_venice_catalog, sent):
+    hermetic_venice_catalog()
+    add_response(httpx2_mock, stream=True)
+    result = cli_runner.invoke(
+        cli, ["-m", "venice/test-model", "-o", "responses_api", "compat", "hi"], input=""
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output == "Hello\n"
+    assert httpx2_mock.get_request().headers["x-venice-responses-mode"] == "compat"
+    result = cli_runner.invoke(
+        cli, ["-m", "venice/test-model", "-o", "responses_api", "fast", "hi"], input=""
+    )
+    assert result.exit_code == 1
+    assert "responses_api" in result.output

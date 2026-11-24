@@ -4,6 +4,11 @@
 
 ### New features
 
+- Chat option `responses_api` (`auto`, `native` or `compat`) sends a prompt to Venice's
+  `/responses` endpoint instead of Chat Completions, for example
+  `llm -m venice/openai-gpt-6-luna -o responses_api native`. Chat Completions stays the
+  default, and the Responses models take the same options class, so the prompt is
+  handed over unchanged; options that `/responses` lacks are refused.
 - The Responses models read Venice's compat lane, which serves non-OpenAI models through
   Chat Completions: its `response.reasoning.delta` events and plain-string reasoning
   summaries become `llm` reasoning, streamed or not, and summaries are replayed on later

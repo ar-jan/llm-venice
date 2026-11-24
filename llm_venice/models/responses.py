@@ -4,6 +4,9 @@ Venice stores no responses, so every request carries the full conversation, as
 llm's Responses classes already build it from the prompt's messages; they never
 send ``previous_response_id``. Venice's compat lane, which serves models through
 Chat Completions, streams some events in its own form; the client adapts them.
+
+Chat models keep Chat Completions; their ``responses_api`` option hands a prompt
+to these models instead.
 """
 
 from contextvars import ContextVar
@@ -11,18 +14,17 @@ import copy
 from collections.abc import AsyncGenerator, Generator
 from itertools import islice
 from types import SimpleNamespace
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
 
 import llm
 from llm.default_plugins.openai_models import AsyncResponses, Responses
-from pydantic import Field
 
 from llm_venice._options import CatalogOptionsMixin, normalize_policy
 from llm_venice.constants import VENICE_API_BASE
 from ._common import initialize_model, model_error_boundary, warn_deprecated
 from .chat import (
+    VeniceChat,
     VeniceWebSearch,
-    _ChatOptions,
     _openai_client,
     _split_server_side_tools,
     _wire_value,
@@ -74,19 +76,6 @@ _RESERVED_REQUEST_KEYS = {
     "reasoning",
     "max_output_tokens",
 }
-
-
-class _ResponsesOptions(_ChatOptions):
-    """The chat options, of which the chat-only ones are refused, and the routing mode."""
-
-    responses_api: Optional[Literal["auto", "native", "compat"]] = Field(
-        description=(
-            "How Venice serves /responses: 'native' forwards to OpenAI's Responses API "
-            "(most OpenAI models), 'compat' translates through Chat Completions, and "
-            "'auto' lets Venice choose."
-        ),
-        default=None,
-    )
 
 
 class _LlmOptions(llm.Options):
@@ -357,8 +346,8 @@ class VeniceResponses(_VeniceResponsesMixin, CatalogOptionsMixin, Responses):  #
         super().__init__(model_id, *args, **_responses_init_kwargs(model_spec, kwargs))
         self._configure(supports_web_search, model_spec)
 
-    class Options(_ResponsesOptions):  # type: ignore[reportIncompatibleVariableOverride]
-        pass
+    # The chat options, so a chat model can hand its prompt over unchanged.
+    Options = VeniceChat.Options  # type: ignore[reportIncompatibleVariableOverride]
 
     def execute(self, prompt, stream, response, conversation=None, key=None):
         """Run llm's Responses execution, recording Venice's routing headers."""

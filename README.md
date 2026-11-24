@@ -96,9 +96,12 @@ llm -m venice/google-gemma-4-26b-a4b-it -o character_slug alan-watts "What is th
 
 # Send API fields that do not have a dedicated option yet (also works on image & speech models)
 llm -m venice/qwen-3-8-flash -o extra_body '{"venice_parameters": {"new_flag": true}}' "Hello"
+
+# Use Venice's Responses API for one prompt instead of Chat Completions
+llm -m venice/openai-gpt-6-luna -o responses_api native "Plan a trip"
 ```
 
-See [CLI reference — Venice options](https://github.com/ar-jan/llm-venice/blob/develop/docs/cli.md#venice-options) for precedence rules and `extra_body` details.
+See [CLI reference — Venice options](https://github.com/ar-jan/llm-venice/blob/develop/docs/cli.md#venice-options) for precedence rules, `extra_body` details, and the Responses API.
 
 ### Tools & search
 
