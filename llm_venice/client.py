@@ -5,7 +5,7 @@ from contextlib import AsyncExitStack, ExitStack, asynccontextmanager, contextma
 from datetime import datetime
 import os
 from pathlib import Path
-from typing import Any, BinaryIO, Literal, cast
+from typing import Any, BinaryIO, Literal, cast, overload
 
 import httpx2
 from typing_extensions import Self, Unpack
@@ -31,6 +31,8 @@ from .types import (
     ApiKeyModelPrivacy,
     AugmentScrapeResponse,
     AugmentSearchProvider,
+    AugmentTextFormat,
+    AugmentTextParserResponse,
     CharacterSortBy,
     CharacterSortOrder,
     AugmentSearchResponse,
@@ -44,7 +46,8 @@ from .types import (
     RateLimits,
 )
 
-ImageInput = str | os.PathLike[str] | bytes | BinaryIO
+FileInput = str | os.PathLike[str] | bytes | BinaryIO
+ImageInput = FileInput
 
 
 def _image_file(image: ImageInput) -> tuple[str, bytes] | tuple[str, bytes, str]:
@@ -65,6 +68,25 @@ def _image_file(image: ImageInput) -> tuple[str, bytes] | tuple[str, bytes, str]
     if filename == "image":
         filename = f"image.{'jpg' if format == 'jpeg' else format}"
     return filename, content, f"image/{format}"
+
+
+def _document_file(file: FileInput, filename: str | None) -> tuple[str, bytes, str]:
+    """Build the multipart file, named so that Venice can tell the document's format."""
+    if isinstance(file, (str, os.PathLike)):
+        path = Path(file)
+        name, content = path.name, path.read_bytes()
+    elif isinstance(file, bytes):
+        name, content = "document", file
+    else:
+        # Caller owns the file, including its current cursor and lifetime.
+        attribute: object = getattr(file, "name", None)
+        name = Path(attribute).name if isinstance(attribute, str) and attribute else "document"
+        # A text-mode file would return str despite the annotation.
+        read = cast(object, file.read())
+        if not isinstance(read, bytes):
+            raise TypeError("file must be opened in binary mode")
+        content = read
+    return ep.document_part(filename or name, content)
 
 
 class _Configuration:
@@ -297,6 +319,57 @@ class VeniceClient(_Configuration):
         automated access, 502 when the page could not be scraped.
         """
         return cast(AugmentScrapeResponse, self._json_operation("augment_scrape", url=url))
+
+    @overload
+    def augment_parse_text(
+        self,
+        file: FileInput,
+        *,
+        filename: str | None = None,
+        response_format: Literal["json"] = "json",
+    ) -> AugmentTextParserResponse: ...
+
+    @overload
+    def augment_parse_text(
+        self, file: FileInput, *, filename: str | None = None, response_format: Literal["text"]
+    ) -> str: ...
+
+    @overload
+    def augment_parse_text(
+        self,
+        file: FileInput,
+        *,
+        filename: str | None = None,
+        response_format: AugmentTextFormat = "json",
+    ) -> AugmentTextParserResponse | str: ...
+
+    def augment_parse_text(
+        self,
+        file: FileInput,
+        *,
+        filename: str | None = None,
+        response_format: AugmentTextFormat = "json",
+    ) -> AugmentTextParserResponse | str:
+        """Extract the text of a document: a path, bytes or borrowed binary file.
+
+        Venice parses PDF, DOCX, PPTX, XLSX, EPUB, plain text, Markdown, CSV, JSON and
+        most source code, up to 25 MB, and keeps no copy. It tells the format from the
+        filename's extension: a path or named file supplies one, and ``filename``
+        overrides it. Unnamed bytes are labelled PDF or plain text from their content,
+        so pass ``filename`` for other formats. ``response_format="json"`` (the
+        default) returns the text with its token count; ``"text"`` returns a string.
+        """
+        self._ensure_open()
+        options = ep.TextParserInput(filename=filename, response_format=response_format)
+        part = _document_file(file, options.filename)
+        response = self._send(
+            "POST",
+            "augment/text-parser",
+            ep.TEXT_PARSER_ACTION,
+            data={"response_format": options.response_format},
+            files={"file": part},
+        )
+        return ep.parse_text_parser(response, options.response_format)
 
     def create_embeddings(
         self,
@@ -618,6 +691,57 @@ class AsyncVeniceClient(_Configuration):
         automated access, 502 when the page could not be scraped.
         """
         return cast(AugmentScrapeResponse, await self._json_operation("augment_scrape", url=url))
+
+    @overload
+    async def augment_parse_text(
+        self,
+        file: FileInput,
+        *,
+        filename: str | None = None,
+        response_format: Literal["json"] = "json",
+    ) -> AugmentTextParserResponse: ...
+
+    @overload
+    async def augment_parse_text(
+        self, file: FileInput, *, filename: str | None = None, response_format: Literal["text"]
+    ) -> str: ...
+
+    @overload
+    async def augment_parse_text(
+        self,
+        file: FileInput,
+        *,
+        filename: str | None = None,
+        response_format: AugmentTextFormat = "json",
+    ) -> AugmentTextParserResponse | str: ...
+
+    async def augment_parse_text(
+        self,
+        file: FileInput,
+        *,
+        filename: str | None = None,
+        response_format: AugmentTextFormat = "json",
+    ) -> AugmentTextParserResponse | str:
+        """Extract the text of a document: a path, bytes or borrowed binary file.
+
+        Venice parses PDF, DOCX, PPTX, XLSX, EPUB, plain text, Markdown, CSV, JSON and
+        most source code, up to 25 MB, and keeps no copy. It tells the format from the
+        filename's extension: a path or named file supplies one, and ``filename``
+        overrides it. Unnamed bytes are labelled PDF or plain text from their content,
+        so pass ``filename`` for other formats. ``response_format="json"`` (the
+        default) returns the text with its token count; ``"text"`` returns a string.
+        """
+        self._ensure_open()
+        options = ep.TextParserInput(filename=filename, response_format=response_format)
+        part = await async_file_call(_document_file, file, options.filename)
+        response = await self._send(
+            "POST",
+            "augment/text-parser",
+            ep.TEXT_PARSER_ACTION,
+            data={"response_format": options.response_format},
+            files={"file": part},
+        )
+        return ep.parse_text_parser(response, options.response_format)
 
     async def create_embeddings(
         self,

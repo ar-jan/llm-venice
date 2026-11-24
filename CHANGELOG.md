@@ -4,6 +4,12 @@
 
 ### New features
 
+- `augment_parse_text()` client methods and the `llm venice parse FILE` command for
+  `/augment/text-parser`, extracting the text of PDF, DOCX, PPTX, XLSX, EPUB, text and
+  source-code files. A path, bytes or binary file is uploaded under a filename whose
+  extension tells Venice the format (`filename=` sets one for bytes).
+  `response_format="text"` returns a string; the default JSON adds the token count
+  (`--format json` on the command line).
 - `augment_scrape()` client methods, the `llm venice scrape URL` command (`--json` for
   the raw response) and the `venice_augment_scrape` function tool, for fetching a web
   page as markdown through `/augment/scrape`. Pages Venice cannot fetch raise

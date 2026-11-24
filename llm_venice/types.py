@@ -320,6 +320,17 @@ class AugmentScrapeResponse(TypedDict, total=False):
     format: str
 
 
+AugmentTextFormat = Literal["json", "text"]
+"""Text parser output: JSON with the text and its token count, or the plain text."""
+
+
+class AugmentTextParserResponse(TypedDict, total=False):
+    """A document's extracted text and its token count."""
+
+    text: Required[str]
+    tokens: int
+
+
 class RateLimitLogEntry(TypedDict, total=False):
     """A rate-limit event with its key ID, type and wire timestamp."""
 

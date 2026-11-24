@@ -148,6 +148,21 @@ llm -m venice/z-ai-glm-5-3 -T venice_augment_search_brave -T venice_augment_scra
 
 Each tool call is a separate, billed request; use `--ta/--tools-approve` to confirm them. Scraped pages are untrusted web content, and a long page can fill much of the model's context.
 
+### Document text extraction (`llm venice parse`)
+
+Extract the text of a document through Venice's `/augment/text-parser` endpoint, without a model:
+
+```bash
+llm venice parse report.pdf
+llm venice parse --format json slides.pptx
+llm venice parse report.pdf | llm -m venice/qwen-3-8-flash "Summarize this"
+```
+
+- Venice reads PDF, DOCX, PPTX, XLSX, EPUB, plain text, Markdown, CSV, JSON and most source-code files up to 25 MB, and tells the format from the file extension. It parses the file in memory and keeps no copy.
+- `--format text` (the default) prints the extracted text, with control characters other than newlines and tabs removed, so PDF page breaks (form feeds) are dropped. `--format json` prints the exact text and its token count as JSON.
+- Unsupported files fail with Venice's error, which lists the supported formats.
+- Each request is billed.
+
 ## Embeddings
 
 Every online embedding model in the cached catalog is registered for `llm`'s embedding commands as `venice/<model>`; `llm embed-models list` shows them.
