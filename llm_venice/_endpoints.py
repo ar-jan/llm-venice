@@ -2,12 +2,14 @@
 
 import base64
 import binascii
+import codecs
 import ipaddress
 import json
+import mimetypes
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Annotated, Any, Literal, TypeVar, cast
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlsplit
 
 import httpx2
 from pydantic import (
@@ -27,6 +29,8 @@ from .params import ImageParams, SpeechParams, copy_params, parameter_body
 from .results import NO_AUDIO, GeneratedImage, ImageResult, ModelDeprecation, SpeechResult
 from .types import (
     AugmentSearchProvider,
+    AugmentTextFormat,
+    AugmentTextParserResponse,
     ApiKeyLimitPeriod,
     ApiKeyModelPrivacy,
     CharacterSortBy,
@@ -238,6 +242,69 @@ def parse_embeddings(response: httpx2.Response, count: int) -> EmbeddingResponse
         raise VeniceResponseError(action, "embedding indexes do not match the inputs")
     # Venice lists them in input order already; sorting makes that a guarantee.
     return {**obj, "data": sorted(data, key=lambda item: item["index"])}
+
+
+def _web_url(value: str) -> str:
+    parts = urlsplit(value)
+    if parts.scheme.lower() not in {"http", "https"} or not parts.netloc:
+        raise ValueError("url must be an absolute http or https URL")
+    return value
+
+
+class AugmentScrapeInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Sent as given; Venice fetches the page, so only the form is checked here.
+    url: Annotated[str, Field(strict=True), AfterValidator(_web_url)]
+
+
+TEXT_PARSER_ACTION = "Parsing document"
+
+
+class TextParserInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    filename: str | None = Field(default=None, min_length=1, strict=True)
+    response_format: AugmentTextFormat = "json"
+
+
+def _looks_like_text(content: bytes) -> bool:
+    sample = content[:4096]
+    if b"\0" in sample:
+        return False
+    try:
+        # Incremental, so a character cut off at the end of the sample still passes.
+        codecs.getincrementaldecoder("utf-8")().decode(sample, final=False)
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
+def document_part(filename: str, content: bytes) -> tuple[str, bytes, str]:
+    """Label a document upload for the text parser.
+
+    Venice picks the parser by the filename's extension, and by the content type
+    when the extension is missing or unknown. A name without a known type is
+    labelled PDF, plain text or generic binary from its bytes.
+    """
+    content_type = mimetypes.guess_type(filename)[0]
+    if content_type is None:
+        if content.startswith(b"%PDF-"):
+            content_type = "application/pdf"
+        elif _looks_like_text(content):
+            content_type = "text/plain"
+        else:
+            content_type = "application/octet-stream"
+    return filename, content, content_type
+
+
+def parse_text_parser(
+    response: httpx2.Response, response_format: AugmentTextFormat
+) -> AugmentTextParserResponse | str:
+    action = TEXT_PARSER_ACTION
+    if response_format == "text":
+        if _media_type(response.headers.get("content-type")) == "application/json":
+            raise VeniceResponseError(action, "expected plain text but received JSON")
+        return response.text
+    return resource(json_object(response, action), AugmentTextParserResponse, action)
 
 
 CHARACTER_PAGE_LIMIT = 100
@@ -658,12 +725,20 @@ def json_operation(name: str, inputs: dict[str, Any]) -> tuple[str, str, str, di
             "Searching the web",
             {"json": AugmentSearchInput.model_validate(inputs).body()},
         )
+    if name == "augment_scrape":
+        return (
+            "POST",
+            "augment/scrape",
+            "Scraping web page",
+            {"json": AugmentScrapeInput.model_validate(inputs).model_dump()},
+        )
     raise ValueError(f"Unknown JSON operation: {name}")
 
 
 def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[str, Any]:
     from .types import (
         ApiKey,
+        AugmentScrapeResponse,
         AugmentSearchResult,
         Character,
         CharacterReview,
@@ -722,4 +797,6 @@ def parse_envelope(response: httpx2.Response, name: str, action: str) -> dict[st
             raise VeniceResponseError(action, "invalid AugmentSearchResponse: results")
         for item in cast(list[Any], results):
             resource(item, AugmentSearchResult, action)
+    elif name == "augment_scrape":
+        resource(obj, AugmentScrapeResponse, action)
     return obj

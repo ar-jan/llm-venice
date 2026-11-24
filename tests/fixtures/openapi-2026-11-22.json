@@ -489,6 +489,58 @@
         "input": "The quick brown fox jumped over the lazy dog",
         "model": "text-embedding-bge-m3"
       }
+    },
+    "WebScrapeRequest": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "The URL to scrape",
+          "example": "https://example.com"
+        }
+      },
+      "required": [
+        "url"
+      ]
+    },
+    "WebScrapeResponse": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "The URL that was scraped",
+          "example": "https://example.com"
+        },
+        "content": {
+          "type": "string",
+          "description": "The scraped content in markdown format"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "markdown"
+          ],
+          "description": "The format of the scraped content"
+        }
+      },
+      "required": [
+        "url",
+        "content",
+        "format"
+      ]
+    },
+    "StandardError": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "string",
+          "description": "A description of the error"
+        }
+      },
+      "required": [
+        "error"
+      ]
     }
   },
   "resources": {
@@ -3097,6 +3149,121 @@
           }
         }
       ]
+    },
+    "POST /augment/scrape": {
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/WebScrapeRequest"
+            }
+          }
+        }
+      },
+      "response": {
+        "description": "Successfully scraped the URL",
+        "headers": {
+          "X-Balance-Remaining": {
+            "description": "Remaining x402 credit balance in USD after this request (only present for x402 auth).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "4.230000"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/WebScrapeResponse"
+            }
+          }
+        }
+      },
+      "errors": {
+        "502": {
+          "description": "The URL could not be scraped.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StandardError"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /augment/text-parser": {
+      "requestBody": {
+        "content": {
+          "multipart/form-data": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "file"
+              ],
+              "properties": {
+                "file": {
+                  "type": "string",
+                  "format": "binary",
+                  "description": "The document file to parse. Supported formats: PDF, DOCX, PPTX, XLSX, and plain text files. Maximum size: 25MB."
+                },
+                "response_format": {
+                  "type": "string",
+                  "enum": [
+                    "json",
+                    "text"
+                  ],
+                  "default": "json",
+                  "description": "The format of the response output. \"json\" returns structured JSON with text and token count, \"text\" returns only the extracted text."
+                }
+              }
+            }
+          }
+        },
+        "required": true
+      },
+      "response": {
+        "description": "Text extraction completed successfully",
+        "headers": {
+          "X-Balance-Remaining": {
+            "description": "Remaining x402 credit balance in USD after this request (only present for x402 auth).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "4.230000"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "The extracted text content from the document."
+                },
+                "tokens": {
+                  "type": "number",
+                  "description": "The token count of the extracted text."
+                }
+              },
+              "required": [
+                "text",
+                "tokens"
+              ],
+              "description": "Text parser response containing extracted text and token count."
+            }
+          },
+          "text/plain": {
+            "schema": {
+              "type": "string",
+              "description": "The extracted text content in plain text format"
+            }
+          }
+        }
+      }
     }
   }
 }

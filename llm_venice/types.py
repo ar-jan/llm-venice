@@ -312,6 +312,25 @@ class EmbeddingResponse(TypedDict, total=False):
     usage: EmbeddingUsage
 
 
+class AugmentScrapeResponse(TypedDict, total=False):
+    """A scraped page: the URL and the page content, in ``format`` (markdown)."""
+
+    url: Required[str]
+    content: Required[str]
+    format: str
+
+
+AugmentTextFormat = Literal["json", "text"]
+"""Text parser output: JSON with the text and its token count, or the plain text."""
+
+
+class AugmentTextParserResponse(TypedDict, total=False):
+    """A document's extracted text and its token count."""
+
+    text: Required[str]
+    tokens: int
+
+
 class RateLimitLogEntry(TypedDict, total=False):
     """A rate-limit event with its key ID, type and wire timestamp."""
 

@@ -87,6 +87,8 @@ JSON methods unwrap Venice's `data` envelope and return ordinary typed dictionar
 | `get_rate_limits()` | `RateLimits` | Current access status, balances, and rate limits. |
 | `get_rate_limits_log()` | `list[RateLimitLogEntry]` | Recent rate-limit events. |
 | `augment_search(query, limit=None, provider=None)` | `AugmentSearchResponse` | Returns `{"query": ..., "results": [...]}`. |
+| `augment_scrape(url)` | `AugmentScrapeResponse` | Returns `{"url": ..., "content": ..., "format": "markdown"}` for an absolute `http`/`https` URL. Sites that block automated access fail with a 400 `VeniceAPIError`, and pages that could not be scraped with a 502. |
+| `augment_parse_text(file, filename=None, response_format="json")` | `AugmentTextParserResponse` or `str` | Extracts a document's text. Returns `{"text": ..., "tokens": ...}`, or the text as a `str` with `response_format="text"`. See [Document text extraction](#document-text-extraction). |
 | `create_embeddings(model, input, dimensions=None, encoding_format=None)` | `EmbeddingResponse` | Embeds a string, or each string of a list (up to 2048), and returns one embedding per input in `data`, in input order. Not unwrapped, so `usage` is kept. See [Embeddings](#embeddings). |
 
 ### Web search via `augment_search()`
@@ -100,6 +102,19 @@ with VeniceClient() as client:
 
 - `provider` is `"brave"`, `"google"`, or `"exa"`. Omitted options use Venice's defaults (Brave, up to 10 results).
 - Each result has `title` and `url`, plus optional `content` (snippet) and `date` which may be missing, `None`, or empty.
+
+### Document text extraction
+
+```python
+with VeniceClient() as client:
+    parsed = client.augment_parse_text("report.pdf")
+    print(parsed["tokens"], parsed["text"][:200])
+    text = client.augment_parse_text(pptx_bytes, filename="deck.pptx", response_format="text")
+```
+
+- `file` is a path, `bytes`, or an open binary file object, which is read from its current position and left open.
+- Venice reads PDF, DOCX, PPTX, XLSX, EPUB, plain text, Markdown, CSV, JSON and most source code, up to 25 MB, and keeps no copy. It tells the format from the filename's extension: a path or a named file object supplies one, and `filename` overrides it. Unnamed bytes are labelled PDF or plain text from their content, so pass `filename` for other formats.
+- Unsupported formats raise `VeniceAPIError` with Venice's message, which lists the supported formats.
 
 ### Embeddings
 
@@ -158,7 +173,7 @@ chain = chat.chain("Find recent papers on private inference", tools=[venice_augm
 print(chain.text())
 ```
 
-- The four function search tools (`venice_augment_search`, `venice_augment_search_brave`, `venice_augment_search_google`, `venice_augment_search_exa`) are plain synchronous functions exported from `llm_venice`.
+- The four function search tools (`venice_augment_search`, `venice_augment_search_brave`, `venice_augment_search_google`, `venice_augment_search_exa`) and `venice_augment_scrape(url)` are plain synchronous functions exported from `llm_venice`.
 - Calling `venice_augment_search` directly requires an explicit `provider`:
 
   ```python

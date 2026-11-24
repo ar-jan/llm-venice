@@ -126,6 +126,43 @@ llm venice search -p exa -n 5 "private AI inference"
 - `--json` outputs the raw JSON response.
 - Each search is billed.
 
+### Web page scraping (`llm venice scrape`)
+
+Fetch one web page through Venice's `/augment/scrape` endpoint and print it as markdown:
+
+```bash
+llm venice scrape https://venice.ai > venice.md
+```
+
+- `URL` must be an absolute `http` or `https` URL.
+- Sites that block automated access, such as X/Twitter and Reddit, are refused, and pages Venice cannot fetch fail with its error (for example `502 Bad Gateway - Could not resolve hostname`).
+- Control characters other than newlines and tabs are removed from the printed markdown; `--json` outputs the raw JSON response (`url`, `content`, `format`).
+- Each scrape is billed.
+
+The same endpoint is registered as the `venice_augment_scrape` function tool, which takes a `url` and returns that JSON to the model, so a model can read a page it found with a search tool:
+
+```bash
+llm -m venice/z-ai-glm-5-3 -T venice_augment_search_brave -T venice_augment_scrape --td \
+  "Find the Venice API documentation and summarize its authentication page"
+```
+
+Each tool call is a separate, billed request; use `--ta/--tools-approve` to confirm them. Scraped pages are untrusted web content, and a long page can fill much of the model's context.
+
+### Document text extraction (`llm venice parse`)
+
+Extract the text of a document through Venice's `/augment/text-parser` endpoint, without a model:
+
+```bash
+llm venice parse report.pdf
+llm venice parse --format json slides.pptx
+llm venice parse report.pdf | llm -m venice/qwen-3-8-flash "Summarize this"
+```
+
+- Venice reads PDF, DOCX, PPTX, XLSX, EPUB, plain text, Markdown, CSV, JSON and most source-code files up to 25 MB, and tells the format from the file extension. It parses the file in memory and keeps no copy.
+- `--format text` (the default) prints the extracted text, with control characters other than newlines and tabs removed, so PDF page breaks (form feeds) are dropped. `--format json` prints the exact text and its token count as JSON.
+- Unsupported files fail with Venice's error, which lists the supported formats.
+- Each request is billed.
+
 ## Embeddings
 
 Every online embedding model in the cached catalog is registered for `llm`'s embedding commands as `venice/<model>`; `llm embed-models list` shows them.

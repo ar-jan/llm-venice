@@ -1,9 +1,11 @@
 """Shared fixtures for llm-venice tests"""
 
+from email.parser import BytesParser
+from email.policy import HTTP
 import json
 import shutil
 from unittest.mock import patch
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, cast
 
 import llm
 from llm import get_key
@@ -207,3 +209,28 @@ def hermetic_venice_catalog(hermetic_llm_user_path):
         return [f"venice/{model['id']}" for model in models]
 
     return install
+
+
+@pytest.fixture
+def multipart_parts(httpx2_mock) -> Callable[..., dict[str, list[tuple[Any, str, bytes]]]]:
+    """Return a helper that decodes a recorded multipart request.
+
+    ``multipart_parts()`` maps each form field name to a list of
+    ``(filename, content_type, payload)`` for the last request; pass an index for
+    another. Text fields have no filename, and a repeated field has one entry each.
+    """
+
+    def decode(index: int = -1) -> dict[str, list[tuple[Any, str, bytes]]]:
+        request = httpx2_mock.get_requests()[index]
+        head = f"Content-Type: {request.headers['content-type']}\r\n\r\n".encode()
+        message = BytesParser(policy=HTTP).parsebytes(head + request.read())
+        parts: dict[str, list[tuple[Any, str, bytes]]] = {}
+        for part in message.iter_parts():
+            name = str(part.get_param("name", header="content-disposition"))
+            payload = cast(bytes, part.get_payload(decode=True))
+            parts.setdefault(name, []).append(
+                (part.get_filename(), part.get_content_type(), payload)
+            )
+        return parts
+
+    return decode

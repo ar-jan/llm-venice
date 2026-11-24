@@ -1,7 +1,9 @@
-"""Function tools that let a model search the web through Venice's /augment/search.
+"""Function tools that let a model search and scrape the web through Venice.
 
-``venice_augment_search`` requires the model to choose the provider; the other tools
-always use one provider. Each call is a separate, billed search. The Venice key
+The search tools use /augment/search: ``venice_augment_search`` requires the model to
+choose the provider, and the other search tools always use one provider.
+``venice_augment_scrape`` fetches one page through /augment/scrape. Each call is a
+separate, billed request. The Venice key
 resolves on every call, from llm's key store or ``LLM_VENICE_KEY``. The tools are
 synchronous, so they work in sync and async chains; async chains wait for them.
 Failures raise, and llm reports them to the model as ``Error: ...`` tool results.
@@ -10,24 +12,31 @@ Failures raise, and llm reports them to the model as ``Error: ...`` tool results
 import functools
 import inspect
 from collections.abc import Callable
-from typing import Any, ParamSpec, cast, get_args
+from typing import Any, ParamSpec, TypeVar, cast, get_args
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from ._endpoints import AugmentSearchInput
+from ._endpoints import AugmentScrapeInput, AugmentSearchInput
 from .client import VeniceClient
-from .types import AugmentSearchProvider, AugmentSearchResponse
+from .types import AugmentScrapeResponse, AugmentSearchProvider, AugmentSearchResponse
 
 _P = ParamSpec("_P")
+_R = TypeVar("_R")
 _PROVIDERS = get_args(AugmentSearchProvider)
 
 
-def _input_problems(arguments: dict[str, Any], parameters: list[str]) -> list[str]:
+def _input_problems(
+    model: type[BaseModel], arguments: dict[str, Any], parameters: list[str]
+) -> list[str]:
     """Every problem with a tool call's bound arguments, in parameter order."""
     problems: dict[str, list[str]] = {}
-    fields = {name: arguments[name] for name in ("query", "limit") if name in arguments}
+    fields = {
+        name: arguments[name]
+        for name in parameters
+        if name in arguments and name in model.model_fields and name != "provider"
+    }
     try:
-        AugmentSearchInput.model_validate(fields)
+        model.model_validate(fields)
     except ValidationError as exc:
         # Short messages the model can act on, instead of pydantic's report.
         for error in exc.errors():
@@ -40,31 +49,39 @@ def _input_problems(arguments: dict[str, Any], parameters: list[str]) -> list[st
 
 
 def _validate_tool_call(
-    function: Callable[_P, AugmentSearchResponse],
-) -> Callable[_P, AugmentSearchResponse]:
-    """Report all invalid arguments in one error before the tool searches.
+    model: type[BaseModel], label: str
+) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
+    """Report all invalid arguments in one error before the tool calls Venice.
 
     llm calls a tool with the model's arguments as keywords and checks neither
     them nor the annotations. Missing, unknown and invalid arguments all become
     one ``ValueError`` that the model can correct in a single retry, instead of
-    Python's ``TypeError`` or only the first problem.
+    Python's ``TypeError`` or only the first problem. ``model`` checks the
+    arguments it declares, and ``label`` names the input in the error.
     """
-    signature = inspect.signature(function)
-    parameters = list(signature.parameters)
 
-    @functools.wraps(function)
-    def tool(*args: _P.args, **kwargs: _P.kwargs) -> AugmentSearchResponse:
-        known = {name: value for name, value in kwargs.items() if name in parameters}
-        # Extra positional arguments come only from Python callers; keep their TypeError.
-        bound = signature.bind_partial(*args, **known)
-        bound.apply_defaults()
-        problems = _input_problems(dict(bound.arguments), parameters)
-        problems += [f"{name}: unexpected argument" for name in kwargs if name not in known]
-        if problems:
-            raise ValueError(f"Invalid search input: {'; '.join(problems)}")
-        return cast(Callable[..., AugmentSearchResponse], function)(**bound.arguments)
+    def decorate(function: Callable[_P, _R]) -> Callable[_P, _R]:
+        signature = inspect.signature(function)
+        parameters = list(signature.parameters)
 
-    return tool
+        @functools.wraps(function)
+        def tool(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+            known = {name: value for name, value in kwargs.items() if name in parameters}
+            # Extra positional arguments come only from Python callers; keep their TypeError.
+            bound = signature.bind_partial(*args, **known)
+            bound.apply_defaults()
+            problems = _input_problems(model, dict(bound.arguments), parameters)
+            problems += [f"{name}: unexpected argument" for name in kwargs if name not in known]
+            if problems:
+                raise ValueError(f"Invalid {label} input: {'; '.join(problems)}")
+            return cast(Callable[..., _R], function)(**bound.arguments)
+
+        return tool
+
+    return decorate
+
+
+_validate_search = _validate_tool_call(AugmentSearchInput, "search")
 
 
 def _augment_search(
@@ -74,7 +91,7 @@ def _augment_search(
         return client.augment_search(query, limit=limit, provider=provider)
 
 
-@_validate_tool_call
+@_validate_search
 def venice_augment_search(
     query: str, provider: AugmentSearchProvider, limit: int = 10
 ) -> AugmentSearchResponse:
@@ -93,7 +110,7 @@ def venice_augment_search(
     return _augment_search(query, provider, limit)
 
 
-@_validate_tool_call
+@_validate_search
 def venice_augment_search_brave(query: str, limit: int = 10) -> AugmentSearchResponse:
     """Search the web with Brave through Venice; suits keyword, news and general
     web searches. Returns JSON with the query and results (title, url, content
@@ -102,7 +119,7 @@ def venice_augment_search_brave(query: str, limit: int = 10) -> AugmentSearchRes
     return _augment_search(query, "brave", limit)
 
 
-@_validate_tool_call
+@_validate_search
 def venice_augment_search_google(query: str, limit: int = 10) -> AugmentSearchResponse:
     """Search the web with Google through Venice; suits keyword, news and general
     web searches. Returns JSON with the query and results (title, url, content
@@ -111,13 +128,24 @@ def venice_augment_search_google(query: str, limit: int = 10) -> AugmentSearchRe
     return _augment_search(query, "google", limit)
 
 
-@_validate_tool_call
+@_validate_search
 def venice_augment_search_exa(query: str, limit: int = 10) -> AugmentSearchResponse:
     """Search the web with Exa through Venice; suits natural-language, semantic and
     research queries. Returns JSON with the query and results (title, url, content
     snippet, and date when available). query: 1-400 characters. limit: 1-20 results.
     """
     return _augment_search(query, "exa", limit)
+
+
+@_validate_tool_call(AugmentScrapeInput, "scrape")
+def venice_augment_scrape(url: str) -> AugmentScrapeResponse:
+    """Fetch a web page through Venice and return its content as markdown.
+    Returns JSON with the url, the page content, and its format. Sites that block
+    automated access, such as X/Twitter and Reddit, cannot be scraped. Each call
+    is a separate, billed request. url: an absolute http or https URL.
+    """
+    with VeniceClient() as client:
+        return client.augment_scrape(url)
 
 
 AUGMENT_SEARCH_TOOLS = (
@@ -127,7 +155,10 @@ AUGMENT_SEARCH_TOOLS = (
     venice_augment_search_exa,
 )
 
-for _tool in AUGMENT_SEARCH_TOOLS:
+TOOLS = (*AUGMENT_SEARCH_TOOLS, venice_augment_scrape)
+"""Every function tool the plugin registers with llm."""
+
+for _tool in TOOLS:
     # llm sends __doc__ to the model as the tool description. Python 3.13+ dedents
     # docstrings itself; earlier versions would keep the indentation.
     _tool.__doc__ = inspect.cleandoc(_tool.__doc__ or "")
